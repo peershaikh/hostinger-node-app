@@ -1171,7 +1171,26 @@ class SplitJourneyEngine {
             const filteredRegular = excludeVias.length > 0
                 ? dedupedRegular.filter((s) => !excludeVias.includes(s.hub))
                 : dedupedRegular;
-            const topRegular = filteredRegular.length > 0 ? filteredRegular.slice(0, 6) : dedupedRegular.slice(0, 6);
+            // ── PER-HUB CAP: max 2 results per hub for variety (e.g. KOTA showing 4x → cap to 2)
+            // Sort by wait_time ascending first so best connection per hub is always included
+            const sortedRegular = [...filteredRegular].sort((a, b) => {
+                const wa = a.wait_time != null ? a.wait_time : (a.bufferMinutes != null ? a.bufferMinutes : 9999);
+                const wb = b.wait_time != null ? b.wait_time : (b.bufferMinutes != null ? b.bufferMinutes : 9999);
+                return wa - wb;
+            });
+            const hubCountMap = new Map();
+            const MAX_PER_HUB = 2;
+            const hubCappedRegular = [];
+            for (const s of sortedRegular) {
+                const hub = s.hub || s.via || 'unknown';
+                const count = hubCountMap.get(hub) || 0;
+                if (count < MAX_PER_HUB) {
+                    hubCappedRegular.push(s);
+                    hubCountMap.set(hub, count + 1);
+                }
+            }
+            logger_1.winstonLogger.info(`[HUB_CAP] filtered: ${filteredRegular.length}→capped: ${hubCappedRegular.length}`);
+            const topRegular = hubCappedRegular.slice(0, 6);
             const top2SameTrain = dedupedSameTrain.slice(0, 2);
             const combinedSplits = [...topRegular, ...top2SameTrain];
             result.split = combinedSplits;
