@@ -1135,9 +1135,7 @@ class SplitJourneyEngine {
             const totalFound = finalSanitized.length;
             const regularSplits = finalSanitized.filter((s) => !s.isSameTrain && s.rescueType !== 'SAME_TRAIN_SEGMENT');
             const sameTrainSplits = finalSanitized.filter((s) => s.isSameTrain || s.rescueType === 'SAME_TRAIN_SEGMENT');
-            // ── DEDUP: If multiple regular splits share the same leg2 train (same Hub→Dest train),
-            // keep only the one with the minimum wait_time (best connection). This prevents showing
-            // e.g. CSMT→Itarsi via 3 different leg1 trains but all using train 1079 as leg2.
+            // ── DEDUP regular splits: same leg2 train → keep only best wait_time
             const leg2BestMap = new Map();
             for (const s of regularSplits) {
                 const leg2No = s.legs?.[1]?.trainNo;
@@ -1146,22 +1144,35 @@ class SplitJourneyEngine {
                     continue;
                 }
                 const existing = leg2BestMap.get(leg2No);
-                const sWait = s.wait_time ?? s.bufferMinutes ?? 9999;
-                const eWait = existing ? (existing.wait_time ?? existing.bufferMinutes ?? 9999) : Infinity;
-                if (!existing || sWait < eWait) {
+                const sWait = s.wait_time != null ? s.wait_time : (s.bufferMinutes != null ? s.bufferMinutes : 9999);
+                const eWait = existing ? (existing.wait_time != null ? existing.wait_time : (existing.bufferMinutes != null ? existing.bufferMinutes : 9999)) : Infinity;
+                if (!existing || sWait < eWait)
                     leg2BestMap.set(leg2No, s);
-                }
             }
             const dedupedRegular = [...leg2BestMap.values()];
-            logger_1.winstonLogger.info(`[DEDUP_LEG2] regularSplits=${regularSplits.length} → deduped=${dedupedRegular.length}`);
+            logger_1.winstonLogger.info(`[DEDUP_LEG2] regular: ${regularSplits.length}→${dedupedRegular.length}`);
+            // ── DEDUP same-train splits: same (leg1+leg2) trainNo combo → keep best hub
+            // Fixes Delhi→GHY showing 12424 Rajdhani twice via NJP and CNB
+            const sameTrainBestMap = new Map();
+            for (const s of sameTrainSplits) {
+                const l1No = s.legs?.[0]?.trainNo || '?';
+                const l2No = s.legs?.[1]?.trainNo || '?';
+                const comboKey = `${l1No}_${l2No}`;
+                const existing = sameTrainBestMap.get(comboKey);
+                const sWait = s.wait_time != null ? s.wait_time : (s.bufferMinutes != null ? s.bufferMinutes : 9999);
+                const eWait = existing ? (existing.wait_time != null ? existing.wait_time : (existing.bufferMinutes != null ? existing.bufferMinutes : 9999)) : Infinity;
+                if (!existing || sWait < eWait)
+                    sameTrainBestMap.set(comboKey, s);
+            }
+            const dedupedSameTrain = [...sameTrainBestMap.values()];
+            logger_1.winstonLogger.info(`[DEDUP_SAME_TRAIN] sameTrain: ${sameTrainSplits.length}→${dedupedSameTrain.length}`);
             // Return up to 6 regular + 2 same-train so frontend pagination has real variety
-            // and "Generate New Alternative Routes" can show a fresh page of results.
             const excludeVias = options?.excludeVia || [];
             const filteredRegular = excludeVias.length > 0
                 ? dedupedRegular.filter((s) => !excludeVias.includes(s.hub))
                 : dedupedRegular;
             const topRegular = filteredRegular.length > 0 ? filteredRegular.slice(0, 6) : dedupedRegular.slice(0, 6);
-            const top2SameTrain = sameTrainSplits.slice(0, 2);
+            const top2SameTrain = dedupedSameTrain.slice(0, 2);
             const combinedSplits = [...topRegular, ...top2SameTrain];
             result.split = combinedSplits;
             result.splits = combinedSplits;
