@@ -1,0 +1,193 @@
+/**
+ * PHASE_4C824 — Universal Booking Gateway Interfaces
+ *
+ * This file defines the structural contracts for the Booking Gateway Foundation.
+ * It contains interfaces and types ONLY — no implementation, no business logic,
+ * no real booking, no payment, no agent login.
+ *
+ * Everything below is guarded by BOOKING_GATEWAY=false by default.
+ * No existing behaviour is changed by importing these types.
+ *
+ * Future booking providers will implement BookingProvider.
+ * The gateway router will consume BookingIntent and produce BookingResult.
+ */
+
+// ─── Capability Flags ─────────────────────────────────────────────────────────
+
+/**
+ * Declares what a provider is capable of.
+ * All fields default false until the provider explicitly claims support.
+ */
+export interface BookingCapabilities {
+  supportsRail:           boolean; // Train ticket booking (IRCTC, ConfirmTkt, ixigo, etc.)
+  supportsBus:            boolean; // Bus ticket booking (future)
+  supportsFlight:         boolean; // Flight ticket booking (future)
+  supportsHotel:          boolean; // Hotel reservation (future)
+  supportsAffiliate:      boolean; // Generates affiliate deep-link instead of direct booking
+  supportsDirectBooking:  boolean; // Places booking directly (agent login required)
+  supportsPartnerAttrib:  boolean; // Accepts partner attribution params (UTM, click_id)
+}
+
+// ─── Provider Health ──────────────────────────────────────────────────────────
+
+export type ProviderHealthStatus = 'HEALTHY' | 'DEGRADED' | 'UNREACHABLE' | 'UNKNOWN';
+
+/**
+ * Snapshot of a provider's operational health.
+ * Used by the registry to gate provider selection.
+ */
+export interface ProviderHealth {
+  providerId:   string;
+  status:       ProviderHealthStatus;
+  lastChecked:  string;              // ISO-8601
+  latencyMs?:   number;
+  errorRate?:   number;              // 0–1 (last 5 min window)
+  message?:     string;
+}
+
+// ─── Booking Provider ─────────────────────────────────────────────────────────
+
+export type ProviderId =
+  | 'IRCTC'
+  | 'CONFIRMTKT'
+  | 'IXIGO'
+  | 'RAILYATRI'
+  | 'OFFICIAL_AGENT'
+  | 'FUTURE_BUS'
+  | 'FUTURE_FLIGHT'
+  | 'FUTURE_HOTEL';
+
+/**
+ * Core interface that every booking provider must implement.
+ * PHASE_4C824: interface definition only — no providers implement this yet.
+ */
+export interface BookingProvider {
+  readonly id:         ProviderId;
+  readonly priority:   number;   // lower = higher priority (1 = first choice)
+  readonly enabled:    boolean;  // must be false until explicitly enabled via feature flag
+  readonly capabilities: BookingCapabilities;
+
+  /**
+   * Generate a booking deep-link URL for this provider.
+   * Never performs a real booking — returns a URL only.
+   * Actual redirect is handled by the gateway router, not this method.
+   */
+  buildBookingUrl(intent: BookingIntent, attribution: PartnerAttribution): string;
+
+  /**
+   * Return current health snapshot for this provider.
+   * Should never throw — return UNKNOWN on any error.
+   */
+  getHealth(): Promise<ProviderHealth>;
+}
+
+// ─── Booking Intent ───────────────────────────────────────────────────────────
+
+export type TravelClass = '1A' | '2A' | '3A' | 'SL' | 'CC' | '2S' | 'EC' | 'FC' | '3E';
+export type Quota       = 'GN' | 'TQ' | 'SS' | 'PH' | 'LD' | 'YU' | 'HP' | 'DP' | 'HO';
+
+export interface JourneySegment {
+  fromStation:   string;  // Station code (e.g. "NDLS")
+  toStation:     string;  // Station code (e.g. "BCT")
+  trainNo:       string;
+  journeyDate:   string;  // YYYYMMDD
+  classType:     TravelClass;
+  quota:         Quota;
+}
+
+/**
+ * Immutable record of what the user wants to book.
+ * Created once, never mutated. Passed through the entire pipeline.
+ *
+ * PHASE_4C824: interface only — BookingIntent factory is in bookingIntent.ts
+ */
+export interface BookingIntent {
+  readonly sessionId:        string;           // booking_session_id (UUIDv4)
+  readonly userId?:          string | null;    // authenticated user, or null for guest
+  readonly guestId?:         string;           // guest identifier from universalIds
+  readonly journey:          JourneySegment;
+  readonly provider:         ProviderId;
+  readonly affiliateId?:     string;           // partner affiliate identifier
+  readonly campaignId?:      string;           // marketing campaign identifier
+  readonly adVariant?:       string;           // A/B variant identifier
+  readonly rescueId?:        string;           // links to same-train-rescue result
+  readonly splitId?:         string;           // links to split journey leg
+  readonly pnrId?:           string;           // links to existing PNR (re-booking)
+  readonly createdAt:        string;           // ISO-8601
+  readonly schemaVersion:    1;                // always 1 for this batch
+}
+
+// ─── Partner Attribution ──────────────────────────────────────────────────────
+
+/**
+ * UTM + tracking fields appended to booking URLs.
+ * Generated by partnerAttribution.ts — never stored in DB at this phase.
+ * All fields are optional: only set when the corresponding flag is ON and data is available.
+ */
+export interface PartnerAttribution {
+  utm_source?:        string;
+  utm_medium?:        string;
+  utm_campaign?:      string;
+  click_id?:          string;   // unique per redirect event
+  booking_session_id?: string;  // matches BookingIntent.sessionId
+  partner_session_id?: string;  // opaque partner-side correlation ID
+}
+
+// ─── Booking Session ──────────────────────────────────────────────────────────
+
+export type BookingSessionStatus =
+  | 'PENDING'    // intent created, not yet redirected
+  | 'REDIRECTED' // user sent to provider
+  | 'EXPIRED'    // session timed out (15 min)
+  | 'COMPLETED'; // provider confirmed (future — not in PHASE_4C824)
+
+/**
+ * Tracks the lifecycle of a booking attempt.
+ * In PHASE_4C824: in-memory only. Persistence is a future phase.
+ */
+export interface BookingSession {
+  readonly sessionId:    string;
+  intent:                BookingIntent;
+  attribution:           PartnerAttribution;
+  status:                BookingSessionStatus;
+  provider:              ProviderId;
+  redirectedAt?:         string;  // ISO-8601
+  expiresAt:             string;  // ISO-8601 (createdAt + 15 min)
+  createdAt:             string;  // ISO-8601
+}
+
+// ─── Booking Result ───────────────────────────────────────────────────────────
+
+export type BookingResultStatus =
+  | 'REDIRECT_GENERATED'  // URL generated, user not yet redirected
+  | 'REDIRECT_SENT'       // HTTP 302 dispatched
+  | 'ERROR';              // Gateway error (provider unavailable, etc.)
+
+/**
+ * Output of the booking gateway for a single intent.
+ * PHASE_4C824: always REDIRECT_GENERATED or ERROR — no real booking yet.
+ */
+export interface BookingResult {
+  readonly status:       BookingResultStatus;
+  readonly sessionId:    string;
+  readonly provider:     ProviderId;
+  readonly redirectUrl?: string;  // set when status = REDIRECT_GENERATED / REDIRECT_SENT
+  readonly errorCode?:   string;
+  readonly errorMessage?: string;
+  readonly timestamp:    string;  // ISO-8601
+}
+
+// ─── Booking Metadata ─────────────────────────────────────────────────────────
+
+/**
+ * Non-functional metadata attached to a booking event for analytics/audit.
+ * Does not affect booking behaviour.
+ */
+export interface BookingMetadata {
+  requestId?:        string;  // from universalIds
+  searchId?:         string;
+  source:            string;  // e.g. "rescue_flow" | "split_flow" | "direct"
+  platform?:         string;  // e.g. "android" | "ios" | "web"
+  appVersion?:       string;
+  schemaVersion:     1;
+}

@@ -1,0 +1,428 @@
+[
+  {
+    "id": "fdf736f1-d1ac-4027-bb13-4bc3b9ca6b53",
+    "source": "MGPA",
+    "destination": "NDLS",
+    "date": "2026-06-12",
+    "user_id": "e3b5a3a4-3dc2-41bf-8cb0-3f54215d5d94",
+    "count": 1,
+    "last_seen": "2026-06-12T16:53:13.625+00:00",
+    "gpt_suggestion": {
+      "reason": "BPL is a major junction that connects various routes to Delhi. Trains from MGPA to BPL are frequent, and from BPL to NDLS, multiple trains operate daily, ensuring a seamless transition between the two legs of the journey.",
+      "trainNos": [
+        "12345",
+        "67890"
+      ],
+      "confidence": "HIGH",
+      "trainAlias": "NDLS_EXP",
+      "candidateHub": "BPL",
+      "stationAlias": "NDLS",
+      "candidateRoute": "MGPA -> BPL -> NDLS"
+    },
+    "status": "pending",
+    "created_at": "2026-06-12T16:53:13.669245+00:00"
+  },
+  {
+    "id": "1dcf2fd6-b256-41ce-81d7-fd643ba77058",
+    "source": "NSDL",
+    "destination": "BA",
+    "date": "2026-06-14",
+    "user_id": "c7a7bfd0-c961-43b1-9cc7-11c9ddeb26c1",
+    "count": 1,
+    "last_seen": "2026-06-14T10:10:04.605+00:00",
+    "gpt_suggestion": {
+      "reason": "BPL (Bhopal Junction) is a major junction that connects various routes in central India. The suggested train numbers are hypothetical and should be checked for availability. This route works as it allows for a connection between NSDL and BA through a well-connected hub.",
+      "trainNos": [
+        "12345",
+        "67890"
+      ],
+      "confidence": "MEDIUM",
+      "trainAlias": "N/A",
+      "candidateHub": "BPL",
+      "stationAlias": "N/A",
+      "candidateRoute": "NSDL -> BPL -> BA"
+    },
+    "status": "pending",
+    "created_at": "2026-06-14T10:10:04.695326+00:00"
+  },
+  {
+    "id": "5cac5674-0a6f-4206-99b5-9a8326fb0f46",
+    "source": "CSMT",
+    "destination": "NEW DELHI (NDLS)",
+    "date": "2026-07-08",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-03T08:53:57.745+00:00",
+    "gpt_suggestion": {
+      "reason": "The route from CSMT to BPL is well-served by multiple trains, and BPL is a major junction that connects to NDLS. Trains like 12163 (CSTM - JBP Express) and 12451 (Narmada Express) can be utilized for this split journey, ensuring a smooth transition to reach New Delhi.",
+      "trainNos": [
+        "12163",
+        "12451"
+      ],
+      "confidence": "HIGH",
+      "trainAlias": "N/A",
+      "candidateHub": "BPL",
+      "stationAlias": "NDLS",
+      "candidateRoute": "CSMT -> BPL -> NDLS"
+    },
+    "status": "pending",
+    "created_at": "2026-07-03T08:53:57.783362+00:00"
+  },
+  {
+    "id": "04de0274-1a7f-4431-a53c-c77d3408a15a",
+    "source": "MAN",
+    "destination": "NDLS",
+    "date": "2026-06-25",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 2,
+    "last_seen": "2026-06-14T15:30:49.96+00:00",
+    "gpt_suggestion": {
+      "reason": "BPL (Bhopal Junction) is a major junction that connects various routes towards Delhi. Trains from MAN can reach BPL, and from there, multiple trains are available to NDLS. The suggested train numbers are examples of services that operate on these legs.",
+      "trainNos": [
+        "12345",
+        "67890"
+      ],
+      "confidence": "HIGH",
+      "trainAlias": "NDLS_EXP",
+      "candidateHub": "BPL",
+      "stationAlias": "NDLS",
+      "candidateRoute": "MAN -> BPL -> NDLS"
+    },
+    "status": "pending",
+    "created_at": "2026-06-14T09:03:15.900955+00:00"
+  },
+  {
+    "id": "edaf6ccb-79dc-41ad-a305-027b6b9fe1fd",
+    "source": "BCT",
+    "destination": "AII",
+    "date": "60720-02-20",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-06-15T05:48:17.312+00:00",
+    "gpt_suggestion": {
+      "reason": "The route from BCT to AII requires a split journey via KYN, which is a major junction that connects various routes. Train 12903 (Mumbai to Jaipur) and Train 12904 (Jaipur to Mumbai) can be utilized for this journey, providing a feasible connection between the two stations.",
+      "trainNos": [
+        "12903",
+        "12904"
+      ],
+      "confidence": "MEDIUM",
+      "trainAlias": "AII",
+      "candidateHub": "KYN",
+      "stationAlias": "AII",
+      "candidateRoute": "BCT -> KYN -> AII"
+    },
+    "status": "pending",
+    "created_at": "2026-06-15T05:48:17.350415+00:00"
+  },
+  {
+    "id": "7f28996d-1e98-4ded-9f4d-696d1ecee18d",
+    "source": "HVR",
+    "destination": "DDR",
+    "date": null,
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-17T06:30:52.994+00:00",
+    "gpt_suggestion": {
+      "reason": "The route from HVR to BZA is well-connected, and from BZA, there are multiple trains available to DDR. The suggested train numbers are commonly used for this corridor, ensuring reasonable travel times and frequency.",
+      "trainNos": [
+        "12345",
+        "67890"
+      ],
+      "confidence": "MEDIUM",
+      "trainAlias": "12345",
+      "candidateHub": "BZA",
+      "stationAlias": "HVR",
+      "candidateRoute": "HVR -> BZA -> DDR"
+    },
+    "status": "pending",
+    "created_at": "2026-06-17T06:30:51.654255+00:00"
+  },
+  {
+    "id": "234fb6ff-4df2-4b41-acea-5b7841359239",
+    "source": "CSMT",
+    "destination": "GHY",
+    "date": "2026-06-15",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-21T08:52:27.918+00:00",
+    "gpt_suggestion": {
+      "reason": "The route from CSMT to GHY typically requires a split journey due to the lack of direct trains. BPL (Bhopal Junction) serves as a major junction with multiple connecting trains towards the northeastern states. Train 12345 can take you from CSMT to BPL, and train 67890 can connect you from BPL to GHY.",
+      "trainNos": [
+        "12345",
+        "67890"
+      ],
+      "confidence": "MEDIUM",
+      "trainAlias": "N/A",
+      "candidateHub": "BPL",
+      "stationAlias": "N/A",
+      "candidateRoute": "CSMT -> BPL -> GHY"
+    },
+    "status": "pending",
+    "created_at": "2026-06-21T08:52:27.964298+00:00"
+  },
+  {
+    "id": "31872918-8da5-451c-ae0f-8744bf6e4875",
+    "source": "HWH",
+    "destination": "BCT",
+    "date": "2026-07-14",
+    "user_id": "646baefd-79e3-49cc-9b8a-2597f177b4ab",
+    "count": 1,
+    "last_seen": "2026-07-02T16:27:33.826+00:00",
+    "gpt_suggestion": {
+      "reason": "The route from Howrah (HWH) to Kalyan (KYN) is well-served by multiple trains, and Kalyan is a major junction that connects to several trains heading towards Mumbai, including the route to Mumbai's Chhatrapati Shivaji Maharaj Terminus (BCT). This split journey allows for a reliable transfer between trains.",
+      "trainNos": [
+        "12345",
+        "67890"
+      ],
+      "confidence": "MEDIUM",
+      "trainAlias": "BCT",
+      "candidateHub": "KYN",
+      "stationAlias": "BCT",
+      "candidateRoute": "HWH -> KYN -> BCT"
+    },
+    "status": "pending",
+    "created_at": "2026-07-02T16:27:34.671317+00:00"
+  },
+  {
+    "id": "b629bb1f-0fc0-4436-a2e4-a9748cc42130",
+    "source": "BCT",
+    "destination": "HWH",
+    "date": "2026-07-14",
+    "user_id": "646baefd-79e3-49cc-9b8a-2597f177b4ab",
+    "count": 1,
+    "last_seen": "2026-07-02T16:27:42.909+00:00",
+    "gpt_suggestion": {
+      "reason": "The route from BCT (Bandra Terminus) to HWH (Howrah) can be effectively served by splitting the journey at KYN (Kalyan Junction), which is a major junction with multiple connecting trains. The suggested train numbers provide a feasible connection between these stations, ensuring a smooth transit.",
+      "trainNos": [
+        "12951",
+        "12345"
+      ],
+      "confidence": "HIGH",
+      "trainAlias": "N/A",
+      "candidateHub": "KYN",
+      "stationAlias": "BCT",
+      "candidateRoute": "BCT -> KYN -> HWH"
+    },
+    "status": "pending",
+    "created_at": "2026-07-02T16:27:43.753279+00:00"
+  },
+  {
+    "id": "92f92e9e-d8c2-4503-854d-670ba5da9363",
+    "source": "CSTM",
+    "destination": "AMD",
+    "date": "2026-07-10",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-03T06:51:00.385+00:00",
+    "gpt_suggestion": {
+      "reason": "BPL (Bhopal) is a major junction that connects multiple routes. Trains from CSTM to BPL are frequent, and from BPL to AMD, there are direct trains available. The suggested train numbers are known to operate on this corridor, making this route a viable option.",
+      "trainNos": [
+        "12988",
+        "12989"
+      ],
+      "confidence": "HIGH",
+      "trainAlias": "12988",
+      "candidateHub": "BPL",
+      "stationAlias": "AMD",
+      "candidateRoute": "CSTM -> BPL -> AMD"
+    },
+    "status": "pending",
+    "created_at": "2026-07-03T06:51:00.428813+00:00"
+  },
+  {
+    "id": "f06c327e-b2bb-4546-b8b1-4c13fbb13e74",
+    "source": "MUMBAI CSMT (CSMT)",
+    "destination": "NEW DELHI (NDLS)",
+    "date": "2026-07-08",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-03T08:57:12.207+00:00",
+    "gpt_suggestion": {
+      "reason": "KYN (Kalyan Junction) is a major junction that connects Mumbai to various parts of India, including New Delhi. The suggested trains operate frequently on this route, providing a reliable connection. The first leg (12163) travels from Mumbai to Kalyan, and the second leg (12951) connects Kalyan to New Delhi.",
+      "trainNos": [
+        "12163",
+        "12951"
+      ],
+      "confidence": "HIGH",
+      "trainAlias": "N/A",
+      "candidateHub": "KYN",
+      "stationAlias": "NDLS",
+      "candidateRoute": "MUMBAI CSMT -> KYN -> NEW DELHI"
+    },
+    "status": "pending",
+    "created_at": "2026-07-03T08:57:12.286602+00:00"
+  },
+  {
+    "id": "029b1570-e2f0-40b7-a0ae-bbbbd00d01f7",
+    "source": "MUMBAI CST (CSTM)",
+    "destination": "NEW DELHI (NDLS)",
+    "date": "2026-07-08",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-03T11:54:28.528+00:00",
+    "gpt_suggestion": {
+      "reason": "This route works as KYN (Kalyan Junction) is a major junction that connects Mumbai with various northern routes, including those to New Delhi. The suggested train numbers are known to operate on this corridor, providing a reliable connection between the two cities.",
+      "trainNos": [
+        "12163",
+        "12431"
+      ],
+      "confidence": "HIGH",
+      "trainAlias": "NDLS",
+      "candidateHub": "KYN",
+      "stationAlias": "NDLS",
+      "candidateRoute": "MUMBAI CST (CSTM) -> KYN -> NEW DELHI (NDLS)"
+    },
+    "status": "pending",
+    "created_at": "2026-07-03T11:54:28.566206+00:00"
+  },
+  {
+    "id": "798a32b0-f7a7-4010-b5dc-819ec990779c",
+    "source": "MUMBAI CSCSMT (CSTM)",
+    "destination": "NDLS",
+    "date": "2026-07-08",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-03T11:57:11.019+00:00",
+    "gpt_suggestion": {
+      "reason": "The route from Mumbai CSTM to NDLS typically requires a split journey due to the lack of direct trains. KYN (Kalyan Junction) serves as a major junction that connects various routes. The suggested train numbers include a train from Mumbai to Kalyan and then a connecting train from Kalyan to NDLS, ensuring smooth transit between these key stations.",
+      "trainNos": [
+        "12163",
+        "12431"
+      ],
+      "confidence": "HIGH",
+      "trainAlias": "NDLS",
+      "candidateHub": "KYN",
+      "stationAlias": "NDLS",
+      "candidateRoute": "MUMBAI CSCSMT (CSTM) -> KYN -> NDLS"
+    },
+    "status": "pending",
+    "created_at": "2026-07-03T11:57:11.061723+00:00"
+  },
+  {
+    "id": "15e7ad20-5613-44c2-8d00-ff45713b2777",
+    "source": "MUMBAI CST (CSTM)",
+    "destination": "GADAG JN (GDG)",
+    "date": "2026-07-03",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-03T13:57:59.322+00:00",
+    "gpt_suggestion": {
+      "reason": "HUBLI JN (UBL) is a major junction close to GADAG JN (GDG) and serves as a logical hub for connecting trains. The suggested train numbers are typical services that operate on these legs, providing a feasible route from Mumbai to Gadag.",
+      "trainNos": [
+        "CSTM-UBL EXP",
+        "UBL-GDG PASS"
+      ],
+      "confidence": "HIGH",
+      "trainAlias": "CSTM-UBL",
+      "candidateHub": "UBL",
+      "stationAlias": "HUBLI JN",
+      "candidateRoute": "MUMBAI CST (CSTM) -> HUBLI JN (UBL) -> GADAG JN (GDG)"
+    },
+    "status": "pending",
+    "created_at": "2026-07-03T13:57:59.370589+00:00"
+  },
+  {
+    "id": "8348d4bd-07d7-42fe-867a-1ecb61984e9b",
+    "source": "MUMBAI CST (CSTM)",
+    "destination": "GADAG",
+    "date": "2026-07-30",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-05T05:59:46.763+00:00",
+    "gpt_suggestion": {
+      "reason": "HUBLI (UBL) is a major junction close to GADAG, making it a suitable hub for a split journey. The suggested trains operate on the route connecting Mumbai to Hubli and then Hubli to Gadag, ensuring a smooth transition between the two legs of the journey.",
+      "trainNos": [
+        "12627",
+        "16516"
+      ],
+      "confidence": "HIGH",
+      "trainAlias": "N/A",
+      "candidateHub": "UBL",
+      "stationAlias": "UBL",
+      "candidateRoute": "MUMBAI CST (CSTM) -> HUBLI (UBL) -> GADAG (GDG)"
+    },
+    "status": "pending",
+    "created_at": "2026-07-05T05:59:46.801678+00:00"
+  },
+  {
+    "id": "1a15d1f3-040f-424d-a2f6-af1d9cae1a41",
+    "source": "KASARAGOD (KGQ)",
+    "destination": "GADAG JN (GDG)",
+    "date": "2026-07-07",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-07T05:16:17.317+00:00",
+    "gpt_suggestion": {
+      "reason": "The suggested route involves traveling from Kasaragod to Hubli, which is a major junction with multiple train connections, and then from Hubli to Gadag. Train numbers 16515 and 16516 operate on this corridor, providing a reliable connection between these stations.",
+      "trainNos": [
+        "16515",
+        "16516"
+      ],
+      "confidence": "HIGH",
+      "trainAlias": "16515/16516",
+      "candidateHub": "UBL",
+      "stationAlias": "KASARAGOD",
+      "candidateRoute": "KASARAGOD (KGQ) -> HUBLI (UBL) -> GADAG JN (GDG)"
+    },
+    "status": "pending",
+    "created_at": "2026-07-07T05:16:17.357982+00:00"
+  },
+  {
+    "id": "86c29d51-6cbd-475a-af75-b602d4fdbd62",
+    "source": "CSMT",
+    "destination": "GOA",
+    "date": "2026-07-15",
+    "user_id": null,
+    "count": 3,
+    "last_seen": "2026-07-08T07:32:11.794+00:00",
+    "gpt_suggestion": {
+      "reason": "The route from CSMT to KYN is well-served by multiple trains, and from KYN, there are several direct trains to Goa. This split journey allows for a smooth transition between the two segments.",
+      "trainNos": [
+        "12133",
+        "10111"
+      ],
+      "confidence": "HIGH",
+      "trainAlias": "N/A",
+      "candidateHub": "KYN",
+      "stationAlias": "CSMT",
+      "candidateRoute": "CSMT -> KYN -> GOA"
+    },
+    "status": "pending",
+    "created_at": "2026-07-08T06:31:46.706494+00:00"
+  },
+  {
+    "id": "d875cfa9-3144-4ec0-933b-6f5e5087224c",
+    "source": "TRIVANDRUM",
+    "destination": "GDG",
+    "date": "2026-07-30",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-09T14:09:58.677+00:00",
+    "gpt_suggestion": {
+      "reason": "The route from Trivandrum to Ernakulam (ET) is well-served, and from there, trains can connect to destinations towards GDG. The suggested train numbers operate on these legs, ensuring a feasible connection.",
+      "trainNos": [
+        "16317",
+        "12685"
+      ],
+      "confidence": "MEDIUM",
+      "trainAlias": "N/A",
+      "candidateHub": "ET",
+      "stationAlias": "GDG",
+      "candidateRoute": "TRIVANDRUM -> ET -> GDG"
+    },
+    "status": "pending",
+    "created_at": "2026-07-09T14:09:58.736659+00:00"
+  },
+  {
+    "id": "12611ede-8b6a-450f-addf-5897ecafcd4f",
+    "source": "SINGRAULI (SGRL)",
+    "destination": "SURAT (ST)",
+    "date": "2026-07-24",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-13T06:28:42.709+00:00",
+    "gpt_suggestion": null,
+    "status": "pending",
+    "created_at": "2026-07-13T06:28:42.751109+00:00"
+  }
+]

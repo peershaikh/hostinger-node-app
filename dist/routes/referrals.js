@@ -1,0 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const referralController_1 = require("../controllers/referralController");
+const authMiddleware_1 = require("../middleware/authMiddleware");
+const rateLimiter_1 = require("../middleware/rateLimiter");
+const router = (0, express_1.Router)();
+router.get('/me', authMiddleware_1.requireAuth, rateLimiter_1.referralLimiter, referralController_1.referralController.getMyReferralCode.bind(referralController_1.referralController));
+router.get('/stats', authMiddleware_1.requireAuth, rateLimiter_1.referralLimiter, referralController_1.referralController.getStats.bind(referralController_1.referralController));
+router.post('/apply', authMiddleware_1.requireAuth, rateLimiter_1.referralLimiter, referralController_1.referralController.apply.bind(referralController_1.referralController));
+router.get('/leaderboard', rateLimiter_1.referralLimiter, referralController_1.referralController.getLeaderboard.bind(referralController_1.referralController));
+router.get('/history', authMiddleware_1.requireAuth, rateLimiter_1.referralLimiter, referralController_1.referralController.getHistory.bind(referralController_1.referralController));
+exports.default = router;

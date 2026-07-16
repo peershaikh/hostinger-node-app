@@ -1,0 +1,69 @@
+import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+
+export const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
+    // PHASE_4C837 P0-001: Never trust client-supplied identity headers.
+    // Clear before auth so spoofed x-user-id cannot survive a missing/invalid JWT.
+    delete req.headers['x-user-id'];
+    delete req.headers['x-token-version'];
+
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.split(' ')[1];
+        try {
+            const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
+            // Inject x-user-id explicitly for Phase 2 compatibility
+            req.headers['x-user-id'] = decoded.userId;
+            req.headers['x-token-version'] = decoded.tokenVersion?.toString();
+        } catch (e: any) {
+            // AUTH_STRICT_EXPIRY: when enabled, return 401 on expired tokens so
+            // clients can trigger the silent refresh → retry flow.
+            // Only fires on TokenExpiredError — tampered/invalid tokens fall through
+            // as guest to avoid leaking JWT structure information.
+            if (process.env.AUTH_STRICT_EXPIRY === 'true' && e.name === 'TokenExpiredError') {
+                return res.status(401).json({
+                    success: false,
+                    error: 'Token expired',
+                    code: 'TOKEN_EXPIRED',
+                });
+            }
+            // All other errors: treat as guest (do not attach x-user-id)
+        }
+    }
+    next();
+};
+
+/**
+ * PHASE_4C837 P0-002: Route guard for destructive/authenticated actions.
+ * Requires a present, verifiable Bearer JWT — x-user-id alone is insufficient.
+ */
+export const requireAuth = (req: Request, res: Response, next: NextFunction) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
+        if (!decoded?.userId) {
+            return res.status(401).json({ success: false, error: 'Unauthorized' });
+        }
+        req.headers['x-user-id'] = decoded.userId;
+        req.headers['x-token-version'] = decoded.tokenVersion?.toString();
+        next();
+    } catch (e: any) {
+        if (process.env.AUTH_STRICT_EXPIRY === 'true' && e.name === 'TokenExpiredError') {
+            return res.status(401).json({
+                success: false,
+                error: 'Token expired',
+                code: 'TOKEN_EXPIRED',
+            });
+        }
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+};

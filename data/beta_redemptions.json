@@ -1,0 +1,170 @@
+[
+  {
+    "id": "c6bcb70e-ef11-4d1a-a15e-1bd99a11d040",
+    "userId": "audit_user_5648",
+    "betaCode": "TRAYAGO25",
+    "redeemedAt": "2026-06-12T06:53:41.851+00:00",
+    "expiresAt": null
+  },
+  {
+    "id": "bdd321ea-3fd8-4d22-88fe-76e0037c1da1",
+    "userId": "f3b8a572-4830-8c90-6535-aadc45fb23fa",
+    "betaCode": "TRAYAGO25",
+    "redeemedAt": "2026-06-12T07:21:11.963+00:00",
+    "expiresAt": null
+  },
+  {
+    "id": "64ea4ffa-d44a-407c-94f5-f768ebea3c0b",
+    "userId": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "betaCode": "TRAYAGO25",
+    "redeemedAt": "2026-06-12T09:51:23.94+00:00",
+    "expiresAt": null
+  },
+  {
+    "id": "6bf76bc8-539e-473c-9e8c-48855ea47988",
+    "userId": "11112222-3333-4444-5555-666677778888",
+    "betaCode": "TRAYAGO25",
+    "redeemedAt": "2026-06-12T10:12:14.69+00:00",
+    "expiresAt": null
+  },
+  {
+    "id": "0808e7d0-fc86-4807-9419-b7fa5db65d54",
+    "userId": "a6212f38-8267-4a00-aa46-b37130838fcd",
+    "betaCode": "TRAYAGO25",
+    "redeemedAt": "2026-06-12T17:23:58.741+00:00",
+    "expiresAt": null
+  },
+  {
+    "id": "6c3f2d60-f665-4db1-8ad9-d533edff6ab7",
+    "userId": "9a5e9d6e-0525-453b-aaf4-a29b7caa91e6",
+    "betaCode": "TRAYAGO25",
+    "redeemedAt": "2026-06-17T10:31:23.969+00:00",
+    "expiresAt": null
+  },
+  {
+    "id": "e04384fe-b9e0-4947-926f-cca7e00a3550",
+    "userId": "e2e2e2e2-e2e2-e2e2-e2e2-e2e2e2e2e2e2",
+    "betaCode": "TRAYAGO25",
+    "redeemedAt": "2026-06-18T06:23:25.913+00:00",
+    "expiresAt": null
+  },
+  {
+    "id": "7ce41f4e-4022-4626-8d77-030f59dff62d",
+    "userId": "646baefd-79e3-49cc-9b8a-2597f177b4ab",
+    "betaCode": "TRAYAGO25",
+    "redeemedAt": "2026-06-20T16:12:26.754+00:00",
+    "expiresAt": null
+  },
+  {
+    "id": "8893a351-6416-48ab-9d1a-5f6bdfb0be40",
+    "userId": "bbc28408-ab5b-4a05-b7b7-c37c4ae38033",
+    "betaCode": "TRAYAGO25",
+    "redeemedAt": "2026-06-22T15:41:05.146+00:00",
+    "expiresAt": null
+  },
+  {
+    "id": "45725423-5865-4b1f-b3a4-e0f64dc9595d",
+    "userId": "cb0f80e2-14af-4200-8bcb-86288f62df09",
+    "betaCode": "TRAYAGO25",
+    "redeemedAt": "2026-06-24T07:38:13.488+00:00",
+    "expiresAt": null
+  },
+  {
+    "id": "0136ba7f-81b3-4c13-9d5f-be7d342c32fa",
+    "userId": "11111111-1111-1111-1111-111111111111",
+    "betaCode": "NFTEST1782797356477",
+    "redeemedAt": "2026-06-30T05:29:16.526+00:00",
+    "expiresAt": "2026-07-01T05:29:16.477+00:00"
+  },
+  {
+    "id": "e8b75e17-e0e0-4e77-bd39-21982834cd40",
+    "userId": "11111111-1111-1111-1111-111111111111",
+    "betaCode": "NFREDEEM1782797372162",
+    "redeemedAt": "2026-06-30T05:29:32.195+00:00",
+    "expiresAt": "2026-07-01T05:29:32.162+00:00"
+  },
+  {
+    "id": "1e280faa-dc7d-444c-b1a5-b5bed125dd5c",
+    "userId": "11111111-1111-1111-1111-111111111111",
+    "betaCode": "NFREDEEM1782797946397",
+    "redeemedAt": "2026-06-30T05:39:06.433+00:00",
+    "expiresAt": "2026-07-01T05:39:06.397+00:00"
+  },
+  {
+    "id": "8fa30d32-3d83-4c3b-bf37-e36ed9f9aca5",
+    "userId": "11111111-1111-1111-1111-111111111111",
+    "betaCode": "NFREDEEM1782798183821",
+    "redeemedAt": "2026-06-30T05:43:03.859+00:00",
+    "expiresAt": "2026-07-01T05:43:03.821+00:00"
+  },
+  {
+    "id": "d317122b-397f-42c3-b3b8-c27e644adeee",
+    "userId": "11111111-1111-1111-1111-111111111111",
+    "betaCode": "NFREDEEM1782798319524",
+    "redeemedAt": "2026-06-30T05:45:19.553+00:00",
+    "expiresAt": "2026-07-01T05:45:19.524+00:00"
+  },
+  {
+    "id": "a8e23efa-cd17-4316-994e-f59634bdf3a0",
+    "userId": "11111111-1111-1111-1111-111111111111",
+    "betaCode": "NFREDEEM1782799105921",
+    "redeemedAt": "2026-06-30T05:58:25.949+00:00",
+    "expiresAt": "2026-07-01T05:58:25.921+00:00"
+  },
+  {
+    "id": "e1e80f1a-87b9-45ba-90e9-ce9a2df1686e",
+    "userId": "11111111-1111-1111-1111-111111111111",
+    "betaCode": "NFREDEEM1782800754331",
+    "redeemedAt": "2026-06-30T06:25:54.361+00:00",
+    "expiresAt": "2026-07-01T06:25:54.331+00:00"
+  },
+  {
+    "id": "713de015-4dc9-43b0-baa7-56b80483a0d8",
+    "userId": "11111111-1111-1111-1111-111111111111",
+    "betaCode": "NFREDEEM1782802474860",
+    "redeemedAt": "2026-06-30T06:54:34.89+00:00",
+    "expiresAt": "2026-07-01T06:54:34.86+00:00"
+  },
+  {
+    "id": "ab33cdeb-b233-4e87-9fce-b786e0f57af9",
+    "userId": "11111111-1111-1111-1111-111111111111",
+    "betaCode": "NFREDEEM1782807344299",
+    "redeemedAt": "2026-06-30T08:15:44.329+00:00",
+    "expiresAt": "2026-07-01T08:15:44.299+00:00"
+  },
+  {
+    "id": "0cf26c51-b241-4428-9efd-6a24b22e907f",
+    "userId": "11111111-1111-1111-1111-111111111111",
+    "betaCode": "NFREDEEM1782890861163",
+    "redeemedAt": "2026-07-01T07:27:41.223+00:00",
+    "expiresAt": "2026-07-02T07:27:41.163+00:00"
+  },
+  {
+    "id": "08ed7719-61d3-43f5-8cda-60d4e2939bf8",
+    "userId": "11111111-1111-1111-1111-111111111111",
+    "betaCode": "NFREDEEM1783247445802",
+    "redeemedAt": "2026-07-05T10:30:45.83+00:00",
+    "expiresAt": "2026-07-06T10:30:45.802+00:00"
+  },
+  {
+    "id": "e25c9615-c855-40ea-9f00-274e95d216b4",
+    "userId": "11111111-1111-1111-1111-111111111111",
+    "betaCode": "NFREDEEM1783247690228",
+    "redeemedAt": "2026-07-05T10:34:50.262+00:00",
+    "expiresAt": "2026-07-06T10:34:50.228+00:00"
+  },
+  {
+    "id": "073bb63e-aa2a-4928-8ec7-21409de6297b",
+    "userId": "11111111-1111-1111-1111-111111111111",
+    "betaCode": "NFREDEEM1783520638791",
+    "redeemedAt": "2026-07-08T14:23:58.822+00:00",
+    "expiresAt": "2026-07-09T14:23:58.791+00:00"
+  },
+  {
+    "id": "f913e714-d80a-40af-8549-b635580a5283",
+    "userId": "11111111-1111-1111-1111-111111111111",
+    "betaCode": "NFREDEEM1783685180827",
+    "redeemedAt": "2026-07-10T12:06:20.858Z",
+    "expiresAt": "2026-07-11T12:06:20.827Z"
+  }
+]

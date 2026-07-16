@@ -1,0 +1,34 @@
+[
+  {
+    "trainNo": "16588",
+    "date": "2026-05-03",
+    "coach": "B2",
+    "issueType": "ac_failure",
+    "priority": "high",
+    "timestamp": "2026-04-17T15:44:29.332Z"
+  },
+  {
+    "trainNo": "16588",
+    "date": "2026-05-03",
+    "coach": "S4",
+    "issueType": "dirty_toilet",
+    "priority": "medium",
+    "timestamp": "2026-04-17T15:44:29.333Z"
+  },
+  {
+    "trainNo": "16588",
+    "date": "2026-05-03",
+    "coach": "S4",
+    "issueType": "no_water",
+    "priority": "high",
+    "timestamp": "2026-04-17T15:44:29.334Z"
+  },
+  {
+    "trainNo": "16588",
+    "date": "2026-05-03",
+    "coach": "A1",
+    "issueType": "ac_failure",
+    "priority": "high",
+    "timestamp": "2026-04-17T15:44:29.335Z"
+  }
+]

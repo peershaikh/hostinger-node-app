@@ -1,0 +1,962 @@
+[
+  {
+    "id": "b77809b6-a6a0-4690-aca2-d5600af5531b",
+    "station_code": "CSMT",
+    "alias_name": "VT",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "6b661ca6-214b-4aae-a8cf-e3ae22fc9219",
+    "station_code": "CSMT",
+    "alias_name": "CSTM",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "5acd00e8-fe71-4e5f-9329-fb6d7c884465",
+    "station_code": "CSMT",
+    "alias_name": "VICTORIA TERMINUS",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "c55aaf91-3c22-4703-adc2-a382fb8e802c",
+    "station_code": "CSMT",
+    "alias_name": "BOMBAY",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "a083cd77-0b44-4ade-953d-61e4253cc5dc",
+    "station_code": "MMCT",
+    "alias_name": "MUMBAI CENTRAL",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "b2f91108-82c5-49ee-b529-a2f021e7746d",
+    "station_code": "BDTS",
+    "alias_name": "BANDRA",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "3039f7c8-74f1-481a-ad59-2363aa439db3",
+    "station_code": "LTT",
+    "alias_name": "LOKMANYA TILAK",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "08db8f49-98b3-4298-a868-f76a07c4e310",
+    "station_code": "NDLS",
+    "alias_name": "NEW DELHI",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "5f7997a5-9140-43d7-9809-c2bcf3be6bf8",
+    "station_code": "DLI",
+    "alias_name": "OLD DELHI",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "cb594d7b-f740-461d-a0ab-e1b913ac26b6",
+    "station_code": "NZM",
+    "alias_name": "HAZRAT NIZAMUDDIN",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "7f2c64ee-08f8-4aba-b636-6632d4b550da",
+    "station_code": "ANVT",
+    "alias_name": "ANAND VIHAR",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "e0960411-dccb-406b-a132-7b902d343414",
+    "station_code": "SBC",
+    "alias_name": "BANGALORE",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "ad068297-bfc3-4c64-b56d-1dc74beafb78",
+    "station_code": "SBC",
+    "alias_name": "BENGALURU",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "af0669e3-6bdf-4668-a44a-2662b9d1c114",
+    "station_code": "MAS",
+    "alias_name": "MADRAS",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "2a70dd12-65a0-4f6a-a2c8-9cef8ba0ba97",
+    "station_code": "MAS",
+    "alias_name": "CHENNAI",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "bb413b97-52ea-4e97-92c2-10d0307089cd",
+    "station_code": "MYS",
+    "alias_name": "MYSORE",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "50d4bbd7-f958-4d67-a7b4-c2f57e6456e3",
+    "station_code": "MYS",
+    "alias_name": "MYSURU",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "6981652f-b86b-4b16-abd5-af091595a142",
+    "station_code": "CBE",
+    "alias_name": "COIMBATORE",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "d7a7b7a6-2872-4960-b3e7-499e0f32800b",
+    "station_code": "MDU",
+    "alias_name": "MADURAI",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "a0d7e2c8-f8ea-46b4-a069-ee337919b3c7",
+    "station_code": "TVC",
+    "alias_name": "TRIVANDRUM",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "d297c6ef-fe4e-4eeb-ad63-caf48c13e429",
+    "station_code": "TVC",
+    "alias_name": "THIRUVANANTHAPURAM",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "b255f349-53f1-4bd0-87c5-0e27977893c5",
+    "station_code": "ERS",
+    "alias_name": "ERNAKULAM",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "17c5bad2-027c-4195-9476-623ea3292fbb",
+    "station_code": "ERS",
+    "alias_name": "KOCHI",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "e2a44bb9-9c0b-45ac-97b2-da2000c5d2be",
+    "station_code": "CLT",
+    "alias_name": "CALICUT",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "1cfb8ec8-0351-47f3-9337-3d4e1847a649",
+    "station_code": "CLT",
+    "alias_name": "KOZHIKODE",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "b2278bfa-7cdf-494b-881a-532c30ab9c46",
+    "station_code": "HWH",
+    "alias_name": "CALCUTTA",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "a7d284db-dc6f-4eb5-8daa-c2d9fbee6c4d",
+    "station_code": "HWH",
+    "alias_name": "KOLKATA",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "69c5d5b4-1626-4331-bf71-d83575855364",
+    "station_code": "HWH",
+    "alias_name": "HOWRAH",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "98f33c17-baeb-47cb-b0da-f096eb597aaa",
+    "station_code": "SDAH",
+    "alias_name": "SEALDAH",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "c0d3c171-9473-4400-b19b-aee1302d832f",
+    "station_code": "BSB",
+    "alias_name": "BANARAS",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "e2838e78-42ac-42f2-b3e5-1f76b002b1bd",
+    "station_code": "BSB",
+    "alias_name": "VARANASI",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "e9b6baac-e4ee-4140-a4c0-a60d9248cf35",
+    "station_code": "PNBE",
+    "alias_name": "PATNA",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "7567c273-654b-44d0-bbdf-058105f34222",
+    "station_code": "GHY",
+    "alias_name": "GUWAHATI",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "a25ae5e6-592f-4f5c-81cc-38b860b4dda7",
+    "station_code": "SC",
+    "alias_name": "HYDERABAD",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "1e717739-b5da-4ccc-b723-ba3dc7e1d00c",
+    "station_code": "SC",
+    "alias_name": "SECUNDERABAD",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "a4d6df30-2b54-41b5-9fed-85a9fc084b44",
+    "station_code": "BZA",
+    "alias_name": "VIJAYAWADA",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "752889da-5a6f-411f-91c6-b1ab10779c8e",
+    "station_code": "VSKP",
+    "alias_name": "VIZAG",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "43a7ee10-e7f3-444e-9036-77f00ea2889c",
+    "station_code": "VSKP",
+    "alias_name": "VISAKHAPATNAM",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "781a1648-8020-4ac3-b7dd-b90bc1014617",
+    "station_code": "NGP",
+    "alias_name": "NAGPUR",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "7c3d0a56-035d-48b5-86f9-b1ce06e7b66c",
+    "station_code": "BPL",
+    "alias_name": "BHOPAL",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "46137afa-dabe-4316-bc65-40c3b180a9e3",
+    "station_code": "CNB",
+    "alias_name": "KANPUR",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "7ae5578e-45ec-4eda-a062-80b9bf330b2c",
+    "station_code": "LKO",
+    "alias_name": "LUCKNOW",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "035f3300-7359-48f3-af9b-5b94ed8a044c",
+    "station_code": "PRYJ",
+    "alias_name": "PRAYAGRAJ",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "271835ad-d68e-4088-9d75-cd3820cb9983",
+    "station_code": "PRYJ",
+    "alias_name": "ALLAHABAD",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "bb1cf0ec-70da-4948-8c3f-1840753e3887",
+    "station_code": "GKP",
+    "alias_name": "GORAKHPUR",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "1833ef74-7ccd-4bb2-be46-8d09380ed09f",
+    "station_code": "JP",
+    "alias_name": "JAIPUR",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "60f5b0a3-3346-4878-825d-951c6624c201",
+    "station_code": "JU",
+    "alias_name": "JODHPUR",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "c807876f-24f8-4204-99cb-b3e3d65b0c38",
+    "station_code": "ADI",
+    "alias_name": "AHMEDABAD",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "ba4a5d57-5592-4a72-829c-bf04a032ada7",
+    "station_code": "ST",
+    "alias_name": "SURAT",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "7119896d-a925-46f0-8d9d-2f1531a17ad0",
+    "station_code": "BRC",
+    "alias_name": "VADODARA",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "6ae1fbc3-18e4-4cb7-9109-8b60511e53dd",
+    "station_code": "BRC",
+    "alias_name": "BARODA",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "1272d9c4-6529-4e42-a9f4-63da07b8096b",
+    "station_code": "RJT",
+    "alias_name": "RAJKOT",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "a2249260-35b8-46b9-a85b-9815aa18b0fd",
+    "station_code": "ASR",
+    "alias_name": "AMRITSAR",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "70804a54-d864-4960-80ea-9a25d1dcc771",
+    "station_code": "LDH",
+    "alias_name": "LUDHIANA",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "385a7b33-5c26-4975-b6f5-8ec7b28a8666",
+    "station_code": "CDG",
+    "alias_name": "CHANDIGARH",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "2a102faa-5b38-49ad-90c1-d13d53f42bbe",
+    "station_code": "DDN",
+    "alias_name": "DEHRADUN",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "d15b27ba-d6fa-40c8-90f1-1275c584db04",
+    "station_code": "HW",
+    "alias_name": "HARIDWAR",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "8a9612c5-9f0a-4be0-b426-1286447dd13f",
+    "station_code": "BGM",
+    "alias_name": "BELAGAVI",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "84cb67f2-b53c-45af-aee2-c28a863a147c",
+    "station_code": "UBL",
+    "alias_name": "HUBBALLI",
+    "approved_by": null,
+    "is_active": true,
+    "created_at": "2026-07-09T04:43:17.48629+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "a517e3a1-7d60-4e40-9007-c3cace7d99d0",
+    "station_code": "MAO",
+    "alias_name": "GOA",
+    "approved_by": "system_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T05:28:23.206262+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "c747af6b-341a-4a08-aad5-013e99413f80",
+    "station_code": "KRMI",
+    "alias_name": "GOA",
+    "approved_by": "system_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T05:28:23.276202+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "aca81629-c071-4e6a-ae93-d3dba8e1d37f",
+    "station_code": "VSG",
+    "alias_name": "GOA",
+    "approved_by": "system_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T05:28:23.335766+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "cd29b9f9-2b19-438e-936c-ace3062d4acd",
+    "station_code": "NDLS",
+    "alias_name": "DELHI",
+    "approved_by": "system_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T05:28:23.381603+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "dfc0099c-bce9-4746-b2ad-969f2c07d046",
+    "station_code": "DLI",
+    "alias_name": "DELHI",
+    "approved_by": "system_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T05:28:23.426533+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "0aee957d-f7ce-4139-b408-aeef310a0741",
+    "station_code": "NZM",
+    "alias_name": "DELHI",
+    "approved_by": "system_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T05:28:23.473372+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "de7cf22d-43c5-4459-97d7-f227faf24be6",
+    "station_code": "CSMT",
+    "alias_name": "MUMBAI",
+    "approved_by": "system_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T05:28:23.524044+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "d689da3c-5ddb-4789-adc5-457414e1a667",
+    "station_code": "LTT",
+    "alias_name": "MUMBAI",
+    "approved_by": "system_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T05:28:23.574842+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "7c2bd98c-517a-41f8-8b75-636067b54ad3",
+    "station_code": "BDTS",
+    "alias_name": "MUMBAI",
+    "approved_by": "system_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T05:28:23.620465+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "fc67945f-d523-42df-8640-183be9869e11",
+    "station_code": "MMCT",
+    "alias_name": "MUMBAI",
+    "approved_by": "system_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T05:28:23.664618+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "b0739549-729a-416f-9cce-cc1c3c205d97",
+    "station_code": "MS",
+    "alias_name": "CHENNAI",
+    "approved_by": "system_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T05:28:23.739961+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "9f67a793-49ca-49c9-812e-729ca2678c11",
+    "station_code": "SDAH",
+    "alias_name": "KOLKATA",
+    "approved_by": "system_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T05:28:23.812075+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "f75002e7-ac33-4014-abd7-c4985512296d",
+    "station_code": "KOAA",
+    "alias_name": "KOLKATA",
+    "approved_by": "system_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T05:28:23.86326+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "fa983e15-7d82-4b49-ae2c-4df3a3d455d6",
+    "station_code": "SHM",
+    "alias_name": "KOLKATA",
+    "approved_by": "system_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T05:28:23.907269+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "3b99e1e3-5cb6-412b-bf63-7a8407ec4e48",
+    "station_code": "YPR",
+    "alias_name": "BANGALORE",
+    "approved_by": "system_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T05:28:23.9788+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "a5a69199-a9fb-4d9a-99d7-e5d2d4422c6e",
+    "station_code": "SMVB",
+    "alias_name": "BANGALORE",
+    "approved_by": "system_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T05:28:24.027604+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "5a1435af-d17b-4796-bf04-3d14fad127b3",
+    "station_code": "YPR",
+    "alias_name": "BENGALURU",
+    "approved_by": "system_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T05:28:24.09987+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "c3134fb4-9104-49ec-a3b2-5aa39ed1acde",
+    "station_code": "SMVB",
+    "alias_name": "BENGALURU",
+    "approved_by": "system_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T05:28:24.147546+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "b0525669-f12d-4bd7-bc17-8c939774746b",
+    "station_code": "MAO",
+    "alias_name": "MADGAON",
+    "approved_by": "system_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T05:28:24.237178+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "67629358-75d5-4472-9e5e-bf942509b806",
+    "station_code": "MAO",
+    "alias_name": "MARGAO",
+    "approved_by": "system_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T05:28:24.279128+00:00",
+    "is_approved": false,
+    "status": "pending"
+  },
+  {
+    "id": "d57ce5b3-e8ac-42e5-9321-31108402078e",
+    "station_code": "LTT",
+    "alias_name": "BOMBAY",
+    "approved_by": "system_stationmapper_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T12:31:03.789874+00:00",
+    "is_approved": true,
+    "status": "approved"
+  },
+  {
+    "id": "15b9307f-886b-4656-a1bb-7fb24fd774ca",
+    "station_code": "BDTS",
+    "alias_name": "BOMBAY",
+    "approved_by": "system_stationmapper_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T12:31:03.789874+00:00",
+    "is_approved": true,
+    "status": "approved"
+  },
+  {
+    "id": "db87ecc1-42c1-4e7b-8bb6-21053c689b83",
+    "station_code": "DR",
+    "alias_name": "BOMBAY",
+    "approved_by": "system_stationmapper_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T12:31:03.789874+00:00",
+    "is_approved": true,
+    "status": "approved"
+  },
+  {
+    "id": "b8f47452-e4ac-4328-91cd-0e68cd5542aa",
+    "station_code": "DDR",
+    "alias_name": "BOMBAY",
+    "approved_by": "system_stationmapper_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T12:31:03.789874+00:00",
+    "is_approved": true,
+    "status": "approved"
+  },
+  {
+    "id": "ea1da52a-1989-4988-958d-c3d16864b768",
+    "station_code": "MMCT",
+    "alias_name": "BOMBAY",
+    "approved_by": "system_stationmapper_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T12:31:03.789874+00:00",
+    "is_approved": true,
+    "status": "approved"
+  },
+  {
+    "id": "678158ff-fd07-486b-8cb4-585733f9dacb",
+    "station_code": "DR",
+    "alias_name": "MUMBAI",
+    "approved_by": "system_stationmapper_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T12:31:03.789874+00:00",
+    "is_approved": true,
+    "status": "approved"
+  },
+  {
+    "id": "4dd209db-4c9d-4b88-820a-5aa12553d177",
+    "station_code": "DDR",
+    "alias_name": "MUMBAI",
+    "approved_by": "system_stationmapper_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T12:31:03.789874+00:00",
+    "is_approved": true,
+    "status": "approved"
+  },
+  {
+    "id": "6e9c7f96-da6b-46e7-a58b-f0a346148d5a",
+    "station_code": "DR",
+    "alias_name": "DADAR",
+    "approved_by": "system_stationmapper_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T12:31:03.789874+00:00",
+    "is_approved": true,
+    "status": "approved"
+  },
+  {
+    "id": "c4a16cee-2bdf-4401-bfa7-bbd851d2f9e8",
+    "station_code": "DDR",
+    "alias_name": "DADAR",
+    "approved_by": "system_stationmapper_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T12:31:03.789874+00:00",
+    "is_approved": true,
+    "status": "approved"
+  },
+  {
+    "id": "3c2900a9-39fa-48d4-a51a-30b315585184",
+    "station_code": "NZM",
+    "alias_name": "NEW DELHI",
+    "approved_by": "system_stationmapper_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T12:31:03.789874+00:00",
+    "is_approved": true,
+    "status": "approved"
+  },
+  {
+    "id": "f34f0ff9-88d5-4d0c-a0e2-e40af24ea811",
+    "station_code": "DLI",
+    "alias_name": "NEW DELHI",
+    "approved_by": "system_stationmapper_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T12:31:03.789874+00:00",
+    "is_approved": true,
+    "status": "approved"
+  },
+  {
+    "id": "51f71b41-8580-4821-9d88-48d9b634a307",
+    "station_code": "SBC",
+    "alias_name": "BENGLURU",
+    "approved_by": "system_stationmapper_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T12:31:03.789874+00:00",
+    "is_approved": true,
+    "status": "approved"
+  },
+  {
+    "id": "33cb47cb-0ed0-4e1a-b1d1-760d37a760b0",
+    "station_code": "YPR",
+    "alias_name": "BENGLURU",
+    "approved_by": "system_stationmapper_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T12:31:03.789874+00:00",
+    "is_approved": true,
+    "status": "approved"
+  },
+  {
+    "id": "c0fe400b-a7f6-4101-a499-1413233b14e0",
+    "station_code": "SMVB",
+    "alias_name": "BENGLURU",
+    "approved_by": "system_stationmapper_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T12:31:03.789874+00:00",
+    "is_approved": true,
+    "status": "approved"
+  },
+  {
+    "id": "8a7e81db-ab43-43bb-9795-dc61f69e59f6",
+    "station_code": "HWH",
+    "alias_name": "KOLKATTA",
+    "approved_by": "system_stationmapper_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T12:31:03.789874+00:00",
+    "is_approved": true,
+    "status": "approved"
+  },
+  {
+    "id": "11f1bfe8-d5d1-40a1-9741-300aaa6fc65a",
+    "station_code": "HYB",
+    "alias_name": "HYDERABAD",
+    "approved_by": "system_stationmapper_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T12:31:03.789874+00:00",
+    "is_approved": true,
+    "status": "approved"
+  },
+  {
+    "id": "569aaa06-b28c-4608-9365-58bc5767e498",
+    "station_code": "KCG",
+    "alias_name": "HYDERABAD",
+    "approved_by": "system_stationmapper_migration",
+    "is_active": true,
+    "created_at": "2026-07-09T12:31:03.789874+00:00",
+    "is_approved": true,
+    "status": "approved"
+  }
+]

@@ -1,0 +1,1172 @@
+[
+  {
+    "id": "bb3b4c2d-5299-4697-81f9-55ec16a74700",
+    "query": "nlsd",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-06-12T13:25:34.406+00:00",
+    "status": "pending",
+    "created_at": "2026-06-12T13:25:34.447145+00:00"
+  },
+  {
+    "id": "fd86a59f-5068-4b54-9543-abd0d9813756",
+    "query": "gdag",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-06-12T13:42:41.814+00:00",
+    "status": "pending",
+    "created_at": "2026-06-12T13:42:41.867555+00:00"
+  },
+  {
+    "id": "2497f9f2-3514-49ae-b17e-3b21fc73e20a",
+    "query": "csrt",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-06-12T13:42:47.298+00:00",
+    "status": "pending",
+    "created_at": "2026-06-12T13:42:47.338453+00:00"
+  },
+  {
+    "id": "f89bf255-8ac2-4fe0-9169-e447da9d3a96",
+    "query": "Cal bur",
+    "user_id": "bbc28408-ab5b-4a05-b7b7-c37c4ae38033",
+    "count": 1,
+    "last_seen": "2026-06-23T11:08:15.617+00:00",
+    "status": "pending",
+    "created_at": "2026-06-23T11:08:15.669413+00:00"
+  },
+  {
+    "id": "5bc67f2e-b71b-47f7-9b20-60317043ab35",
+    "query": "Prayagr",
+    "user_id": "da3d1e93-81d1-4e20-b042-037fa969927a",
+    "count": 1,
+    "last_seen": "2026-06-14T05:45:09.384+00:00",
+    "status": "pending",
+    "created_at": "2026-06-14T05:45:09.451683+00:00"
+  },
+  {
+    "id": "4246b284-2ac7-40d9-bf4d-88838aea37cc",
+    "query": "Prayagra",
+    "user_id": "da3d1e93-81d1-4e20-b042-037fa969927a",
+    "count": 1,
+    "last_seen": "2026-06-14T05:45:09.535+00:00",
+    "status": "pending",
+    "created_at": "2026-06-14T05:45:09.585988+00:00"
+  },
+  {
+    "id": "8991d58f-c9a5-403e-a48e-49e6ff08cbcc",
+    "query": "Prayagraj",
+    "user_id": "da3d1e93-81d1-4e20-b042-037fa969927a",
+    "count": 1,
+    "last_seen": "2026-06-14T05:45:09.684+00:00",
+    "status": "pending",
+    "created_at": "2026-06-14T05:45:09.725969+00:00"
+  },
+  {
+    "id": "3d733e4b-dbf5-47a7-9ef9-f459a09a8227",
+    "query": "Nsdl",
+    "user_id": "c7a7bfd0-c961-43b1-9cc7-11c9ddeb26c1",
+    "count": 1,
+    "last_seen": "2026-06-14T10:09:14.356+00:00",
+    "status": "pending",
+    "created_at": "2026-06-14T10:09:14.407646+00:00"
+  },
+  {
+    "id": "813f44a5-f1a1-4a55-86b1-ec918f513c2c",
+    "query": "Ajmar",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-06-14T18:45:26.41+00:00",
+    "status": "pending",
+    "created_at": "2026-06-14T18:45:26.496959+00:00"
+  },
+  {
+    "id": "b3411d1e-aff0-4ceb-b1da-4f408d1b51a2",
+    "query": "juo",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-06-15T04:15:57.578+00:00",
+    "status": "pending",
+    "created_at": "2026-06-15T04:15:57.657209+00:00"
+  },
+  {
+    "id": "794ca9fd-3942-4b03-9777-859997a030cc",
+    "query": "Kalburg",
+    "user_id": "bbc28408-ab5b-4a05-b7b7-c37c4ae38033",
+    "count": 1,
+    "last_seen": "2026-06-23T11:10:14.215+00:00",
+    "status": "pending",
+    "created_at": "2026-06-23T11:10:14.434589+00:00"
+  },
+  {
+    "id": "2af5fd2b-6523-4e3d-80f9-eb085c8b2ebb",
+    "query": "ltur",
+    "user_id": "cb0f80e2-14af-4200-8bcb-86288f62df09",
+    "count": 1,
+    "last_seen": "2026-06-15T15:43:57.606+00:00",
+    "status": "pending",
+    "created_at": "2026-06-15T15:43:57.682696+00:00"
+  },
+  {
+    "id": "52e5eb7b-1730-4ac8-9f04-3d12a3bfe08b",
+    "query": "lrt",
+    "user_id": "cb0f80e2-14af-4200-8bcb-86288f62df09",
+    "count": 1,
+    "last_seen": "2026-06-15T15:43:57.914+00:00",
+    "status": "pending",
+    "created_at": "2026-06-15T15:43:57.960601+00:00"
+  },
+  {
+    "id": "f956b22f-eac2-4a4d-8ec6-4d479b744278",
+    "query": "ltu",
+    "user_id": "cb0f80e2-14af-4200-8bcb-86288f62df09",
+    "count": 1,
+    "last_seen": "2026-06-15T15:43:58.149+00:00",
+    "status": "pending",
+    "created_at": "2026-06-15T15:43:58.189048+00:00"
+  },
+  {
+    "id": "1efa3a82-2e3c-4e7e-b883-9a457693068a",
+    "query": "Kalbu",
+    "user_id": "bbc28408-ab5b-4a05-b7b7-c37c4ae38033",
+    "count": 2,
+    "last_seen": "2026-06-23T11:10:14.602+00:00",
+    "status": "pending",
+    "created_at": "2026-06-22T15:26:30.002807+00:00"
+  },
+  {
+    "id": "584fabcf-a710-41c1-8005-0b5aca0bdc24",
+    "query": "21",
+    "user_id": "646baefd-79e3-49cc-9b8a-2597f177b4ab",
+    "count": 1,
+    "last_seen": "2026-06-20T16:07:34.634+00:00",
+    "status": "pending",
+    "created_at": "2026-06-20T16:07:34.739694+00:00"
+  },
+  {
+    "id": "e8696eed-8cef-440a-b563-f212c035bd28",
+    "query": "215",
+    "user_id": "646baefd-79e3-49cc-9b8a-2597f177b4ab",
+    "count": 1,
+    "last_seen": "2026-06-20T16:07:37.578+00:00",
+    "status": "pending",
+    "created_at": "2026-06-20T16:07:37.674065+00:00"
+  },
+  {
+    "id": "be1ef753-91a4-4fd4-9659-072e0307aabb",
+    "query": "2156",
+    "user_id": "646baefd-79e3-49cc-9b8a-2597f177b4ab",
+    "count": 1,
+    "last_seen": "2026-06-20T16:07:37.785+00:00",
+    "status": "pending",
+    "created_at": "2026-06-20T16:07:37.829086+00:00"
+  },
+  {
+    "id": "719c3ed8-f3f3-4457-b84c-7740c93bc89c",
+    "query": "21567",
+    "user_id": "646baefd-79e3-49cc-9b8a-2597f177b4ab",
+    "count": 1,
+    "last_seen": "2026-06-20T16:07:38.06+00:00",
+    "status": "pending",
+    "created_at": "2026-06-20T16:07:38.102413+00:00"
+  },
+  {
+    "id": "993f0ec0-93d5-4c8e-8925-ccdff7879712",
+    "query": "216",
+    "user_id": "646baefd-79e3-49cc-9b8a-2597f177b4ab",
+    "count": 1,
+    "last_seen": "2026-06-20T16:07:41.704+00:00",
+    "status": "pending",
+    "created_at": "2026-06-20T16:07:41.772108+00:00"
+  },
+  {
+    "id": "ad69426d-e89c-41d8-8d48-6b0db73e7a29",
+    "query": "2167",
+    "user_id": "646baefd-79e3-49cc-9b8a-2597f177b4ab",
+    "count": 1,
+    "last_seen": "2026-06-20T16:07:41.948+00:00",
+    "status": "pending",
+    "created_at": "2026-06-20T16:07:41.998148+00:00"
+  },
+  {
+    "id": "b6a9a62a-50f7-4460-bdf7-95c29f4285ba",
+    "query": "Badoh",
+    "user_id": "646baefd-79e3-49cc-9b8a-2597f177b4ab",
+    "count": 1,
+    "last_seen": "2026-06-20T16:08:20.251+00:00",
+    "status": "pending",
+    "created_at": "2026-06-20T16:08:20.294938+00:00"
+  },
+  {
+    "id": "4e3a00e0-4de6-460f-bfc1-9a20d75fdd58",
+    "query": "Badohi",
+    "user_id": "646baefd-79e3-49cc-9b8a-2597f177b4ab",
+    "count": 1,
+    "last_seen": "2026-06-20T16:08:20.515+00:00",
+    "status": "pending",
+    "created_at": "2026-06-20T16:08:20.555688+00:00"
+  },
+  {
+    "id": "2228a84b-d5c8-4457-9b41-42e7d5fda67c",
+    "query": "Bbb",
+    "user_id": "646baefd-79e3-49cc-9b8a-2597f177b4ab",
+    "count": 1,
+    "last_seen": "2026-06-20T16:08:28.558+00:00",
+    "status": "pending",
+    "created_at": "2026-06-20T16:08:28.640763+00:00"
+  },
+  {
+    "id": "9482d811-8e07-4439-847e-45993fa0f79f",
+    "query": "Bbbs",
+    "user_id": "646baefd-79e3-49cc-9b8a-2597f177b4ab",
+    "count": 1,
+    "last_seen": "2026-06-20T16:08:29.341+00:00",
+    "status": "pending",
+    "created_at": "2026-06-20T16:08:29.38162+00:00"
+  },
+  {
+    "id": "24d35d46-5f79-4788-bcc6-e97b6ef0ba28",
+    "query": "NDLSN",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-21T06:17:02.85+00:00",
+    "status": "pending",
+    "created_at": "2026-06-21T06:17:02.891246+00:00"
+  },
+  {
+    "id": "a245ed25-40c3-47f5-8390-ff6ce3382b96",
+    "query": "NDLSND",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-21T06:17:02.864+00:00",
+    "status": "pending",
+    "created_at": "2026-06-21T06:17:02.915858+00:00"
+  },
+  {
+    "id": "3859374b-8dcf-48aa-89a3-75003b9df65f",
+    "query": "NDLSNDL",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-21T06:17:02.825+00:00",
+    "status": "pending",
+    "created_at": "2026-06-21T06:17:02.913941+00:00"
+  },
+  {
+    "id": "536e6ef6-0f20-4f2b-a58e-d52fb91f1ccc",
+    "query": "NDLSNDLS",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-21T06:17:02.883+00:00",
+    "status": "pending",
+    "created_at": "2026-06-21T06:17:02.920153+00:00"
+  },
+  {
+    "id": "3ddfdc03-fac0-4aa1-aeb4-a90de07a04f2",
+    "query": "Klbg",
+    "user_id": "bbc28408-ab5b-4a05-b7b7-c37c4ae38033",
+    "count": 1,
+    "last_seen": "2026-06-23T11:10:22.149+00:00",
+    "status": "pending",
+    "created_at": "2026-06-23T11:10:22.385191+00:00"
+  },
+  {
+    "id": "0ecca965-ead7-4287-8b7d-6364057f5fd1",
+    "query": "Banara",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-23T14:13:52.828+00:00",
+    "status": "pending",
+    "created_at": "2026-06-23T14:13:52.890825+00:00"
+  },
+  {
+    "id": "08b17da6-20ac-461d-9e4f-3a7be6a4a675",
+    "query": "Solapur (SUR",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-21T10:45:53.991+00:00",
+    "status": "pending",
+    "created_at": "2026-06-21T10:45:54.041768+00:00"
+  },
+  {
+    "id": "ed305b8e-e7b1-4eb1-9fef-d87017925904",
+    "query": "Solapur (SU",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-21T10:45:53.993+00:00",
+    "status": "pending",
+    "created_at": "2026-06-21T10:45:54.042041+00:00"
+  },
+  {
+    "id": "0a58f328-56df-46af-839b-09c546d52f75",
+    "query": "Solapur (",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-21T10:45:53.992+00:00",
+    "status": "pending",
+    "created_at": "2026-06-21T10:45:54.040686+00:00"
+  },
+  {
+    "id": "d4fbfabd-4be6-4449-8fc2-cb44a29796cc",
+    "query": "Solapur (SUR)",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-21T10:45:53.996+00:00",
+    "status": "pending",
+    "created_at": "2026-06-21T10:45:54.284369+00:00"
+  },
+  {
+    "id": "ed4426a4-d5fb-47e2-a953-5f2597900ab7",
+    "query": "Solapur (S",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-21T10:45:54.08+00:00",
+    "status": "pending",
+    "created_at": "2026-06-21T10:45:54.291038+00:00"
+  },
+  {
+    "id": "b98a5a39-f63b-48fd-9bdf-f5e957346cbd",
+    "query": "Banaras",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-23T14:13:53.659+00:00",
+    "status": "pending",
+    "created_at": "2026-06-23T14:13:53.718112+00:00"
+  },
+  {
+    "id": "a56439ad-1237-4ef5-bd56-48d046b16657",
+    "query": "CSMTCSMTcs",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-22T04:56:41.155+00:00",
+    "status": "pending",
+    "created_at": "2026-06-22T04:56:41.204246+00:00"
+  },
+  {
+    "id": "798c2639-b5fe-4da7-a0a3-c29150ad61a8",
+    "query": "CSMTCSMTcst",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-22T04:56:41.422+00:00",
+    "status": "pending",
+    "created_at": "2026-06-22T04:56:41.460008+00:00"
+  },
+  {
+    "id": "5fd9b1c6-025c-4d8a-8d07-67cf3afdc30d",
+    "query": "CSMTCSMTcstm",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-22T04:56:41.535+00:00",
+    "status": "pending",
+    "created_at": "2026-06-22T04:56:41.580314+00:00"
+  },
+  {
+    "id": "8834a335-b144-484e-8abc-de8393904199",
+    "query": "SURSU",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-22T04:56:53.533+00:00",
+    "status": "pending",
+    "created_at": "2026-06-22T04:56:53.571687+00:00"
+  },
+  {
+    "id": "042f66c2-d987-4901-a339-c976519a0204",
+    "query": "SURSUR",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-22T04:56:53.565+00:00",
+    "status": "pending",
+    "created_at": "2026-06-22T04:56:53.608772+00:00"
+  },
+  {
+    "id": "e4a674b4-5073-4f4a-9f4b-3a58c9ed749f",
+    "query": "MUMBAI CSCSMT (CSTM)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-03T11:57:01.255+00:00",
+    "status": "pending",
+    "created_at": "2026-07-03T11:57:01.30241+00:00"
+  },
+  {
+    "id": "aca625e3-ee3f-487b-bb3e-f672da7085ed",
+    "query": "nlds",
+    "user_id": "cb0f80e2-14af-4200-8bcb-86288f62df09",
+    "count": 1,
+    "last_seen": "2026-06-24T07:33:20.112+00:00",
+    "status": "pending",
+    "created_at": "2026-06-24T07:33:20.18688+00:00"
+  },
+  {
+    "id": "7bbc1474-f07d-43b2-bb95-6f07be01dba1",
+    "query": "BSRBSRBS",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-02T05:40:05.524+00:00",
+    "status": "pending",
+    "created_at": "2026-07-02T05:40:05.607351+00:00"
+  },
+  {
+    "id": "9c8a7e18-59fd-44c9-98ce-aa4318e77baf",
+    "query": "mumbs",
+    "user_id": "cb0f80e2-14af-4200-8bcb-86288f62df09",
+    "count": 1,
+    "last_seen": "2026-06-24T07:38:44.34+00:00",
+    "status": "pending",
+    "created_at": "2026-06-24T07:38:44.38529+00:00"
+  },
+  {
+    "id": "92749fd5-376a-4d2f-b864-216c670888f0",
+    "query": "GDGGDG",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-22T08:52:31.081+00:00",
+    "status": "pending",
+    "created_at": "2026-06-22T08:52:31.154058+00:00"
+  },
+  {
+    "id": "3ae3b395-5842-4009-b549-540559cf41be",
+    "query": "GDGG",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-22T08:52:31.185+00:00",
+    "status": "pending",
+    "created_at": "2026-06-22T08:52:31.244517+00:00"
+  },
+  {
+    "id": "56c0ff87-6d48-43c1-8f11-e9eb3de9616f",
+    "query": "GDGGD",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-06-22T08:52:31.009+00:00",
+    "status": "pending",
+    "created_at": "2026-06-22T08:52:31.27358+00:00"
+  },
+  {
+    "id": "c0c95398-ba2c-4005-a476-45a2d8be1f01",
+    "query": "mumbsa",
+    "user_id": "cb0f80e2-14af-4200-8bcb-86288f62df09",
+    "count": 1,
+    "last_seen": "2026-06-24T07:38:44.294+00:00",
+    "status": "pending",
+    "created_at": "2026-06-24T07:38:44.397419+00:00"
+  },
+  {
+    "id": "2388e800-ced2-4352-9c98-1b7345ba1b70",
+    "query": "HWHHWH",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 2,
+    "last_seen": "2026-06-23T16:22:50.206+00:00",
+    "status": "pending",
+    "created_at": "2026-06-23T16:12:19.96838+00:00"
+  },
+  {
+    "id": "22244803-3a40-4f4e-96b6-7cc4542ce5f2",
+    "query": "HWHHW",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 2,
+    "last_seen": "2026-06-23T16:22:50.226+00:00",
+    "status": "pending",
+    "created_at": "2026-06-23T16:12:19.968043+00:00"
+  },
+  {
+    "id": "063bc44a-15a3-431b-ac8f-d1b6a60d8ed2",
+    "query": "HWHH",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 2,
+    "last_seen": "2026-06-23T16:22:50.233+00:00",
+    "status": "pending",
+    "created_at": "2026-06-23T16:12:19.988487+00:00"
+  },
+  {
+    "id": "f76d1552-e286-4c80-8ff0-65aa30f004e6",
+    "query": "Kulb",
+    "user_id": "bbc28408-ab5b-4a05-b7b7-c37c4ae38033",
+    "count": 1,
+    "last_seen": "2026-06-22T15:27:01.265+00:00",
+    "status": "pending",
+    "created_at": "2026-06-22T15:27:01.399106+00:00"
+  },
+  {
+    "id": "a1efda53-7dbc-4b41-b5e7-71fd6703fbfc",
+    "query": "Kulo",
+    "user_id": "bbc28408-ab5b-4a05-b7b7-c37c4ae38033",
+    "count": 1,
+    "last_seen": "2026-06-22T15:27:06.587+00:00",
+    "status": "pending",
+    "created_at": "2026-06-22T15:27:06.699865+00:00"
+  },
+  {
+    "id": "71470a98-8175-4c96-9024-75ac74e3cf98",
+    "query": "Kalb",
+    "user_id": "bbc28408-ab5b-4a05-b7b7-c37c4ae38033",
+    "count": 2,
+    "last_seen": "2026-06-23T11:08:15.309+00:00",
+    "status": "pending",
+    "created_at": "2026-06-22T15:26:29.495079+00:00"
+  },
+  {
+    "id": "c78b705a-5b5c-47ec-94cc-a35e12dc99b6",
+    "query": "Kalburgi",
+    "user_id": "bbc28408-ab5b-4a05-b7b7-c37c4ae38033",
+    "count": 1,
+    "last_seen": "2026-06-23T11:08:15.384+00:00",
+    "status": "pending",
+    "created_at": "2026-06-23T11:08:15.425316+00:00"
+  },
+  {
+    "id": "8f87391b-f1c8-4d42-acb9-b558bfe1f833",
+    "query": "Kalbur",
+    "user_id": "bbc28408-ab5b-4a05-b7b7-c37c4ae38033",
+    "count": 1,
+    "last_seen": "2026-06-23T11:08:15.421+00:00",
+    "status": "pending",
+    "created_at": "2026-06-23T11:08:15.463712+00:00"
+  },
+  {
+    "id": "56561583-82b2-4bbc-886e-97655e0700d4",
+    "query": "BSRBSRBSR",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-02T05:40:05.607+00:00",
+    "status": "pending",
+    "created_at": "2026-07-02T05:40:05.651478+00:00"
+  },
+  {
+    "id": "86250c81-df5b-49dd-98cd-264bd34aec25",
+    "query": "BSRBSRB",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-02T05:40:05.681+00:00",
+    "status": "pending",
+    "created_at": "2026-07-02T05:40:05.724959+00:00"
+  },
+  {
+    "id": "8e0b4420-b2f1-49e8-a9f3-647a2a4955dd",
+    "query": "smvd",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-02T15:36:44.697+00:00",
+    "status": "pending",
+    "created_at": "2026-07-02T15:36:44.785635+00:00"
+  },
+  {
+    "id": "80c84be3-c77f-4b35-b8fe-01ad5e56500c",
+    "query": "smvdk",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-02T15:36:45.027+00:00",
+    "status": "pending",
+    "created_at": "2026-07-02T15:36:45.243538+00:00"
+  },
+  {
+    "id": "b74734f0-435e-4835-b759-9a499c630d0c",
+    "query": "CSMTCSM",
+    "user_id": null,
+    "count": 8,
+    "last_seen": "2026-07-08T07:23:47.386+00:00",
+    "status": "pending",
+    "created_at": "2026-06-22T04:55:40.490351+00:00"
+  },
+  {
+    "id": "38c12824-b493-4a46-9a61-df8c0d9ab598",
+    "query": "BSRB",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-02T05:39:55.507+00:00",
+    "status": "pending",
+    "created_at": "2026-07-02T05:39:55.6061+00:00"
+  },
+  {
+    "id": "dee65136-6278-4072-9900-86647bfefbf3",
+    "query": "BSRBSR",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-02T05:39:55.604+00:00",
+    "status": "pending",
+    "created_at": "2026-07-02T05:39:55.659887+00:00"
+  },
+  {
+    "id": "cc52f612-1042-4252-baed-b6c3ca17ea85",
+    "query": "BSRBS",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-02T05:39:55.63+00:00",
+    "status": "pending",
+    "created_at": "2026-07-02T05:39:55.688446+00:00"
+  },
+  {
+    "id": "5850b8c4-229a-419e-8456-0681fdbb6180",
+    "query": "CSMTCSMTc",
+    "user_id": null,
+    "count": 2,
+    "last_seen": "2026-07-06T08:23:39.749+00:00",
+    "status": "pending",
+    "created_at": "2026-06-22T04:56:40.820086+00:00"
+  },
+  {
+    "id": "0fbc02cf-a366-4b20-a687-d31a4d5e98be",
+    "query": "gadaf",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 2,
+    "last_seen": "2026-07-07T14:55:59.856+00:00",
+    "status": "pending",
+    "created_at": "2026-07-01T07:01:52.937524+00:00"
+  },
+  {
+    "id": "4087c90b-6beb-4379-b8fc-4dd645a7b017",
+    "query": "HWH`",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-03T06:44:56.54+00:00",
+    "status": "pending",
+    "created_at": "2026-07-03T06:44:56.621431+00:00"
+  },
+  {
+    "id": "92542618-8bbe-43ea-b6e3-42f40ed5483f",
+    "query": "CSMTCSMT",
+    "user_id": null,
+    "count": 8,
+    "last_seen": "2026-07-08T07:23:47.586+00:00",
+    "status": "pending",
+    "created_at": "2026-06-22T04:55:40.402879+00:00"
+  },
+  {
+    "id": "8a40de04-4534-42c4-a48f-1386bb6eb142",
+    "query": "MUMBAI CSCS (CSTM)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-03T11:57:01.279+00:00",
+    "status": "pending",
+    "created_at": "2026-07-03T11:57:01.324036+00:00"
+  },
+  {
+    "id": "53a4522e-240f-4ffb-8b75-4e49671e4d30",
+    "query": "MUMBAI CSC (CSTM)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-03T11:57:01.292+00:00",
+    "status": "pending",
+    "created_at": "2026-07-03T11:57:01.340719+00:00"
+  },
+  {
+    "id": "59b43fe5-12aa-47d7-a866-b9225ffb3530",
+    "query": "MUMBAI CS (CSTM)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-03T11:57:01.066+00:00",
+    "status": "pending",
+    "created_at": "2026-07-03T11:57:01.376465+00:00"
+  },
+  {
+    "id": "9b71b73a-6a81-4659-b188-15e4ada63118",
+    "query": "MUMBAI CSCSM (CSTM)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-03T11:57:01.504+00:00",
+    "status": "pending",
+    "created_at": "2026-07-03T11:57:01.544874+00:00"
+  },
+  {
+    "id": "9e603a81-d7f5-4235-ad29-b8a8b6afbdc8",
+    "query": "CSMTC",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 9,
+    "last_seen": "2026-07-08T07:23:47.588+00:00",
+    "status": "pending",
+    "created_at": "2026-06-21T08:10:32.706042+00:00"
+  },
+  {
+    "id": "4a1b7893-7c78-420e-929b-8011f73e90f6",
+    "query": "Instantly analyze historical confirmation trends and forecast the exact probability of your waitlisted ticket getting confirmed.",
+    "user_id": "7ce9ea19-fd33-4639-aab3-850cacf477ea",
+    "count": 1,
+    "last_seen": "2026-07-11T15:52:52.867+00:00",
+    "status": "pending",
+    "created_at": "2026-07-11T15:52:52.982413+00:00"
+  },
+  {
+    "id": "580836cc-2a9a-42af-a6bf-9113baa0067e",
+    "query": "Anupo",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-11T23:38:58.42+00:00",
+    "status": "pending",
+    "created_at": "2026-07-11T23:38:58.461889+00:00"
+  },
+  {
+    "id": "88f62697-9efa-491e-8652-d7a7764a6fca",
+    "query": "KASARAGOD (KG",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-07T05:13:17.691+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T05:13:17.753596+00:00"
+  },
+  {
+    "id": "13fdc8d3-8137-4f00-b29d-59fc792de13a",
+    "query": "KASARAGOD (KGQ)",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-07T05:13:17.69+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T05:13:17.749998+00:00"
+  },
+  {
+    "id": "50766479-753c-4dc1-bac7-e6b9bb1cebc7",
+    "query": "KASARAGOD (",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-07T05:13:17.828+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T05:13:17.872914+00:00"
+  },
+  {
+    "id": "b1a49e62-3133-4310-b9b5-f83d0c182def",
+    "query": "KASARAGOD (K",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-07T05:13:17.852+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T05:13:17.894545+00:00"
+  },
+  {
+    "id": "580913c7-5a74-47cd-aa40-3e32af9792a9",
+    "query": "KASARAGOD (KGQ",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-07T05:13:17.948+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T05:13:17.994606+00:00"
+  },
+  {
+    "id": "48bc7e1f-19fa-4c59-b954-a81cf12aaa42",
+    "query": "d=",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-12T12:45:03.465+00:00",
+    "status": "pending",
+    "created_at": "2026-07-12T12:45:03.698108+00:00"
+  },
+  {
+    "id": "d68a9913-c4ad-4094-89eb-c3c7a6c94d64",
+    "query": "d=e",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-12T12:45:03.652+00:00",
+    "status": "pending",
+    "created_at": "2026-07-12T12:45:03.704193+00:00"
+  },
+  {
+    "id": "7399b408-319f-4929-9618-5f1c1e9515b8",
+    "query": "madgo",
+    "user_id": "7ce9ea19-fd33-4639-aab3-850cacf477ea",
+    "count": 1,
+    "last_seen": "2026-07-13T09:30:36.718+00:00",
+    "status": "pending",
+    "created_at": "2026-07-13T09:30:36.814737+00:00"
+  },
+  {
+    "id": "c1dfb5a7-55a2-4c90-bffa-be57b199ab64",
+    "query": "Cdt",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-13T11:25:11.074+00:00",
+    "status": "pending",
+    "created_at": "2026-07-13T11:25:11.284004+00:00"
+  },
+  {
+    "id": "d8dee1ac-4b3a-47e6-9ed6-3e74da6f7808",
+    "query": "MUMBAI CST (C",
+    "user_id": null,
+    "count": 3,
+    "last_seen": "2026-07-07T06:30:40.925+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T05:11:24.830666+00:00"
+  },
+  {
+    "id": "0244d926-0c19-42c4-95a8-b81f264cb621",
+    "query": "MUMBAI CST (CSTM",
+    "user_id": null,
+    "count": 3,
+    "last_seen": "2026-07-07T06:30:40.937+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T05:11:24.419052+00:00"
+  },
+  {
+    "id": "bf8699df-6e23-4f6e-9aa2-f063d6124aec",
+    "query": "MUMBAI CST (CS",
+    "user_id": null,
+    "count": 3,
+    "last_seen": "2026-07-07T06:30:40.819+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T05:11:24.863651+00:00"
+  },
+  {
+    "id": "852eeec5-b119-4f42-b06b-ef622c4c394d",
+    "query": "MUMBAI CST (CSTM)",
+    "user_id": null,
+    "count": 3,
+    "last_seen": "2026-07-07T06:30:40.964+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T05:11:24.664875+00:00"
+  },
+  {
+    "id": "2b848f17-b75f-47df-b8a5-6261faf184c4",
+    "query": "MUMBAI CST (",
+    "user_id": null,
+    "count": 3,
+    "last_seen": "2026-07-07T06:30:41.022+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T05:11:24.32061+00:00"
+  },
+  {
+    "id": "be4f1ee2-b545-4b81-af5b-1d38f33498d0",
+    "query": "MUMBAI CST (CST",
+    "user_id": null,
+    "count": 3,
+    "last_seen": "2026-07-07T06:30:41.14+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T05:11:24.233399+00:00"
+  },
+  {
+    "id": "74dc25ae-306b-4ce8-99e2-56939b805c67",
+    "query": "GADAG JN (",
+    "user_id": null,
+    "count": 3,
+    "last_seen": "2026-07-07T06:30:42.153+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T05:11:38.014251+00:00"
+  },
+  {
+    "id": "b81b12ff-907a-401c-90c1-d736a56eacbb",
+    "query": "GADAG JN (G",
+    "user_id": null,
+    "count": 3,
+    "last_seen": "2026-07-07T06:30:42.252+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T05:11:38.168676+00:00"
+  },
+  {
+    "id": "a0588547-4731-42ad-8d97-deec4e8c34fe",
+    "query": "GADAG JN (GDG)",
+    "user_id": null,
+    "count": 3,
+    "last_seen": "2026-07-07T06:30:42.253+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T05:11:38.094277+00:00"
+  },
+  {
+    "id": "e71779a7-aeaf-4520-ac07-171f52e8d263",
+    "query": "GADAG JN (GDG",
+    "user_id": null,
+    "count": 3,
+    "last_seen": "2026-07-07T06:30:42.308+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T05:11:38.190739+00:00"
+  },
+  {
+    "id": "0c2cf0fd-3948-48b6-91dc-5ae760d14c28",
+    "query": "GADAG JN (GD",
+    "user_id": null,
+    "count": 3,
+    "last_seen": "2026-07-07T06:30:42.354+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T05:11:38.144642+00:00"
+  },
+  {
+    "id": "82b82b5b-e089-4a11-a4a4-1911e785ad0e",
+    "query": "CSMTMumba",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-07T10:06:46.569+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T10:06:46.64496+00:00"
+  },
+  {
+    "id": "2b6ada39-2f19-4465-a84c-c6601b9a80e6",
+    "query": "CSMTM",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-07T10:06:46.693+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T10:06:46.744134+00:00"
+  },
+  {
+    "id": "0cdb3658-e917-4520-abfa-0dae207b3834",
+    "query": "CSMTMumb",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-07T10:06:46.57+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T10:06:46.844745+00:00"
+  },
+  {
+    "id": "2bc4ea21-0254-4ccc-8445-5c1951da513f",
+    "query": "CSMTMum",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-07T10:06:46.714+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T10:06:46.880575+00:00"
+  },
+  {
+    "id": "ef5f71b9-db35-4a2f-9192-95cff303b44f",
+    "query": "CSMTMu",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-07T10:06:46.882+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T10:06:46.929318+00:00"
+  },
+  {
+    "id": "bdf5920b-1662-462b-adc0-7aa855f57011",
+    "query": "CSMTMumbai",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-07T10:06:46.739+00:00",
+    "status": "pending",
+    "created_at": "2026-07-07T10:06:46.936388+00:00"
+  },
+  {
+    "id": "e456649d-cba2-4de0-ac6e-a409e0a1d220",
+    "query": "CSMT",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 34,
+    "last_seen": "2026-07-08T07:07:29.369+00:00",
+    "status": "pending",
+    "created_at": "2026-06-12T13:25:32.050927+00:00"
+  },
+  {
+    "id": "aee79f3b-efb3-4ad8-9a8e-798a1eaf731e",
+    "query": "CSMTCS",
+    "user_id": null,
+    "count": 8,
+    "last_seen": "2026-07-08T07:23:47.589+00:00",
+    "status": "pending",
+    "created_at": "2026-06-22T04:55:40.503216+00:00"
+  },
+  {
+    "id": "79a02a79-ac42-4411-8e32-7f89d4235092",
+    "query": "Cstm2",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-08T07:26:08.334+00:00",
+    "status": "pending",
+    "created_at": "2026-07-08T07:26:08.469537+00:00"
+  },
+  {
+    "id": "c13f6944-6827-4a29-86d3-477f25db6bff",
+    "query": "Cstm29",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-08T07:26:08.615+00:00",
+    "status": "pending",
+    "created_at": "2026-07-08T07:26:08.683873+00:00"
+  },
+  {
+    "id": "3e5d15ab-f4c5-4427-a339-9114362a40f7",
+    "query": "BELAGA",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-08T07:27:13.525+00:00",
+    "status": "pending",
+    "created_at": "2026-07-08T07:27:13.569897+00:00"
+  },
+  {
+    "id": "7b927064-fa22-44e6-b2a5-2a6284adf8ad",
+    "query": "BELAGAV",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-08T07:27:13.605+00:00",
+    "status": "pending",
+    "created_at": "2026-07-08T07:27:13.640592+00:00"
+  },
+  {
+    "id": "5a47c6ca-6584-425d-9aab-0fb70ff5be9b",
+    "query": "BELAGAVI",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-08T07:27:13.748+00:00",
+    "status": "pending",
+    "created_at": "2026-07-08T07:27:13.783527+00:00"
+  },
+  {
+    "id": "9bcce4d7-6b57-493b-9595-9aaae39e6e15",
+    "query": "LTTL",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-08T08:46:08.956+00:00",
+    "status": "pending",
+    "created_at": "2026-07-08T08:46:09.012593+00:00"
+  },
+  {
+    "id": "ebe7f5b8-80b4-402a-8f52-61da74e51cbb",
+    "query": "LTTLT",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-08T08:46:08.961+00:00",
+    "status": "pending",
+    "created_at": "2026-07-08T08:46:09.008921+00:00"
+  },
+  {
+    "id": "cc2705f8-e063-4b32-b00b-1d9027bedb8f",
+    "query": "LTTLTT",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-08T08:46:08.947+00:00",
+    "status": "pending",
+    "created_at": "2026-07-08T08:46:09.045967+00:00"
+  },
+  {
+    "id": "cf0c4255-b255-46db-80bc-9badb522bbb6",
+    "query": "Mumbai CentMumral",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-10T05:27:13.216+00:00",
+    "status": "pending",
+    "created_at": "2026-07-10T05:27:12.020074+00:00"
+  },
+  {
+    "id": "6619dcbe-94f3-454c-8c61-f85dcaa4f142",
+    "query": "Mumbai CentMumbral",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-10T05:27:13.179+00:00",
+    "status": "pending",
+    "created_at": "2026-07-10T05:27:12.015079+00:00"
+  },
+  {
+    "id": "bb772342-189a-4da5-a500-41283ec9ecbd",
+    "query": "Mumbai CentMural",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-10T05:27:13.288+00:00",
+    "status": "pending",
+    "created_at": "2026-07-10T05:27:12.086344+00:00"
+  },
+  {
+    "id": "7e3ad3f5-4521-4191-9e1b-6ad711314f80",
+    "query": "Mumbai CentMral",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-10T05:27:13.293+00:00",
+    "status": "pending",
+    "created_at": "2026-07-10T05:27:12.087622+00:00"
+  },
+  {
+    "id": "a8b5169b-9604-4541-9d9b-8b2b9a12f8ab",
+    "query": "Mumbai CentMumbairal",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-10T05:27:13.303+00:00",
+    "status": "pending",
+    "created_at": "2026-07-10T05:27:12.101449+00:00"
+  },
+  {
+    "id": "9712c7ca-83d8-4f01-8f04-4df0f7d30832",
+    "query": "Mumbai CentMumbaral",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-10T05:27:13.308+00:00",
+    "status": "pending",
+    "created_at": "2026-07-10T05:27:12.103931+00:00"
+  },
+  {
+    "id": "04fbec73-32fc-4da6-974d-2717e55849f1",
+    "query": "KOLKATTA",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-10T08:30:58.253+00:00",
+    "status": "pending",
+    "created_at": "2026-07-10T08:30:58.320147+00:00"
+  },
+  {
+    "id": "160a9f7d-dabb-440e-bd7b-4ff4afb6388b",
+    "query": "csc",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-10T13:45:37.767+00:00",
+    "status": "pending",
+    "created_at": "2026-07-10T13:45:37.986743+00:00"
+  },
+  {
+    "id": "d17ce6c7-09d4-453e-8cd8-62be038727eb",
+    "query": "LOKMANIYATIL",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-11T09:34:31.979+00:00",
+    "status": "pending",
+    "created_at": "2026-07-11T09:34:32.041147+00:00"
+  },
+  {
+    "id": "c6b6fc7b-20a5-4801-9daf-84e441c1775d",
+    "query": "LOKMANIYA",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-11T09:34:31.885+00:00",
+    "status": "pending",
+    "created_at": "2026-07-11T09:34:32.167384+00:00"
+  },
+  {
+    "id": "60118850-0ee8-4ce9-86df-c31f7f2d1a24",
+    "query": "LOKMANIYATILA",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-11T09:34:32.209+00:00",
+    "status": "pending",
+    "created_at": "2026-07-11T09:34:32.328448+00:00"
+  },
+  {
+    "id": "5213003c-0224-4125-9457-ceff6f152616",
+    "query": "LOKMANIYAT",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-11T09:34:32.49+00:00",
+    "status": "pending",
+    "created_at": "2026-07-11T09:34:32.627711+00:00"
+  },
+  {
+    "id": "c639a165-3358-4610-a41d-3acd256c2f80",
+    "query": "LOKMANIY",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-11T09:34:32.588+00:00",
+    "status": "pending",
+    "created_at": "2026-07-11T09:34:32.636578+00:00"
+  },
+  {
+    "id": "10b68f61-a740-4241-be73-0ef02b62e62b",
+    "query": "LOKMANIYATILAK",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-11T09:34:32.482+00:00",
+    "status": "pending",
+    "created_at": "2026-07-11T09:34:32.664273+00:00"
+  },
+  {
+    "id": "112a73a0-09ac-4320-a7bf-852d0164ebdc",
+    "query": "LOKMANI",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-11T09:34:33.017+00:00",
+    "status": "pending",
+    "created_at": "2026-07-11T09:34:33.058619+00:00"
+  },
+  {
+    "id": "039265af-ed31-4512-91af-c421575ddf96",
+    "query": "LOKMANIYATI",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-11T09:34:33.089+00:00",
+    "status": "pending",
+    "created_at": "2026-07-11T09:34:33.132924+00:00"
+  },
+  {
+    "id": "65b959ad-9c2a-4330-8a1c-b9f08ec89f40",
+    "query": "Lokmanyatilak",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-11T09:35:21.475+00:00",
+    "status": "pending",
+    "created_at": "2026-07-11T09:35:21.745876+00:00"
+  }
+]

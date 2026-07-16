@@ -1,0 +1,93 @@
+[
+  {
+    "entity_type": "route",
+    "entity_value": "HVR-DR",
+    "success_rate": 93,
+    "sample_size": 69,
+    "updated_at": "2026-06-13T14:15:44.965Z"
+  },
+  {
+    "entity_type": "route",
+    "entity_value": "DR-TEN",
+    "success_rate": 100,
+    "sample_size": 11,
+    "updated_at": "2026-06-13T14:15:44.965Z"
+  },
+  {
+    "entity_type": "route",
+    "entity_value": "DR-MDU",
+    "success_rate": 100,
+    "sample_size": 12,
+    "updated_at": "2026-06-13T14:15:44.965Z"
+  },
+  {
+    "entity_type": "route",
+    "entity_value": "SBC-NDLS",
+    "success_rate": 100,
+    "sample_size": 5,
+    "updated_at": "2026-06-13T14:15:44.965Z"
+  },
+  {
+    "entity_type": "train",
+    "entity_value": "11036",
+    "success_rate": 93,
+    "sample_size": 69,
+    "updated_at": "2026-06-13T14:15:44.965Z"
+  },
+  {
+    "entity_type": "train",
+    "entity_value": "11021",
+    "success_rate": 100,
+    "sample_size": 23,
+    "updated_at": "2026-06-13T14:15:44.965Z"
+  },
+  {
+    "entity_type": "train",
+    "entity_value": "12627",
+    "success_rate": 100,
+    "sample_size": 5,
+    "updated_at": "2026-06-13T14:15:44.965Z"
+  },
+  {
+    "entity_type": "quota",
+    "entity_value": "GN",
+    "success_rate": 100,
+    "sample_size": 92,
+    "updated_at": "2026-06-13T14:15:44.965Z"
+  },
+  {
+    "entity_type": "quota",
+    "entity_value": "RL",
+    "success_rate": 0,
+    "sample_size": 5,
+    "updated_at": "2026-06-13T14:15:44.965Z"
+  },
+  {
+    "entity_type": "wl_type",
+    "entity_value": "GNWL",
+    "success_rate": 100,
+    "sample_size": 43,
+    "updated_at": "2026-06-13T14:15:44.965Z"
+  },
+  {
+    "entity_type": "wl_type",
+    "entity_value": "RAC",
+    "success_rate": 100,
+    "sample_size": 33,
+    "updated_at": "2026-06-13T14:15:44.965Z"
+  },
+  {
+    "entity_type": "wl_type",
+    "entity_value": "CNF",
+    "success_rate": 100,
+    "sample_size": 16,
+    "updated_at": "2026-06-13T14:15:44.965Z"
+  },
+  {
+    "entity_type": "wl_type",
+    "entity_value": "RLWL",
+    "success_rate": 0,
+    "sample_size": 5,
+    "updated_at": "2026-06-13T14:15:44.965Z"
+  }
+]

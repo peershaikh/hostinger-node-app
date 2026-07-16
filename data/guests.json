@@ -1,0 +1,578 @@
+[
+  {
+    "deviceId": "guest-device-1",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-05-22"
+  },
+  {
+    "deviceId": "guest-pnr-1",
+    "dailySearchCount": 0,
+    "dailyPnrCount": 1,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-05-22"
+  },
+  {
+    "deviceId": "ip_::1",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 2,
+    "dailyLiveCount": 1,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-05-25"
+  },
+  {
+    "deviceId": "guest-device-p1",
+    "dailySearchCount": 0,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-18"
+  },
+  {
+    "deviceId": "audit-device-12002-1781956870363",
+    "dailySearchCount": 0,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 1,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-20"
+  },
+  {
+    "deviceId": "audit-device-12952-1781956871011",
+    "dailySearchCount": 0,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 1,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-20"
+  },
+  {
+    "deviceId": "audit-device-12626-1781956871095",
+    "dailySearchCount": 0,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 1,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-20"
+  },
+  {
+    "deviceId": "audit-device-12301-1781956871178",
+    "dailySearchCount": 0,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 1,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-20"
+  },
+  {
+    "deviceId": "dev_ao1no03ri9",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-10"
+  },
+  {
+    "deviceId": "dev_h8um9g1ujdi",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-24"
+  },
+  {
+    "deviceId": "dev_vldv3mcebt",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-24"
+  },
+  {
+    "deviceId": "dev_qm3dit8l9ua",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-24"
+  },
+  {
+    "deviceId": "dev_6o91hh0niok",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-24"
+  },
+  {
+    "deviceId": "dev_jd4fm8xgtcq",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-24"
+  },
+  {
+    "deviceId": "dev_xiad3zdtoem",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-24"
+  },
+  {
+    "deviceId": "dev_32shs6fmhgv",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-24"
+  },
+  {
+    "deviceId": "dev_qz8j08s7qq",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-24"
+  },
+  {
+    "deviceId": "dev_test",
+    "dailySearchCount": 0,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-30"
+  },
+  {
+    "deviceId": "nf_guest_1782797356620",
+    "dailySearchCount": 0,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 1,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-30"
+  },
+  {
+    "deviceId": "nf_beta_guest_1782797372134",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-30"
+  },
+  {
+    "deviceId": "nf_guest_1782797372278",
+    "dailySearchCount": 0,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 1,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-30"
+  },
+  {
+    "deviceId": "nf_beta_guest_1782797946364",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-30"
+  },
+  {
+    "deviceId": "nf_guest_1782797946541",
+    "dailySearchCount": 0,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 1,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-30"
+  },
+  {
+    "deviceId": "nf_beta_guest_1782798183793",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-30"
+  },
+  {
+    "deviceId": "nf_guest_1782798183955",
+    "dailySearchCount": 0,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 1,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-30"
+  },
+  {
+    "deviceId": "nf_beta_guest_1782798319471",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-30"
+  },
+  {
+    "deviceId": "nf_guest_1782798319646",
+    "dailySearchCount": 0,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 1,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-30"
+  },
+  {
+    "deviceId": "nf_beta_guest_1782799105892",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-30"
+  },
+  {
+    "deviceId": "nf_guest_1782799106041",
+    "dailySearchCount": 0,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 1,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-30"
+  },
+  {
+    "deviceId": "nf_beta_guest_1782800754290",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-30"
+  },
+  {
+    "deviceId": "nf_guest_1782800754484",
+    "dailySearchCount": 0,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 1,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-30"
+  },
+  {
+    "deviceId": "nf_beta_guest_1782802474827",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-30"
+  },
+  {
+    "deviceId": "nf_guest_1782802474991",
+    "dailySearchCount": 0,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 1,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-30"
+  },
+  {
+    "deviceId": "nf_beta_guest_1782807344267",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-30"
+  },
+  {
+    "deviceId": "nf_guest_1782807344445",
+    "dailySearchCount": 0,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 1,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-06-30"
+  },
+  {
+    "deviceId": "nf_beta_guest_1782890860870",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-01"
+  },
+  {
+    "deviceId": "nf_guest_1782890861810",
+    "dailySearchCount": 0,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 1,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-01"
+  },
+  {
+    "deviceId": "nf_beta_guest_1782890871961",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-01"
+  },
+  {
+    "deviceId": "nf_guest_1782890872376",
+    "dailySearchCount": 0,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 1,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-01"
+  },
+  {
+    "deviceId": "nf_beta_guest_1783520638779",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-08"
+  },
+  {
+    "deviceId": "dev_dy95y3a37j5",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-08"
+  },
+  {
+    "deviceId": "test-puppeteer-script",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-08"
+  },
+  {
+    "deviceId": "verify-e2e-device-001",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-09"
+  },
+  {
+    "deviceId": "verify-e2e-device-00c573be-2703-4154-a6d6-734a7816f99a",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-09"
+  },
+  {
+    "deviceId": "v-adbe9424-480a-4c44-999a-8fcd619686f2",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-09"
+  },
+  {
+    "deviceId": "v-ca25910e-b994-4028-a38f-424628c475d4",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-09"
+  },
+  {
+    "deviceId": "v-bd69d480-1eb6-4f07-ba76-36ca6e67a256",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-09"
+  },
+  {
+    "deviceId": "v-1e87300d-ccb8-4c65-b3f5-e96c695f4c0b",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-09"
+  },
+  {
+    "deviceId": "ui-smoke-1783614482795",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-09"
+  },
+  {
+    "deviceId": "ui-smoke-device-001",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-09"
+  },
+  {
+    "deviceId": "ui-smoke-device-002",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-09"
+  },
+  {
+    "deviceId": "final-ui-42a5ab08-e640-4f33-890f-4338d257135f",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-09"
+  },
+  {
+    "deviceId": "audit-direct-5441106b-c02a-4e0f-871f-46a20f3035a1",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-09"
+  },
+  {
+    "deviceId": "audit2-df3ecb83-ca7f-4948-9c66-6260d915d217",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-09"
+  },
+  {
+    "deviceId": "phase5b023-verify-device-001",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-09"
+  },
+  {
+    "deviceId": "phase5b023-verify-device-002",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-09"
+  },
+  {
+    "deviceId": "phase5b023-reg-2010424758",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-09"
+  },
+  {
+    "deviceId": "phase5b023-reg2-1702916912",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-09"
+  },
+  {
+    "deviceId": "5b024-audit-efcb42bd-1778-4f7d-a055-84329b2e14e3",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-09"
+  },
+  {
+    "deviceId": "5b024-v2-f52793a0-6678-4ecc-8c05-0f452f3dc0ec",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-09"
+  },
+  {
+    "deviceId": "5b024-adv-59d5afa5-e94e-4426-a4b7-5a568e9453cf",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-09"
+  },
+  {
+    "deviceId": "nf_beta_guest_1783685180761",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-10"
+  },
+  {
+    "deviceId": "dev_o91dxqluga",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-11"
+  },
+  {
+    "deviceId": "dev_hcnryauwkcf",
+    "dailySearchCount": 0,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 1,
+    "adsWatchedToday": 0,
+    "lastAdWatchTime": 0,
+    "lastUsageReset": "2026-07-11"
+  }
+]

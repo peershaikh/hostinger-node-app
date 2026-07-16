@@ -1,0 +1,63 @@
+"use strict";
+/**
+ * PHASE_4C849 — Strict CORS origin whitelist validator.
+ *
+ * Replaces the static-string origin from PHASE_4C843 P0-URL-02.
+ * express/cors and Socket.IO accept a function (origin, callback) for dynamic validation.
+ * When a function is used, only origins that pass the check receive an
+ * Access-Control-Allow-Origin header; all others get no header at all.
+ *
+ * Allowed:
+ *   - https://www.trayago.in
+ *   - https://trayago.in
+ *   - localhost origins (http/https, any port) — development only
+ *
+ * Requests with no Origin header (same-origin, curl, server-to-server)
+ * are also allowed so health checks and server-side calls are not broken.
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.isOriginAllowed = isOriginAllowed;
+exports.corsOriginValidator = corsOriginValidator;
+exports.getCorsOrigin = getCorsOrigin;
+const PRODUCTION_ORIGINS = new Set([
+    'https://www.trayago.in',
+    'https://trayago.in',
+]);
+/**
+ * Returns true when the origin is on the production whitelist.
+ * In development, also allows localhost (any port, http or https).
+ */
+function isOriginAllowed(origin) {
+    if (!origin)
+        return true; // no Origin header → allow (same-origin / non-browser)
+    if (PRODUCTION_ORIGINS.has(origin))
+        return true;
+    if (process.env.NODE_ENV !== 'production') {
+        // localhost / 127.0.0.1 / [::1] on any port — dev only
+        if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin)) {
+            return true;
+        }
+    }
+    return false;
+}
+/**
+ * cors-compatible origin callback for express/cors and Socket.IO.
+ * Pass this directly as the `origin` option.
+ */
+function corsOriginValidator(origin, callback) {
+    if (isOriginAllowed(origin)) {
+        callback(null, true);
+    }
+    else {
+        callback(null, false);
+    }
+}
+/**
+ * @deprecated Use corsOriginValidator (function) for strict per-request validation.
+ * Retained for any code that still expects a string; returns the primary production origin.
+ */
+function getCorsOrigin() {
+    if (process.env.NODE_ENV !== 'production')
+        return '*';
+    return 'https://www.trayago.in';
+}

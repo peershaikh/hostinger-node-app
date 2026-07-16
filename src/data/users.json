@@ -1,0 +1,69 @@
+[
+  {
+    "id": "9705d75c-612f-49d3-be05-afe20bec0b23",
+    "email": "admin@railai.com",
+    "password": "peershaikh",
+    "referralCode": "RAIL6656",
+    "freeCredits": 999999,
+    "bonusExpiry": null,
+    "createdAt": "2026-05-05T15:19:29.067Z",
+    "usage": {
+      "date": "2026-05-05",
+      "searches": 0,
+      "pnr": 0,
+      "live": 0
+    },
+    "splitAccessUntil": "2026-05-07T08:17:14.633Z",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "lastUsageReset": "2026-05-07",
+    "deviceId": "test-device"
+  },
+  {
+    "id": "8135bc29-3f61-4a74-90c0-d818f6919364",
+    "email": "test@example.com",
+    "password": "password123",
+    "referralCode": "RAIL8954",
+    "referredBy": "9705d75c-612f-49d3-be05-afe20bec0b23",
+    "createdAt": "2026-05-06T07:05:50.518Z",
+    "dailySearchCount": 2,
+    "dailyPnrCount": 1,
+    "dailyLiveCount": 1,
+    "lastUsageReset": "2026-05-06",
+    "splitAccessUntil": "2026-05-06T07:35:50.518Z",
+    "planType": "free",
+    "isAdmin": false
+  },
+  {
+    "id": "b9b2b35f-8e84-4a59-8c41-3b314c83d37f",
+    "email": "test2@example.com",
+    "password": "password123",
+    "referralCode": "RAIL8379",
+    "deviceId": "test-device",
+    "createdAt": "2026-05-07T07:42:34.027Z",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "lastUsageReset": "2026-05-07",
+    "splitAccessUntil": null,
+    "planType": "free",
+    "isAdmin": false
+  },
+  {
+    "id": "6661f191-70e6-4843-a19a-7f4246b5ff97",
+    "email": "test3@example.com",
+    "password": "password123",
+    "referralCode": "RAIL2816",
+    "referredBy": "9705d75c-612f-49d3-be05-afe20bec0b23",
+    "deviceId": "test-device",
+    "createdAt": "2026-05-07T07:47:14.633Z",
+    "dailySearchCount": 1,
+    "dailyPnrCount": 0,
+    "dailyLiveCount": 0,
+    "lastUsageReset": "2026-05-07",
+    "splitAccessUntil": "2026-05-07T08:17:14.633Z",
+    "planType": "free",
+    "isAdmin": false
+  }
+]

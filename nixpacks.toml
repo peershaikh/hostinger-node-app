@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["nodejs_22"]
+
+[phases.install]
+cmds = ["npm install --legacy-peer-deps --ignore-scripts"]
+
+[phases.build]
+cmds = ["echo Pre-built dist is ready"]
+
+[start]
+cmd = "node dist/index.js"

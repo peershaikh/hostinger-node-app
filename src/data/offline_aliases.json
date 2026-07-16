@@ -1,0 +1,213 @@
+{
+  "BOMBAY": [
+    "CSMT",
+    "LTT",
+    "BDTS",
+    "DR",
+    "DDR",
+    "MMCT"
+  ],
+  "VT": [
+    "CSMT"
+  ],
+  "CSTM": [
+    "CSMT"
+  ],
+  "VICTORIA TERMINUS": [
+    "CSMT"
+  ],
+  "MUMBAI": [
+    "CSMT",
+    "LTT",
+    "BDTS",
+    "DR",
+    "DDR",
+    "MMCT"
+  ],
+  "MUMBAI CENTRAL": [
+    "MMCT"
+  ],
+  "BANDRA": [
+    "BDTS"
+  ],
+  "DADAR": [
+    "DR",
+    "DDR"
+  ],
+  "LOKMANYA TILAK": [
+    "LTT"
+  ],
+  "NEW DELHI": [
+    "NDLS",
+    "NZM",
+    "DLI"
+  ],
+  "OLD DELHI": [
+    "DLI"
+  ],
+  "DELHI": [
+    "NDLS",
+    "DLI",
+    "NZM"
+  ],
+  "HAZRAT NIZAMUDDIN": [
+    "NZM"
+  ],
+  "ANAND VIHAR": [
+    "ANVT"
+  ],
+  "BANGALORE": [
+    "SBC",
+    "YPR",
+    "SMVB"
+  ],
+  "BENGALURU": [
+    "SBC",
+    "YPR",
+    "SMVB"
+  ],
+  "BENGLURU": [
+    "SBC",
+    "YPR",
+    "SMVB"
+  ],
+  "MADRAS": [
+    "MAS"
+  ],
+  "CHENNAI": [
+    "MAS",
+    "MS"
+  ],
+  "MYSORE": [
+    "MYS"
+  ],
+  "MYSURU": [
+    "MYS"
+  ],
+  "COIMBATORE": [
+    "CBE"
+  ],
+  "MADURAI": [
+    "MDU"
+  ],
+  "TRIVANDRUM": [
+    "TVC"
+  ],
+  "THIRUVANANTHAPURAM": [
+    "TVC"
+  ],
+  "ERNAKULAM": [
+    "ERS"
+  ],
+  "KOCHI": [
+    "ERS"
+  ],
+  "CALICUT": [
+    "CLT"
+  ],
+  "KOZHIKODE": [
+    "CLT"
+  ],
+  "CALCUTTA": [
+    "HWH"
+  ],
+  "KOLKATA": [
+    "HWH",
+    "SDAH"
+  ],
+  "KOLKATTA": [
+    "HWH"
+  ],
+  "HOWRAH": [
+    "HWH"
+  ],
+  "SEALDAH": [
+    "SDAH"
+  ],
+  "BANARAS": [
+    "BSB"
+  ],
+  "VARANASI": [
+    "BSB"
+  ],
+  "PATNA": [
+    "PNBE"
+  ],
+  "GUWAHATI": [
+    "GHY"
+  ],
+  "HYDERABAD": [
+    "SC",
+    "HYB",
+    "KCG"
+  ],
+  "SECUNDERABAD": [
+    "SC"
+  ],
+  "VIJAYAWADA": [
+    "BZA"
+  ],
+  "VIZAG": [
+    "VSKP"
+  ],
+  "VISAKHAPATNAM": [
+    "VSKP"
+  ],
+  "NAGPUR": [
+    "NGP"
+  ],
+  "BHOPAL": [
+    "BPL"
+  ],
+  "KANPUR": [
+    "CNB"
+  ],
+  "LUCKNOW": [
+    "LKO"
+  ],
+  "PRAYAGRAJ": [
+    "PRYJ"
+  ],
+  "ALLAHABAD": [
+    "PRYJ"
+  ],
+  "GORAKHPUR": [
+    "GKP"
+  ],
+  "JAIPUR": [
+    "JP"
+  ],
+  "JODHPUR": [
+    "JU"
+  ],
+  "AHMEDABAD": [
+    "ADI"
+  ],
+  "SURAT": [
+    "ST"
+  ],
+  "VADODARA": [
+    "BRC"
+  ],
+  "BARODA": [
+    "BRC"
+  ],
+  "RAJKOT": [
+    "RJT"
+  ],
+  "AMRITSAR": [
+    "ASR"
+  ],
+  "LUDHIANA": [
+    "LDH"
+  ],
+  "CHANDIGARH": [
+    "CDG"
+  ],
+  "DEHRADUN": [
+    "DDN"
+  ],
+  "HARIDWAR": [
+    "HW"
+  ]
+}
