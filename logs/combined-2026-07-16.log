@@ -1,0 +1,10 @@
+{"component":"SYSTEM","level":"info","message":"[REFERRAL_SYNC] Syncing from Supabase...","timestamp":"2026-07-16T13:30:12.720Z"}
+{"component":"SYSTEM","level":"warn","message":"[AUTH_PHASE2B] REDIS_URL not set. Running in L1-only mode.","timestamp":"2026-07-16T13:30:12.784Z"}
+{"component":"SYSTEM","level":"info","message":"[STATION] Loaded 163 cities from cityStations.json","timestamp":"2026-07-16T13:30:12.923Z"}
+{"component":"SYSTEM","level":"info","message":"[STATION] Loaded 8697 coordinates from full_stations.json","timestamp":"2026-07-16T13:30:12.946Z"}
+{"component":"SYSTEM","level":"info","message":"[OFFLINE_STATION] Successfully initialized. Loaded 62 aliases and 163 cities.","timestamp":"2026-07-16T13:30:12.948Z"}
+{"component":"SYSTEM","level":"warn","message":"[SENTRY] SENTRY_DSN not set — error tracking disabled.","timestamp":"2026-07-16T13:30:13.025Z"}
+{"component":"SYSTEM","level":"warn","message":"[FIREBASE] Missing FIREBASE_SERVICE_ACCOUNT_BASE64. Push notifications disabled.","timestamp":"2026-07-16T13:30:13.106Z"}
+{"component":"SYSTEM","level":"info","message":"🚀 Starting Trayago Backend on port 5000...","timestamp":"2026-07-16T13:30:13.113Z"}
+{"component":"SYSTEM","level":"info","message":"[IRCTC_INIT_SUCCESS] irctc-connect initialized successfully. Availability and PNR features active.","timestamp":"2026-07-16T13:30:13.123Z"}
+{"component":"SYSTEM","level":"error","message":"[REFERRAL_SYNC] Failed to load from Supabase: TypeError: fetch failed","timestamp":"2026-07-16T13:30:20.180Z"}
