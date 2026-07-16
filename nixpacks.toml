@@ -2,7 +2,7 @@
 nixPkgs = ["nodejs_22"]
 
 [phases.install]
-cmds = ["npm install --legacy-peer-deps --ignore-scripts"]
+cmds = ["npm install --legacy-peer-deps --no-audit"]
 
 [phases.build]
 cmds = ["node scripts/copy-assets.js"]
