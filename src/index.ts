@@ -103,7 +103,7 @@ declare global {
 global.SYSTEM_MODE = 'MODE_C';
 
 // ====================== DEPLOYMENT VALIDATION ======================
-const requiredEnvs = ['RAPIDAPI_KEY', 'PORT', 'JWT_SECRET', 'REFRESH_TOKEN_SECRET', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
+const requiredEnvs = ['RAPIDAPI_KEY', 'JWT_SECRET', 'REFRESH_TOKEN_SECRET', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
 if (process.env.USE_DB_PROVIDERS === 'true') {
   requiredEnvs.push('ENCRYPTION_KEY');
 }
