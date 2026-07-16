@@ -71,9 +71,10 @@ app.use((0, xss_clean_1.default)()); // Prevent XSS attacks
 // Global Fallback Rate Limiter for unmatched routes
 const globalLimiter = (0, express_rate_limit_1.default)({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
+    max: 300, // 300 req per 15 min per IP (was 100 — too aggressive for normal usage)
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip || ''),
     message: { success: false, error: 'Too many requests from this IP, please try again after 15 minutes' },
 });
 app.use('/api', globalLimiter);
