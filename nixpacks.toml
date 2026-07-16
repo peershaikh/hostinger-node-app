@@ -5,7 +5,7 @@ nixPkgs = ["nodejs_22"]
 cmds = ["npm install --legacy-peer-deps --ignore-scripts"]
 
 [phases.build]
-cmds = ["echo Pre-built dist is ready"]
+cmds = ["node scripts/copy-assets.js"]
 
 [start]
 cmd = "node dist/index.js"
