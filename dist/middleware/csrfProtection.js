@@ -22,11 +22,10 @@ const logger_1 = require("./logger");
 exports.csrfProtection = (0, csurf_1.default)({
     cookie: {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production', // HTTPS only in production
-        sameSite: 'strict',
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax', // PHASE_4C971: 'strict' blocks cross-domain cookies — use 'lax'
         maxAge: 3600000 // 1 hour
     },
-    // Ignore CSRF for safe methods (GET, HEAD, OPTIONS)
     ignoreMethods: ['GET', 'HEAD', 'OPTIONS']
 });
 /**

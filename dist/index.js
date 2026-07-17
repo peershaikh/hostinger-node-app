@@ -70,10 +70,11 @@ app.use((0, express_mongo_sanitize_1.default)()); // Prevent NoSQL injection att
 app.use((0, xss_clean_1.default)()); // Prevent XSS attacks
 // Global Fallback Rate Limiter for unmatched routes
 const globalLimiter = (0, express_rate_limit_1.default)({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 300, // 300 req per 15 min per IP (was 100 — too aggressive for normal usage)
+    windowMs: 15 * 60 * 1000,
+    max: 300,
     standardHeaders: true,
     legacyHeaders: false,
+    validate: { ip: false }, // PHASE_4C971: suppress express-rate-limit v8 ValidationError
     skip: (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip || ''),
     message: { success: false, error: 'Too many requests from this IP, please try again after 15 minutes' },
 });
