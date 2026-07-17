@@ -460,6 +460,13 @@ class LiveTrackingService {
                     logger_1.winstonLogger.warn(`[GEMINI_SCHEDULE_FALLBACK_FAIL] ${trainNo}: ${geminiErr.message}`);
                 }
             }
+            // ── BACKGROUND GEMINI POPULATE ─────────────────────────────────────────────
+            // Even when IRCTC is working, if DB has NO schedule for this train,
+            // trigger Gemini in background to save station names/schedule for future requests.
+            if (scheduleWithDays.length === 0 && liveData) {
+                logger_1.winstonLogger.info(`[GEMINI_BG_POPULATE] Train ${trainNo} has no DB schedule — triggering Gemini to populate in background`);
+                geminiTrainScheduleService_1.geminiTrainScheduleService.getAndSave(trainNo).catch((e) => logger_1.winstonLogger.warn(`[GEMINI_BG_POPULATE_FAIL] ${trainNo}: ${e.message}`));
+            }
             if (!liveData)
                 throw new Error('No live data from any API');
             // --- station name ---
@@ -542,15 +549,19 @@ class LiveTrackingService {
             //   • If DB has a schedule → use it as the route skeleton (correct stops).
             //   • Merge IRCTC live data (is_current, is_departed, delay) by code match.
             //   • If DB is empty → fall back to IRCTC timeline as before.
+            //   • In both cases: resolve missing station names via stationService.
             let schedule;
             if (dbSchedule.length > 0) {
                 // DB route is authoritative — IRCTC only contributes live status fields.
                 schedule = dbSchedule.map((dbStop) => {
                     const code = (dbStop.station_code || dbStop.Station_Code || '').toUpperCase();
                     const live = liveTimeline.find((l) => l.station_code && l.station_code.toUpperCase() === code);
+                    // Prefer live station name if DB has only a code-as-name placeholder
+                    const liveName = live?.station_name && live.station_name !== code ? live.station_name : '';
+                    const dbName = dbStop.station_name || dbStop.Station_Name || '';
                     return {
-                        Station_Code: dbStop.station_code || dbStop.Station_Code || '--',
-                        Station_Name: dbStop.station_name || dbStop.Station_Name || 'Station',
+                        Station_Code: code || '--',
+                        Station_Name: liveName || dbName || code || '--',
                         Arrival_time: dbStop.arrival_time || dbStop.Arrival_time || '--:--',
                         Departure_Time: dbStop.departure_time || dbStop.Departure_Time || '--:--',
                         // Overlay live fields if IRCTC has a matching stop
@@ -567,7 +578,7 @@ class LiveTrackingService {
                 const routeSchedule = Array.isArray(liveData.route)
                     ? liveData.route.map((stop) => ({
                         Station_Code: stop.stnCode || stop.station_code || stop.code || '--',
-                        Station_Name: stop.stnName || stop.station_name || stop.name || 'Station',
+                        Station_Name: stop.stnName || stop.station_name || stop.name || '',
                         Arrival_time: stop.arrival || stop.arrival_time || '--:--',
                         Departure_Time: stop.departure || stop.departure_time || '--:--',
                     }))
@@ -576,14 +587,27 @@ class LiveTrackingService {
                     ? routeSchedule
                     : liveTimeline.length > 0
                         ? liveTimeline.map((stop) => ({
-                            Station_Code: stop.station_code,
-                            Station_Name: stop.station_name,
+                            Station_Code: stop.station_code || '--',
+                            Station_Name: stop.station_name || stop.station_code || '--',
                             Arrival_time: stop.arrival_time,
                             Departure_Time: stop.departure_time,
                         }))
                         : [];
                 logger_1.winstonLogger.info(`[SCHEDULE_SOURCE] ${trainNo}: DB empty, using IRCTC timeline (${schedule.length} stops)`);
             }
+            // ── Resolve any remaining missing station names via stationService ──
+            // Runs async for any stop where Station_Name == Station_Code or is '--'.
+            await Promise.all(schedule.map(async (stop) => {
+                const code = (stop.Station_Code || '').toUpperCase();
+                const name = stop.Station_Name || '';
+                // Resolve if name looks like a raw code (short, all caps) or is '--'
+                if (code && code !== '--' && (name === code || name === '--' || !name || name.length <= 5)) {
+                    const resolved = await stationService_1.stationService.getStationName(code).catch(() => '');
+                    if (resolved && resolved !== code) {
+                        stop.Station_Name = resolved;
+                    }
+                }
+            }));
             let currentCode = liveData.current_station_code ||
                 liveData.station_code ||
                 liveData.currentStation ||
