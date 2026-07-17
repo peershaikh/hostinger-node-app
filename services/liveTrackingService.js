@@ -9,6 +9,7 @@ const dayUtils_1 = require("../utils/dayUtils");
 const cacheService_1 = require("./cacheService");
 const irctcService_1 = require("./irctcService");
 const stationService_1 = require("./stationService");
+const geminiTrainScheduleService_1 = require("./geminiTrainScheduleService");
 // ── Known major railway junction codes (India) ───────────────────────────────
 const MAJOR_JUNCTION_CODES = new Set([
     // Mumbai zone
@@ -409,6 +410,55 @@ class LiveTrackingService {
                     return null;
                 }
             });
+            // ── GEMINI AI FALLBACK ────────────────────────────────────────────────────
+            // Triggered only when: IRCTC failed + train NOT in DB (scheduleWithDays empty)
+            // Gemini fetches static schedule from its training knowledge, saves to DB in
+            // background so the next request hits DB directly (no Gemini call needed).
+            if (!liveData && scheduleWithDays.length === 0) {
+                logger_1.winstonLogger.info(`[GEMINI_SCHEDULE_FALLBACK] Train ${trainNo} not in DB and IRCTC failed — trying Gemini`);
+                try {
+                    const geminiResult = await geminiTrainScheduleService_1.geminiTrainScheduleService.getAndSave(trainNo);
+                    if (geminiResult) {
+                        usedApi = 'GEMINI_AI';
+                        logger_1.winstonLogger.info(`[GEMINI_SCHEDULE_SUCCESS] Train ${trainNo}: ${geminiResult.stations.length} stops from Gemini`);
+                        // Build LiveTrainStatus directly from Gemini result
+                        const currentIdx = geminiResult.stations.findIndex((s) => s.is_current);
+                        const safeIdx = currentIdx >= 0 ? currentIdx : 0;
+                        const geminiStatus = {
+                            train_number: trainNo,
+                            train_name: geminiResult.train_name || `Train ${trainNo}`,
+                            current_station: geminiResult.stations[safeIdx]?.station_name || 'En Route',
+                            next_station: geminiResult.stations[safeIdx + 1]?.station_name || 'Unknown',
+                            current_station_index: safeIdx,
+                            train_location: null,
+                            delay_minutes: 0,
+                            status_summary: 'AI Estimated Schedule',
+                            last_updated: new Date().toLocaleTimeString('en-IN'),
+                            is_running: true,
+                            journey_timeline: geminiResult.stations.map((s, idx) => ({
+                                station_name: s.station_name,
+                                station_code: s.station_code,
+                                arrival_time: s.arrival_time,
+                                departure_time: s.departure_time,
+                                delay_minutes: 0,
+                                is_current: s.is_current,
+                                is_departed: s.is_departed,
+                                status: s.status,
+                                station_type: classifyStation(s.station_code, s.station_name, idx, geminiResult.stations.length),
+                                platform: null,
+                            })),
+                            api_used: 'GEMINI_AI',
+                            active_journey_date: activeDate || undefined,
+                            is_ai_estimated: true,
+                        };
+                        cacheService_1.cacheService.set(cacheKey, geminiStatus, 300); // 5 min cache for AI data
+                        return geminiStatus;
+                    }
+                }
+                catch (geminiErr) {
+                    logger_1.winstonLogger.warn(`[GEMINI_SCHEDULE_FALLBACK_FAIL] ${trainNo}: ${geminiErr.message}`);
+                }
+            }
             if (!liveData)
                 throw new Error('No live data from any API');
             // --- station name ---
