@@ -205,7 +205,24 @@ class TrainController {
                     // excludeVia: comma-separated hub codes to skip (used by "Generate New Alternative Routes")
                     const excludeViaRaw = (req.body.excludeVia || req.query.excludeVia || '');
                     const excludeVia = excludeViaRaw ? excludeViaRaw.split(',').map((v) => v.trim().toUpperCase()).filter(Boolean) : [];
-                    const splitRouteOptions = { classType: effectiveClass2 || '3A', quota: splitQuota, excludeVia };
+                    // PHASE_4C970: Determine premium status for gate isolation.
+                    // ADMIN, safar_pro_*, paid, beta all unlock premium features.
+                    // Free users see locked WVI/CCAM/SameTrainReuse in the output JSON.
+                    const userId2 = req.headers['x-user-id'] || null;
+                    let isPremiumUser = false;
+                    if (userId2) {
+                        try {
+                            const userForGate = await authService_1.authService.getUserById(userId2);
+                            if (userForGate) {
+                                const PREMIUM_PLANS = ['paid', 'beta', 'admin', 'safar_pro', 'safar_pro_30m', 'safar_pro_1d', 'safar_pro_7d', 'safar_pro_30d', 'safar_pro_90d'];
+                                const planOk = PREMIUM_PLANS.includes(userForGate.planType || '');
+                                const notExpired = !userForGate.planExpiry || new Date(userForGate.planExpiry) > new Date();
+                                isPremiumUser = (planOk && notExpired) || !!userForGate.isAdmin;
+                            }
+                        }
+                        catch { /* leave isPremiumUser=false */ }
+                    }
+                    const splitRouteOptions = { classType: effectiveClass2 || '3A', quota: splitQuota, excludeVia, isPremiumUser };
                     knowledgeMetricsService_1.knowledgeMetricsService.beginSearchContext(source, destination);
                     const runSplitAttempt = async (timeoutMs) => {
                         let splitTimer;

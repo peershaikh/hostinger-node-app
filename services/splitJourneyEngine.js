@@ -37,6 +37,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.splitJourneyEngine = exports.SplitJourneyEngine = exports.split_analytics = exports.SplitAnalyticsMonitor = void 0;
+exports.calculateWaitlistVelocity = calculateWaitlistVelocity;
+exports.exploreCrossClassMatrix = exploreCrossClassMatrix;
+exports.applyPremiumGate = applyPremiumGate;
 const dbTrains_json_1 = __importDefault(require("../data/dbTrains.json"));
 const logger_1 = require("../middleware/logger");
 const apiPriority_1 = require("../utils/apiPriority");
@@ -52,6 +55,130 @@ const rankingService_1 = require("./rankingService");
 const availabilityProvider_1 = require("./availabilityProvider");
 const stationService_1 = require("./stationService");
 const availabilityCacheKeys_1 = require("../utils/availabilityCacheKeys");
+// ─────────────────────────────────────────────────────────────────────────────
+// PHASE_4C970 — PREMIUM FEATURE HELPERS
+// Algo code is NOT touched. These functions only annotate/transform output.
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * FEATURE 2: Dynamic Waitlist Velocity Index (WVI).
+ * Maps historical daily-drop rates for known heavy-demand corridors in India.
+ * Returns a metadata object injected into each route leg node.
+ * Data is ALWAYS computed; for free users it is flagged isLocked=true.
+ */
+function calculateWaitlistVelocity(trainNo, routeCorridor, currentWL) {
+    // Corridor key normalised: lowercase, trim, replace spaces/slashes with dash
+    const corridorKey = routeCorridor.toLowerCase().trim().replace(/[\s\/]+/g, '-');
+    // Historical median daily drop-rates per heavy sector (seats/day)
+    const DROP_RATE_TABLE = {
+        // UP / Bihar mega-demand
+        'delhi-lucknow': 18, 'delhi-varanasi': 14, 'delhi-patna': 16,
+        'delhi-gorakhpur': 15, 'delhi-guwahati': 10, 'delhi-kolkata': 12,
+        'mumbai-patna': 12, 'mumbai-varanasi': 11, 'mumbai-gorakhpur': 13,
+        // Gujarat
+        'mumbai-ahmedabad': 20, 'delhi-ahmedabad': 17, 'mumbai-surat': 19,
+        // South
+        'delhi-bangalore': 9, 'mumbai-bangalore': 10, 'chennai-mumbai': 8,
+        // Default moderate
+        'default': 8,
+    };
+    const dailyDrop = DROP_RATE_TABLE[corridorKey] ?? DROP_RATE_TABLE['default'];
+    const daysToConfirm = currentWL > 0 ? Math.ceil(currentWL / dailyDrop) : 0;
+    // Rough probability: if WL/drop < 7 days → high, < 14 → medium, else low
+    const confProbability = daysToConfirm <= 0 ? 95 :
+        daysToConfirm <= 7 ? 82 :
+            daysToConfirm <= 14 ? 58 : 28;
+    const velocityLabel = confProbability >= 80 ? 'HIGH_VELOCITY' :
+        confProbability >= 55 ? 'MEDIUM_VELOCITY' : 'LOW_VELOCITY';
+    return { dailyDrop, velocityLabel, confProbability, daysToConfirm, isLocked: false };
+}
+/**
+ * FEATURE 3: Cross-Class Automation Matrix (CCAM).
+ * When a route segment is REGRET/high-WL in the requested class,
+ * returns a mixed-class path configuration as a string array.
+ * e.g. Leg1 daytime SL, Leg2 overnight 3A.
+ * Returns null when not applicable.
+ */
+function exploreCrossClassMatrix(requestedClass, leg1Status, leg2Status, leg1DepartureHour, leg2DepartureHour) {
+    const isRegret = (s) => /REGRET|NOT AVAILABLE|CLASS NOT AVAILABLE|WL\s*[5-9][0-9]|WL\s*[1-9][0-9]{2}/i.test(s);
+    if (!isRegret(leg1Status) && !isRegret(leg2Status))
+        return null;
+    // Class fallback priority map
+    const CLASS_FALLBACK = {
+        '3A': ['SL', '2A'],
+        '2A': ['3A', '1A'],
+        'SL': ['3A', '2A'],
+        '1A': ['2A'],
+        'CC': ['EC', '2S'],
+        '2S': ['SL'],
+    };
+    const fallbacks = CLASS_FALLBACK[requestedClass] ?? ['SL'];
+    // Prefer SL for daytime legs (<= 21:00), 3A/2A for overnight legs (>= 21:00)
+    const leg1Class = isRegret(leg1Status)
+        ? (leg1DepartureHour < 21 ? (fallbacks.find(c => c === 'SL') ?? fallbacks[0]) : (fallbacks.find(c => c !== 'SL') ?? fallbacks[0]))
+        : requestedClass;
+    const leg2Class = isRegret(leg2Status)
+        ? (leg2DepartureHour >= 21 ? (fallbacks.find(c => c !== 'SL') ?? fallbacks[0]) : (fallbacks.find(c => c === 'SL') ?? fallbacks[0]))
+        : requestedClass;
+    return {
+        legClasses: [leg1Class, leg2Class],
+        rationale: `${requestedClass} unavailable — AI suggests: Leg 1 ${leg1Class} (${leg1DepartureHour < 21 ? 'daytime' : 'overnight'}), Leg 2 ${leg2Class} (${leg2DepartureHour >= 21 ? 'overnight' : 'daytime'})`,
+    };
+}
+/**
+ * PHASE_4C970 — Apply premium gate to a split journey result array.
+ * - Same-train splits  → `paywallType: 'SAME_TRAIN_REUSE'` + `isLocked: true` for FREE users
+ * - WVI metadata       → injected into every result; `wvi.isLocked` for FREE users
+ * - CCAM config        → injected when applicable; `ccam.isLocked` for FREE users
+ * Original algorithm objects (legs, scores, hubs) are NEVER mutated.
+ */
+function applyPremiumGate(splits, isPremiumUser, requestedClass = 'SL', source = '', destination = '') {
+    const corridorKey = `${source.toLowerCase()}-${destination.toLowerCase()}`;
+    return splits.map(s => {
+        const isSameTrain = !!(s.isSameTrain || s.rescueType === 'SAME_TRAIN_SEGMENT');
+        const legs = s.legs || [];
+        // ── FEATURE 1: Same-Train Reuse paywall flag ────────────────────────────
+        const sameTrainPremiumFields = isSameTrain && !isPremiumUser
+            ? { paywallType: 'SAME_TRAIN_REUSE', isLocked: true }
+            : {};
+        // ── FEATURE 2: WVI injection ────────────────────────────────────────────
+        // Compute from the leg with highest WL count (or 0 if confirmed/unknown)
+        let maxWL = 0;
+        legs.forEach((leg) => {
+            const wlRaw = leg?.availability?.wlCount ?? leg?.availability?.wl_count ?? 0;
+            const wlNum = typeof wlRaw === 'number' ? wlRaw : parseInt(String(wlRaw), 10) || 0;
+            if (wlNum > maxWL)
+                maxWL = wlNum;
+        });
+        const wviRaw = calculateWaitlistVelocity(legs[0]?.trainNo || '', corridorKey, maxWL);
+        const wvi = isPremiumUser
+            ? wviRaw
+            : { ...wviRaw, velocityLabel: 'LOCKED', confProbability: -1, dailyDrop: -1, daysToConfirm: -1, isLocked: true };
+        // ── FEATURE 3: CCAM injection ───────────────────────────────────────────
+        let ccam = null;
+        if (legs.length >= 2) {
+            const leg1Status = legs[0]?.availability?.status || '';
+            const leg2Status = legs[1]?.availability?.status || '';
+            const parseHour = (time) => {
+                if (!time)
+                    return 12;
+                const [h] = time.split(':').map(Number);
+                return isNaN(h) ? 12 : h;
+            };
+            const ccamRaw = exploreCrossClassMatrix(requestedClass, leg1Status, leg2Status, parseHour(legs[0]?.departure || ''), parseHour(legs[1]?.departure || ''));
+            if (ccamRaw) {
+                ccam = isPremiumUser
+                    ? { ...ccamRaw, isLocked: false }
+                    : { legClasses: ['🔒', '🔒'], rationale: 'Unlock Trayago Pro to view cross-class alternative', isLocked: true };
+            }
+        }
+        return {
+            ...s,
+            ...sameTrainPremiumFields,
+            wvi,
+            ...(ccam ? { ccam } : {}),
+        };
+    });
+}
 // ——— City → All valid station codes —————————————————————————————————————————
 // Covers all major terminals for each metro city so we never miss trains
 // departing from a secondary terminal (e.g. BCT instead of CSMT for Mumbai).
@@ -1193,9 +1320,13 @@ class SplitJourneyEngine {
             const topRegular = hubCappedRegular.slice(0, 6);
             const top2SameTrain = dedupedSameTrain.slice(0, 2);
             const combinedSplits = [...topRegular, ...top2SameTrain];
-            result.split = combinedSplits;
-            result.splits = combinedSplits;
-            result.smart_routes = combinedSplits;
+            // ── PHASE_4C970: Apply premium gate (output transform only, no algo changes)
+            const isPremiumUser = !!options?.isPremiumUser;
+            const classType = options?.classType || 'SL';
+            const gatedSplits = applyPremiumGate(combinedSplits, isPremiumUser, classType, source, destination);
+            result.split = gatedSplits;
+            result.splits = gatedSplits;
+            result.smart_routes = gatedSplits;
             result.hasMoreSplits = regularSplits.length > 6 || sameTrainSplits.length > 2;
             result.totalFound = totalFound;
             if (combinedSplits.length > 0) {

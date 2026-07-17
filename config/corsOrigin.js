@@ -1,6 +1,7 @@
 "use strict";
 /**
  * PHASE_4C849 — Strict CORS origin whitelist validator.
+ * PHASE_4C970 — Multi-domain: trayago.in + trayago.com + trayago.online
  *
  * Replaces the static-string origin from PHASE_4C843 P0-URL-02.
  * express/cors and Socket.IO accept a function (origin, callback) for dynamic validation.
@@ -8,8 +9,9 @@
  * Access-Control-Allow-Origin header; all others get no header at all.
  *
  * Allowed:
- *   - https://www.trayago.in
- *   - https://trayago.in
+ *   - https://trayago.in + https://www.trayago.in
+ *   - https://trayago.com + https://www.trayago.com
+ *   - https://trayago.online + https://www.trayago.online
  *   - localhost origins (http/https, any port) — development only
  *
  * Requests with no Origin header (same-origin, curl, server-to-server)
@@ -20,8 +22,15 @@ exports.isOriginAllowed = isOriginAllowed;
 exports.corsOriginValidator = corsOriginValidator;
 exports.getCorsOrigin = getCorsOrigin;
 const PRODUCTION_ORIGINS = new Set([
-    'https://www.trayago.in',
+    // Primary .in domain
     'https://trayago.in',
+    'https://www.trayago.in',
+    // Secondary .com domain
+    'https://trayago.com',
+    'https://www.trayago.com',
+    // Secondary .online domain
+    'https://trayago.online',
+    'https://www.trayago.online',
 ]);
 /**
  * Returns true when the origin is on the production whitelist.
