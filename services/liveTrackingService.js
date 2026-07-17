@@ -96,6 +96,7 @@ class LiveTrackingService {
         }
     }
     async fetchDbScheduleWithDays(trainNo) {
+        let irctcTrainName = '';
         try {
             let stops = [];
             // Try DB first — both numeric and string match for Train_No column
@@ -121,6 +122,11 @@ class LiveTrackingService {
                     logger_1.winstonLogger.info(`[LIVE_DB_SCHED] ${trainNo} not in DB, falling back to IRCTC getTrainInfo`);
                     const info = await irctcService_1.irctcService.getTrainInfo(trainNo);
                     if (info) {
+                        // Capture train name from getTrainInfo response
+                        irctcTrainName =
+                            info.trainName || info.train_name || info.name ||
+                                info.trainInfo?.name || info.trainInfo?.trainName ||
+                                info.data?.trainName || '';
                         // IRCTC getTrainInfo can return route data under many field names
                         const rawRoute = info.route ||
                             info.station_list ||
@@ -141,13 +147,13 @@ class LiveTrackingService {
                                     s.Departure_Time || '--:--',
                                 SN: s.sn || s.SN || idx + 1
                             }));
-                            logger_1.winstonLogger.info(`[LIVE_DB_SCHED] ${trainNo}: got ${stops.length} stops from IRCTC getTrainInfo`);
+                            logger_1.winstonLogger.info(`[LIVE_DB_SCHED] ${trainNo}: got ${stops.length} stops from IRCTC getTrainInfo (trainName="${irctcTrainName}")`);
                         }
                     }
                 }
             }
             if (!stops || stops.length === 0)
-                return [];
+                return { stops: [], irctcTrainName };
             const parseToMins = (time) => {
                 if (!time || time === '--:--')
                     return 0;
@@ -156,7 +162,7 @@ class LiveTrackingService {
             };
             let currentDay = 1;
             let prevMins = 0;
-            return stops.map((s, idx) => {
+            const result = stops.map((s, idx) => {
                 const arrMins = parseToMins(s.Arrival_time);
                 const depMins = parseToMins(s.Departure_Time);
                 if (idx > 0) {
@@ -181,17 +187,20 @@ class LiveTrackingService {
                 prevMins = depMins;
                 return stop;
             });
+            return { stops: result, irctcTrainName };
         }
         catch (err) {
             logger_1.winstonLogger.warn(`[LIVE_DB_SCHED_WITH_DAYS] ${trainNo}: ${err.message}`);
-            return [];
+            return { stops: [], irctcTrainName };
         }
     }
     async getActiveJourneyDate(trainNo, prefetchedSchedule) {
         try {
-            const schedule = prefetchedSchedule && prefetchedSchedule.length > 0
+            const rawResult = prefetchedSchedule && prefetchedSchedule.length > 0
                 ? prefetchedSchedule
-                : await this.fetchDbScheduleWithDays(trainNo);
+                : (await this.fetchDbScheduleWithDays(trainNo)).stops;
+            // Handle both old array shape and new {stops, irctcTrainName} shape (prefetchedSchedule is always an array)
+            const schedule = Array.isArray(rawResult) ? rawResult : rawResult?.stops || [];
             if (!schedule || schedule.length === 0) {
                 return null;
             }
@@ -348,7 +357,9 @@ class LiveTrackingService {
             this.fetchDbScheduleWithDays(trainNo),
             this.fetchDbTrainName(trainNo),
         ]);
-        const scheduleWithDays = scheduleWithDaysResult.status === 'fulfilled' ? scheduleWithDaysResult.value : [];
+        const scheduleWithDaysData = scheduleWithDaysResult.status === 'fulfilled' ? scheduleWithDaysResult.value : { stops: [], irctcTrainName: '' };
+        const scheduleWithDays = scheduleWithDaysData.stops || [];
+        const irctcScheduleTrainName = scheduleWithDaysData.irctcTrainName || '';
         const dbSchedule = scheduleWithDays.map((s) => ({
             station_name: s.station_name || s.Station_Name || s.station_code || s.Station_Code || 'Station',
             station_code: s.station_code || s.Station_Code || '--',
@@ -358,7 +369,7 @@ class LiveTrackingService {
             is_current: false,
             is_departed: false,
         }));
-        const dbTrainName = dbTrainNameResult.status === 'fulfilled' ? dbTrainNameResult.value : '';
+        const dbTrainName = (dbTrainNameResult.status === 'fulfilled' ? dbTrainNameResult.value : '') || irctcScheduleTrainName;
         const activeDate = await this.getActiveJourneyDate(trainNo, scheduleWithDays);
         let usedApi = 'DATABASE_SCHEDULE';
         try {
@@ -800,7 +811,9 @@ class LiveTrackingService {
                 fullSchedule[actualCurrentIndex + 1]?.station_name ||
                 nextStation ||
                 finalCurrentStation;
-            const trainName = liveData.train_name || liveData.name || dbTrainName || `Train ${trainNo}`;
+            const trainName = liveData.trainName || liveData.train_name || liveData.name ||
+                dbTrainName || irctcScheduleTrainName ||
+                `Train ${trainNo}`;
             const isJourneyCompleted = isTimeCompleted || actualCurrentIndex === fullSchedule.length - 1;
             const result = {
                 train_number: trainNo,
