@@ -817,6 +817,25 @@ class LiveTrackingService {
                 dbTrainName || irctcScheduleTrainName ||
                 `Train ${trainNo}`;
             const isJourneyCompleted = isTimeCompleted || actualCurrentIndex === fullSchedule.length - 1;
+            // ── Detect if train is cancelled for this date ───────────────────────────────
+            // IRCTC may signal cancellation via various fields in the response.
+            const cancelCheckStr = [
+                liveData.status_as_of,
+                liveData.position,
+                liveData.current_status,
+                liveData.statusNote,
+                liveData.trainStatus,
+                liveData.remark,
+                liveData.status,
+                liveData.message,
+            ].filter(Boolean).join(' ').toLowerCase();
+            const isCancelled = cancelCheckStr.includes('cancel') ||
+                cancelCheckStr.includes('not running') ||
+                (liveData.isCancelled === true) ||
+                (liveData.is_cancelled === true);
+            if (isCancelled) {
+                logger_1.winstonLogger.info(`[CANCELLED] Train ${trainNo} appears CANCELLED for ${date || 'today'}: "${cancelCheckStr.slice(0, 80)}"`);
+            }
             const result = {
                 train_number: trainNo,
                 train_name: trainName,
@@ -832,9 +851,10 @@ class LiveTrackingService {
                     }
                     : null,
                 delay_minutes: delayMins,
-                status_summary: isJourneyCompleted ? 'Train has reached destination' : (liveData.status_as_of || liveData.position || liveData.current_status || 'Running'),
+                status_summary: isCancelled ? 'Train Cancelled' : (isJourneyCompleted ? 'Train has reached destination' : (liveData.status_as_of || liveData.position || liveData.current_status || 'Running')),
                 last_updated: liveData.last_updated_time || liveData.updated_at || new Date().toLocaleTimeString('en-IN'),
-                is_running: isJourneyCompleted ? false : (liveData.is_running ?? true),
+                is_running: isCancelled ? false : (isJourneyCompleted ? false : (liveData.is_running ?? true)),
+                is_cancelled: isCancelled,
                 journey_timeline: finalTimeline,
                 api_used: usedApi,
                 active_journey_date: activeDate || undefined
