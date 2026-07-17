@@ -803,11 +803,13 @@ class LiveTrackingService {
                 };
             });
             logger_1.winstonLogger.debug(`[LIVE_TRACK_FIX] currentCode=${currentCode} matchedIdx=${actualCurrentIndex} totalStops=${fullSchedule.length} currentStation=${finalTimeline[actualCurrentIndex]?.station_name}`);
-            const finalCurrentStation = fullSchedule[actualCurrentIndex]?.Station_Name ||
+            const finalCurrentStation = finalTimeline[actualCurrentIndex]?.station_name ||
+                fullSchedule[actualCurrentIndex]?.Station_Name ||
                 fullSchedule[actualCurrentIndex]?.station_name ||
                 currentStation ||
                 trainNo;
-            const finalNextStation = fullSchedule[actualCurrentIndex + 1]?.Station_Name ||
+            const finalNextStation = finalTimeline[actualCurrentIndex + 1]?.station_name ||
+                fullSchedule[actualCurrentIndex + 1]?.Station_Name ||
                 fullSchedule[actualCurrentIndex + 1]?.station_name ||
                 nextStation ||
                 finalCurrentStation;
