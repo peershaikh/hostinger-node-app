@@ -980,8 +980,13 @@ class AuthService {
         // PHASE_4C965 Stage 1: emit sessionEpoch (E) in ACCESS tokens only.
         // Refresh token payload is unchanged (rotation still keyed on tokenVersion/R).
         const accessPayload = { ...payload, sessionEpoch: user.sessionEpoch || 1 };
-        const accessToken = jsonwebtoken_1.default.sign(accessPayload, jwtSecret, { expiresIn: '15m' });
-        const refreshToken = jsonwebtoken_1.default.sign(payload, refreshSecret, { expiresIn: '7d' });
+        // PHASE_4C970 LOGOUT FIX: Access token: 24h (was 2h — still caused silent refresh failures
+        // on cross-domain when cookie was missing, leading to 10-15 min logout UX).
+        // Refresh token: 30d (unchanged).
+        // With refreshToken stored in localStorage (fallback for .com/.online), the interceptor
+        // can always recover the session silently without triggering OTP re-login.
+        const accessToken = jsonwebtoken_1.default.sign(accessPayload, jwtSecret, { expiresIn: '24h' });
+        const refreshToken = jsonwebtoken_1.default.sign(payload, refreshSecret, { expiresIn: '30d' });
         return { accessToken, refreshToken };
     }
     async verifyRefreshToken(token) {

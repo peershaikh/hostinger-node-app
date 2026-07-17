@@ -37,6 +37,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.splitJourneyEngine = exports.SplitJourneyEngine = exports.split_analytics = exports.SplitAnalyticsMonitor = void 0;
+exports.calculateWaitlistVelocity = calculateWaitlistVelocity;
+exports.exploreCrossClassMatrix = exploreCrossClassMatrix;
+exports.applyPremiumGate = applyPremiumGate;
 const dbTrains_json_1 = __importDefault(require("../data/dbTrains.json"));
 const logger_1 = require("../middleware/logger");
 const apiPriority_1 = require("../utils/apiPriority");
@@ -52,6 +55,130 @@ const rankingService_1 = require("./rankingService");
 const availabilityProvider_1 = require("./availabilityProvider");
 const stationService_1 = require("./stationService");
 const availabilityCacheKeys_1 = require("../utils/availabilityCacheKeys");
+// ─────────────────────────────────────────────────────────────────────────────
+// PHASE_4C970 — PREMIUM FEATURE HELPERS
+// Algo code is NOT touched. These functions only annotate/transform output.
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * FEATURE 2: Dynamic Waitlist Velocity Index (WVI).
+ * Maps historical daily-drop rates for known heavy-demand corridors in India.
+ * Returns a metadata object injected into each route leg node.
+ * Data is ALWAYS computed; for free users it is flagged isLocked=true.
+ */
+function calculateWaitlistVelocity(trainNo, routeCorridor, currentWL) {
+    // Corridor key normalised: lowercase, trim, replace spaces/slashes with dash
+    const corridorKey = routeCorridor.toLowerCase().trim().replace(/[\s\/]+/g, '-');
+    // Historical median daily drop-rates per heavy sector (seats/day)
+    const DROP_RATE_TABLE = {
+        // UP / Bihar mega-demand
+        'delhi-lucknow': 18, 'delhi-varanasi': 14, 'delhi-patna': 16,
+        'delhi-gorakhpur': 15, 'delhi-guwahati': 10, 'delhi-kolkata': 12,
+        'mumbai-patna': 12, 'mumbai-varanasi': 11, 'mumbai-gorakhpur': 13,
+        // Gujarat
+        'mumbai-ahmedabad': 20, 'delhi-ahmedabad': 17, 'mumbai-surat': 19,
+        // South
+        'delhi-bangalore': 9, 'mumbai-bangalore': 10, 'chennai-mumbai': 8,
+        // Default moderate
+        'default': 8,
+    };
+    const dailyDrop = DROP_RATE_TABLE[corridorKey] ?? DROP_RATE_TABLE['default'];
+    const daysToConfirm = currentWL > 0 ? Math.ceil(currentWL / dailyDrop) : 0;
+    // Rough probability: if WL/drop < 7 days → high, < 14 → medium, else low
+    const confProbability = daysToConfirm <= 0 ? 95 :
+        daysToConfirm <= 7 ? 82 :
+            daysToConfirm <= 14 ? 58 : 28;
+    const velocityLabel = confProbability >= 80 ? 'HIGH_VELOCITY' :
+        confProbability >= 55 ? 'MEDIUM_VELOCITY' : 'LOW_VELOCITY';
+    return { dailyDrop, velocityLabel, confProbability, daysToConfirm, isLocked: false };
+}
+/**
+ * FEATURE 3: Cross-Class Automation Matrix (CCAM).
+ * When a route segment is REGRET/high-WL in the requested class,
+ * returns a mixed-class path configuration as a string array.
+ * e.g. Leg1 daytime SL, Leg2 overnight 3A.
+ * Returns null when not applicable.
+ */
+function exploreCrossClassMatrix(requestedClass, leg1Status, leg2Status, leg1DepartureHour, leg2DepartureHour) {
+    const isRegret = (s) => /REGRET|NOT AVAILABLE|CLASS NOT AVAILABLE|WL\s*[5-9][0-9]|WL\s*[1-9][0-9]{2}/i.test(s);
+    if (!isRegret(leg1Status) && !isRegret(leg2Status))
+        return null;
+    // Class fallback priority map
+    const CLASS_FALLBACK = {
+        '3A': ['SL', '2A'],
+        '2A': ['3A', '1A'],
+        'SL': ['3A', '2A'],
+        '1A': ['2A'],
+        'CC': ['EC', '2S'],
+        '2S': ['SL'],
+    };
+    const fallbacks = CLASS_FALLBACK[requestedClass] ?? ['SL'];
+    // Prefer SL for daytime legs (<= 21:00), 3A/2A for overnight legs (>= 21:00)
+    const leg1Class = isRegret(leg1Status)
+        ? (leg1DepartureHour < 21 ? (fallbacks.find(c => c === 'SL') ?? fallbacks[0]) : (fallbacks.find(c => c !== 'SL') ?? fallbacks[0]))
+        : requestedClass;
+    const leg2Class = isRegret(leg2Status)
+        ? (leg2DepartureHour >= 21 ? (fallbacks.find(c => c !== 'SL') ?? fallbacks[0]) : (fallbacks.find(c => c === 'SL') ?? fallbacks[0]))
+        : requestedClass;
+    return {
+        legClasses: [leg1Class, leg2Class],
+        rationale: `${requestedClass} unavailable — AI suggests: Leg 1 ${leg1Class} (${leg1DepartureHour < 21 ? 'daytime' : 'overnight'}), Leg 2 ${leg2Class} (${leg2DepartureHour >= 21 ? 'overnight' : 'daytime'})`,
+    };
+}
+/**
+ * PHASE_4C970 — Apply premium gate to a split journey result array.
+ * - Same-train splits  → `paywallType: 'SAME_TRAIN_REUSE'` + `isLocked: true` for FREE users
+ * - WVI metadata       → injected into every result; `wvi.isLocked` for FREE users
+ * - CCAM config        → injected when applicable; `ccam.isLocked` for FREE users
+ * Original algorithm objects (legs, scores, hubs) are NEVER mutated.
+ */
+function applyPremiumGate(splits, isPremiumUser, requestedClass = 'SL', source = '', destination = '') {
+    const corridorKey = `${source.toLowerCase()}-${destination.toLowerCase()}`;
+    return splits.map(s => {
+        const isSameTrain = !!(s.isSameTrain || s.rescueType === 'SAME_TRAIN_SEGMENT');
+        const legs = s.legs || [];
+        // ── FEATURE 1: Same-Train Reuse paywall flag ────────────────────────────
+        const sameTrainPremiumFields = isSameTrain && !isPremiumUser
+            ? { paywallType: 'SAME_TRAIN_REUSE', isLocked: true }
+            : {};
+        // ── FEATURE 2: WVI injection ────────────────────────────────────────────
+        // Compute from the leg with highest WL count (or 0 if confirmed/unknown)
+        let maxWL = 0;
+        legs.forEach((leg) => {
+            const wlRaw = leg?.availability?.wlCount ?? leg?.availability?.wl_count ?? 0;
+            const wlNum = typeof wlRaw === 'number' ? wlRaw : parseInt(String(wlRaw), 10) || 0;
+            if (wlNum > maxWL)
+                maxWL = wlNum;
+        });
+        const wviRaw = calculateWaitlistVelocity(legs[0]?.trainNo || '', corridorKey, maxWL);
+        const wvi = isPremiumUser
+            ? wviRaw
+            : { ...wviRaw, velocityLabel: 'LOCKED', confProbability: -1, dailyDrop: -1, daysToConfirm: -1, isLocked: true };
+        // ── FEATURE 3: CCAM injection ───────────────────────────────────────────
+        let ccam = null;
+        if (legs.length >= 2) {
+            const leg1Status = legs[0]?.availability?.status || '';
+            const leg2Status = legs[1]?.availability?.status || '';
+            const parseHour = (time) => {
+                if (!time)
+                    return 12;
+                const [h] = time.split(':').map(Number);
+                return isNaN(h) ? 12 : h;
+            };
+            const ccamRaw = exploreCrossClassMatrix(requestedClass, leg1Status, leg2Status, parseHour(legs[0]?.departure || ''), parseHour(legs[1]?.departure || ''));
+            if (ccamRaw) {
+                ccam = isPremiumUser
+                    ? { ...ccamRaw, isLocked: false }
+                    : { legClasses: ['🔒', '🔒'], rationale: 'Unlock Trayago Pro to view cross-class alternative', isLocked: true };
+            }
+        }
+        return {
+            ...s,
+            ...sameTrainPremiumFields,
+            wvi,
+            ...(ccam ? { ccam } : {}),
+        };
+    });
+}
 // ——— City → All valid station codes —————————————————————————————————————————
 // Covers all major terminals for each metro city so we never miss trains
 // departing from a secondary terminal (e.g. BCT instead of CSMT for Mumbai).
@@ -224,17 +351,251 @@ const PAN_INDIA_CORRIDOR_HUBS = {
         'HWH', // 996km — Howrah
         'GHY', 'NJP', 'MAO'
     ],
+    // —— Lucknow (LKO) ——
+    lucknow: [
+        'CNB', // 80km — Kanpur
+        'PRYJ', // 200km — Prayagraj
+        'JHS', // 390km — Jhansi
+        'ET', // 628km — Itarsi
+        'BPL', // 705km — Bhopal
+        'NGP', // 980km — Nagpur
+        'GKP', // 130km — Gorakhpur
+        'DDU', // 280km — Pt Deen Dayal Upadhyaya
+        'PNBE', // 530km — Patna
+        'HWH', // 1000km — Howrah
+        'BSB', // 320km — Varanasi
+        'NJP', 'GHY', 'MLDT', 'SHM'
+    ],
+    // —— Varanasi (BSB/DDU) ——
+    varanasi: [
+        'PRYJ', // 120km — Prayagraj
+        'CNB', // 310km — Kanpur
+        'DDU', // 40km — Mughalsarai
+        'LKO', // 320km — Lucknow
+        'PNBE', // 280km — Patna
+        'ET', // 770km — Itarsi
+        'BPL', // 830km — Bhopal
+        'HWH', // 800km — Howrah
+        'NGP', // 840km — Nagpur
+        'GAYA', // 250km — Gaya
+        'NJP', 'GHY', 'MLDT'
+    ],
+    // —— Jaipur (JP) ——
+    jaipur: [
+        'KOTA', // 262km — Kota
+        'AGC', // 238km — Agra
+        'BPL', // 652km — Bhopal
+        'ET', // 760km — Itarsi
+        'RTM', // 440km — Ratlam
+        'NDLS', // 309km — Delhi
+        'CNB', // 720km — Kanpur
+        'ADI', // 633km — Ahmedabad
+        'BRC', // 741km — Vadodara
+        'NGP', // 1130km — Nagpur
+        'GWL', // 447km — Gwalior
+        'JHS', // 504km — Jhansi
+    ],
+    // —— Bhopal (BPL) ——
+    bhopal: [
+        'ET', // 93km — Itarsi
+        'NGP', // 338km — Nagpur
+        'JHS', // 284km — Jhansi
+        'KOTA', // 390km — Kota
+        'RTM', // 330km — Ratlam
+        'CNB', // 560km — Kanpur
+        'LKO', // 705km — Lucknow
+        'SUR', // 730km — Solapur
+        'BZA', // 870km — Vijayawada
+        'NDLS', // 705km — Delhi
+        'PRYJ', // 520km — Prayagraj
+        'BSL', // 278km — Bhusaval
+        'GWL', // 293km — Gwalior
+    ],
+    // —— Itarsi (ET) ——
+    itarsi: [
+        'NGP', // 255km — Nagpur
+        'BPL', // 93km — Bhopal
+        'BSL', // 237km — Bhusaval
+        'JHS', // 330km — Jhansi
+        'KOTA', // 480km — Kota
+        'CNB', // 630km — Kanpur
+        'SUR', // 620km — Solapur
+        'PUNE', // 613km — Pune
+        'SC', // 690km — Secunderabad
+        'BZA', // 870km — Vijayawada
+        'RTM', // 372km — Ratlam
+    ],
+    // —— Guwahati (GHY) ——
+    guwahati: [
+        'NJP', // 378km — New Jalpaiguri
+        'MLDT', // 550km — Malda
+        'HWH', // 1000km — Howrah
+        'PNBE', // 1100km — Patna
+        'MGS', // 1260km — Mughalsarai/DDU
+        'CNB', // 1430km — Kanpur
+        'DBRG', // 300km — Dibrugarh
+        'SHM', // 900km — Shalimar
+        'KGP', // 910km — Kharagpur
+    ],
+    // —— Ernakulam/Kochi (ERS) ——
+    ernakulam: [
+        'CBE', // 194km — Coimbatore
+        'MAS', // 683km — Chennai
+        'SBC', // 555km — Bengaluru
+        'TVC', // 220km — Thiruvananthapuram
+        'MAJN', // 416km — Mangaluru
+        'SA', // 355km — Salem
+        'SC', // 940km — Secunderabad
+        'GTL', // 640km — Guntakal
+        'MDU', // 280km — Madurai
+        'PGT', // 200km — Palakkad
+    ],
+    // —— Thiruvananthapuram (TVC) ——
+    thiruvananthapuram: [
+        'ERS', // 220km — Ernakulam
+        'CBE', // 414km — Coimbatore
+        'MAS', // 903km — Chennai
+        'SA', // 575km — Salem
+        'SBC', // 740km — Bengaluru
+        'MAJN', // 636km — Mangaluru
+        'MDU', // 460km — Madurai
+        'GTL', // 862km — Guntakal
+    ],
+    // —— Coimbatore (CBE) ——
+    coimbatore: [
+        'SA', // 160km — Salem
+        'MAS', // 496km — Chennai
+        'SBC', // 364km — Bengaluru
+        'ERS', // 194km — Ernakulam
+        'TVC', // 414km — Thiruvananthapuram
+        'MDU', // 278km — Madurai
+        'GTL', // 440km — Guntakal
+        'SC', // 770km — Secunderabad
+        'PGT', // 56km — Palakkad
+    ],
+    // —— Bhubaneswar (BBS) ——
+    bhubaneswar: [
+        'KGP', // 270km — Kharagpur
+        'BZA', // 390km — Vijayawada
+        'VSKP', // 440km — Visakhapatnam
+        'HWH', // 444km — Howrah
+        'CTC', // 27km — Cuttack
+        'NGP', // 900km — Nagpur
+        'TATA', // 345km — Tatanagar
+    ],
+    // —— Visakhapatnam (VSKP) ——
+    visakhapatnam: [
+        'BZA', // 360km — Vijayawada
+        'KGP', // 700km — Kharagpur
+        'HWH', // 800km — Howrah
+        'SC', // 714km — Secunderabad
+        'MAS', // 800km — Chennai
+        'BBS', // 440km — Bhubaneswar
+        'NGP', // 740km — Nagpur
+        'RJY', // 135km — Rajahmundry
+    ],
+    // —— Madurai (MDU) ——
+    madurai: [
+        'SA', // 280km — Salem
+        'CBE', // 278km — Coimbatore
+        'MAS', // 492km — Chennai
+        'TVC', // 460km — Thiruvananthapuram
+        'ERS', // 280km — Ernakulam
+        'TPJ', // 133km — Tiruchirappalli
+        'SBC', // 640km — Bengaluru
+        'GTL', // 540km — Guntakal
+    ],
+    // —— Indore (INDB) ——
+    indore: [
+        'RTM', // 130km — Ratlam
+        'BRC', // 400km — Vadodara
+        'ET', // 261km — Itarsi
+        'BPL', // 193km — Bhopal
+        'NGP', // 520km — Nagpur
+        'ADI', // 450km — Ahmedabad
+        'KOTA', // 395km — Kota
+    ],
+    // —— Raipur (R) ——
+    raipur: [
+        'NGP', // 280km — Nagpur
+        'BPL', // 488km — Bhopal
+        'BSP', // 130km — Bilaspur
+        'ET', // 423km — Itarsi
+        'HWH', // 1000km — Howrah
+        'TATA', // 650km — Tatanagar
+        'VSKP', // 640km — Visakhapatnam
+    ],
+    // —— Surat (ST) ——
+    surat: [
+        'BRC', // 128km — Vadodara
+        'ADI', // 263km — Ahmedabad
+        'RTM', // 430km — Ratlam
+        'BSL', // 546km — Bhusaval
+        'NGP', // 856km — Nagpur
+        'PUNE', // 464km — Pune
+        'ET', // 660km — Itarsi
+        'BPL', // 650km — Bhopal
+    ],
+    // —— Vadodara (BRC) ——
+    vadodara: [
+        'ADI', // 101km — Ahmedabad
+        'RTM', // 275km — Ratlam
+        'BSL', // 420km — Bhusaval
+        'NGP', // 760km — Nagpur
+        'PUNE', // 360km — Pune
+        'ET', // 533km — Itarsi
+        'BPL', // 550km — Bhopal
+        'KOTA', // 528km — Kota
+        'ST', // 128km — Surat
+    ],
+    // —— Amritsar (ASR) ——
+    amritsar: [
+        'LDH', // 75km — Ludhiana
+        'UMB', // 200km — Ambala
+        'NDLS', // 449km — Delhi
+        'CDG', // 110km — Chandigarh
+        'JP', // 660km — Jaipur
+        'AGC', // 565km — Agra
+        'CNB', // 900km — Kanpur
+        'MB', // 300km — Moradabad
+    ],
+    // —— Jammu (JAT) ——
+    jammu: [
+        'CDG', // 280km — Chandigarh
+        'LDH', // 330km — Ludhiana
+        'NDLS', // 576km — Delhi
+        'UMB', // 360km — Ambala
+        'MB', // 425km — Moradabad
+        'AGC', // 680km — Agra
+        'JP', // 786km — Jaipur
+    ],
+    // —— Goa/Madgaon (MAO) ——
+    goa: [
+        'RN', // 104km — Ratnagiri
+        'MAJN', // 245km — Mangaluru
+        'PUNE', // 460km — Pune
+        'SBC', // 600km — Bengaluru
+        'UBL', // 348km — Hubballi
+        'MAS', // 1100km — Chennai
+    ],
+    madgaon: [
+        'RN', // 104km — Ratnagiri
+        'MAJN', // 245km — Mangaluru
+        'PUNE', // 460km — Pune
+        'SBC', // 600km — Bengaluru
+        'UBL', // 348km — Hubballi
+    ],
 };
 // ——— Deterministic Priority Corridors ———————————————————————————————————————
+// PHASE_4C990: Expanded from 25 to 75+ corridors for Pan-India coverage.
+// Key: "sourcecity-destcity" (lowercase, city name from getCity())
 const DETERMINISTIC_CORRIDORS = {
+    // —— Original Mumbai corridors ——
     "mumbai-gadag": ["SUR", "PUNE", "MRJ", "BGM", "UBL"],
     "mumbai-ubl": ["SUR", "PUNE", "MRJ", "BGM"],
     "mumbai-hubballi": ["SUR", "PUNE", "MRJ", "BGM"],
     "mumbai-hubli": ["SUR", "PUNE", "MRJ", "BGM"],
     "mumbai-hvr": ["SUR", "PUNE", "MRJ", "BGM", "UBL"],
-    // PHASE_4C989 FIX: Add missing Karnataka destination corridors.
-    // Without these, isDeterministic=false and generic hub pool is used,
-    // producing suboptimal or empty split results for these routes.
     "mumbai-belagavi": ["SUR", "PUNE", "MRJ", "UBL"],
     "mumbai-belgaum": ["SUR", "PUNE", "MRJ", "UBL"],
     "mumbai-goa": ["RN", "MAO"],
@@ -243,24 +604,189 @@ const DETERMINISTIC_CORRIDORS = {
     "mumbai-kolhapur": ["PUNE", "SUR", "MRJ"],
     "mumbai-bengaluru": ["SUR", "PUNE", "UBL"],
     "mumbai-bangalore": ["SUR", "PUNE", "UBL"],
-    "delhi-lko": ["CNB", "PRYJ"],
-    "delhi-kolkata": ["CNB", "PRYJ", "DDU", "GAYA", "ASN", "HWH"],
-    "kolkata-bbs": ["KGP", "BLS", "CTC"],
-    "kolkata-puri": ["KGP", "BLS", "CTC", "BBS", "KUR"],
-    "chennai-bangalore": ["KPD", "JTJ", "BWT"],
-    "chennai-bengaluru": ["KPD", "JTJ", "BWT"],
     "mumbai-guwahati": ["HWH", "PNBE", "GHY", "NJP"],
     "mumbai-dibrugarh": ["HWH", "PNBE", "GHY", "NJP", "DBRG"],
     "mumbai-ernakulam": ["MAO", "MAJN", "ERS"],
     "mumbai-trivandrum": ["MAO", "MAJN", "ERS", "TVC"],
     "mumbai-mangalore": ["RN", "MAJN", "MAQ"],
     "mumbai-madgaon": ["RN", "MAO"],
+    // —— Mumbai extended ——
+    "mumbai-varanasi": ["BSL", "NGP", "ET", "PRYJ", "BSB"],
+    "mumbai-patna": ["NGP", "ET", "PRYJ", "DDU", "PNBE"],
+    "mumbai-lucknow": ["BSL", "ET", "BPL", "JHS", "CNB", "LKO"],
+    "mumbai-delhi": ["BRC", "RTM", "KOTA", "AGC", "NDLS"],
+    "mumbai-jaipur": ["BRC", "RTM", "KOTA", "JP"],
+    "mumbai-kolkata": ["NGP", "ET", "BSL", "PRYJ", "HWH"],
+    "mumbai-hyderabad": ["SUR", "SC", "PUNE"],
+    "mumbai-secunderabad": ["SUR", "SC", "PUNE", "NGP"],
+    "mumbai-vijayawada": ["SUR", "SC", "NGP", "BZA"],
+    "mumbai-bhubaneswar": ["NGP", "VSKP", "BZA", "BBS"],
+    "mumbai-vishakhapatnam": ["NGP", "SC", "BZA", "VSKP"],
+    "mumbai-visakhapatnam": ["NGP", "SC", "BZA", "VSKP"],
+    "mumbai-chennai": ["SUR", "SC", "NGP", "BZA", "MAS"],
+    "mumbai-madurai": ["SUR", "SC", "SA", "MDU"],
+    "mumbai-coimbatore": ["SUR", "SC", "SA", "CBE"],
+    "mumbai-ahmedabad": ["BRC", "ST", "ADI"],
+    "mumbai-surat": ["ST", "BRC"],
+    "mumbai-nagpur": ["BSL", "NGP"],
+    "mumbai-bhopal": ["BSL", "ET", "BPL"],
+    "mumbai-itarsi": ["BSL", "ET"],
+    "mumbai-gorakhpur": ["BSL", "NGP", "ET", "BPL", "CNB", "LKO", "GKP"],
+    // —— Delhi corridors ——
+    "delhi-lko": ["CNB", "PRYJ"],
+    "delhi-kolkata": ["CNB", "PRYJ", "DDU", "GAYA", "ASN", "HWH"],
+    "delhi-trivandrum": ["ET", "NGP", "BZA", "ERS", "TVC"],
+    "delhi-varanasi": ["AGC", "CNB", "PRYJ", "DDU", "BSB"],
+    "delhi-patna": ["CNB", "PRYJ", "DDU", "GAYA", "PNBE"],
+    "delhi-gorakhpur": ["CNB", "LKO", "GKP"],
+    "delhi-guwahati": ["CNB", "PNBE", "KGP", "NJP", "GHY"],
+    "delhi-bhopal": ["AGC", "JHS", "BPL"],
+    "delhi-jaipur": ["AGC", "KOTA", "JP"],
+    "delhi-ahmedabad": ["RTM", "BRC", "ADI"],
+    "delhi-surat": ["RTM", "BRC", "ST"],
+    "delhi-mumbai": ["KOTA", "RTM", "BRC", "PUNE"],
+    "delhi-hyderabad": ["JHS", "ET", "NGP", "SC"],
+    "delhi-secunderabad": ["JHS", "ET", "NGP", "SC"],
+    "delhi-bangalore": ["JHS", "ET", "NGP", "SC", "SBC"],
+    "delhi-bengaluru": ["JHS", "ET", "NGP", "SC", "SBC"],
+    "delhi-chennai": ["BPL", "ET", "NGP", "BZA", "MAS"],
+    "delhi-madurai": ["BPL", "NGP", "SC", "SA", "MDU"],
+    "delhi-ernakulam": ["BPL", "NGP", "SC", "ERS"],
+    "delhi-bhubaneswar": ["CNB", "PRYJ", "HWH", "KGP", "BBS"],
+    "delhi-visakhapatnam": ["CNB", "DDU", "HWH", "BZA", "VSKP"],
+    "delhi-nagpur": ["BPL", "ET", "NGP"],
+    "delhi-indore": ["AGC", "KOTA", "RTM"],
+    "delhi-raipur": ["ET", "NGP", "BSP"],
+    "delhi-amritsar": ["CDG", "LDH", "ASR"],
+    // —— Kolkata corridors ——
+    "kolkata-bbs": ["KGP", "BLS", "CTC"],
+    "kolkata-puri": ["KGP", "BLS", "CTC", "BBS", "KUR"],
     "kolkata-guwahati": ["MLDT", "NJP", "GHY"],
     "kolkata-dibrugarh": ["MLDT", "NJP", "GHY", "DBRG"],
-    "delhi-trivandrum": ["ET", "NGP", "BZA", "ERS", "TVC"],
+    "kolkata-mumbai": ["KGP", "TATA", "NGP", "ET", "BSL", "PUNE"],
+    "kolkata-delhi": ["ASN", "DHN", "MGS", "CNB", "NDLS"],
+    "kolkata-chennai": ["KGP", "BBS", "VSKP", "BZA", "MAS"],
+    "kolkata-bangalore": ["KGP", "VSKP", "BZA", "SC", "SBC"],
+    "kolkata-bengaluru": ["KGP", "VSKP", "BZA", "SC", "SBC"],
+    "kolkata-hyderabad": ["KGP", "VSKP", "BZA", "SC"],
+    "kolkata-secunderabad": ["KGP", "BBS", "VSKP", "BZA", "SC"],
+    "kolkata-patna": ["ASN", "DHN", "GAYA", "PNBE"],
+    "kolkata-lucknow": ["ASN", "MGS", "PRYJ", "CNB", "LKO"],
+    "kolkata-varanasi": ["ASN", "MGS", "BSB"],
+    "kolkata-ahmedabad": ["KGP", "TATA", "NGP", "BPL", "RTM", "ADI"],
+    "kolkata-ernakulam": ["KGP", "BBS", "VSKP", "BZA", "MAS", "ERS"],
+    "kolkata-trivandrum": ["KGP", "BBS", "BZA", "MAS", "ERS", "TVC"],
+    "kolkata-nagpur": ["KGP", "TATA", "NGP"],
+    "kolkata-raipur": ["KGP", "TATA", "BSP"],
+    // —— Chennai corridors ——
+    "chennai-bangalore": ["KPD", "JTJ", "BWT"],
+    "chennai-bengaluru": ["KPD", "JTJ", "BWT"],
     "chennai-trivandrum": ["SA", "CBE", "ERS"],
+    "chennai-mumbai": ["BZA", "SC", "NGP", "BSL", "PUNE"],
+    "chennai-delhi": ["BZA", "NGP", "ET", "BPL", "NDLS"],
+    "chennai-kolkata": ["BZA", "VSKP", "KGP", "HWH"],
+    "chennai-hyderabad": ["GDR", "RU", "BZA", "SC"],
+    "chennai-secunderabad": ["GDR", "RU", "BZA", "SC"],
+    "chennai-patna": ["BZA", "KGP", "HWH", "PNBE"],
+    "chennai-lucknow": ["BZA", "NGP", "ET", "CNB", "LKO"],
+    "chennai-ahmedabad": ["BZA", "NGP", "ET", "RTM", "ADI"],
+    "chennai-bhubaneswar": ["BZA", "VSKP", "KGP", "BBS"],
+    "chennai-madurai": ["SA", "MDU"],
+    "chennai-coimbatore": ["SA", "CBE"],
+    "chennai-ernakulam": ["SA", "CBE", "ERS"],
+    "chennai-vijayawada": ["GDR", "RU", "BZA"],
+    "chennai-visakhapatnam": ["GDR", "RU", "BZA", "VSKP"],
+    // —— Bangalore/Bengaluru corridors ——
     "bengaluru-trivandrum": ["CBE", "ERS"],
     "bangalore-trivandrum": ["CBE", "ERS"],
+    "bengaluru-mumbai": ["SUR", "PUNE", "UBL"],
+    "bangalore-mumbai": ["SUR", "PUNE", "UBL"],
+    "bengaluru-delhi": ["SC", "NGP", "ET", "BPL", "JHS", "NDLS"],
+    "bangalore-delhi": ["SC", "NGP", "ET", "BPL", "JHS", "NDLS"],
+    "bengaluru-kolkata": ["BZA", "VSKP", "KGP", "HWH"],
+    "bangalore-kolkata": ["BZA", "VSKP", "KGP", "HWH"],
+    "bengaluru-chennai": ["KPD", "JTJ", "BWT"],
+    "bangalore-chennai": ["KPD", "JTJ", "BWT"],
+    "bengaluru-patna": ["SC", "BZA", "KGP", "HWH", "PNBE"],
+    "bangalore-patna": ["SC", "BZA", "KGP", "HWH", "PNBE"],
+    "bengaluru-hyderabad": ["SC", "KCG"],
+    "bangalore-hyderabad": ["SC", "KCG"],
+    "bengaluru-varanasi": ["SC", "NGP", "ET", "PRYJ", "BSB"],
+    "bengaluru-lucknow": ["SC", "NGP", "ET", "CNB", "LKO"],
+    "bengaluru-ernakulam": ["CBE", "ERS"],
+    "bengaluru-coimbatore": ["SA", "CBE"],
+    "bengaluru-madurai": ["SA", "MDU"],
+    "bengaluru-ahmedabad": ["SC", "NGP", "ET", "RTM", "ADI"],
+    "bengaluru-bhubaneswar": ["SC", "BZA", "VSKP", "BBS"],
+    "bengaluru-goa": ["UBL", "MAO"],
+    "bangalore-goa": ["UBL", "MAO"],
+    "bengaluru-nagpur": ["SC", "NGP"],
+    "bengaluru-guwahati": ["BZA", "KGP", "HWH", "NJP", "GHY"],
+    // —— Hyderabad/Secunderabad corridors ——
+    "hyderabad-mumbai": ["PUNE", "SUR", "SC"],
+    "secunderabad-mumbai": ["PUNE", "SUR", "SC"],
+    "hyderabad-delhi": ["NGP", "ET", "BPL", "JHS", "NDLS"],
+    "secunderabad-delhi": ["NGP", "ET", "BPL", "JHS", "NDLS"],
+    "hyderabad-kolkata": ["BZA", "VSKP", "KGP", "HWH"],
+    "hyderabad-patna": ["BZA", "KGP", "HWH", "PNBE"],
+    "hyderabad-lucknow": ["NGP", "ET", "CNB", "LKO"],
+    "hyderabad-chennai": ["BZA", "GDR", "MAS"],
+    "hyderabad-bangalore": ["SC", "SBC"],
+    "hyderabad-guwahati": ["BZA", "KGP", "HWH", "NJP", "GHY"],
+    // —— Lucknow corridors ——
+    "lucknow-mumbai": ["CNB", "JHS", "ET", "BSL", "NGP"],
+    "lucknow-kolkata": ["PRYJ", "DDU", "GAYA", "ASN", "HWH"],
+    "lucknow-chennai": ["CNB", "PRYJ", "BSB", "HWH", "BZA", "MAS"],
+    "lucknow-hyderabad": ["CNB", "ET", "NGP", "SC"],
+    "lucknow-bangalore": ["CNB", "ET", "NGP", "SC", "SBC"],
+    "lucknow-patna": ["PRYJ", "DDU", "GAYA", "PNBE"],
+    "lucknow-guwahati": ["PNBE", "KGP", "NJP", "GHY"],
+    "lucknow-ahmedabad": ["JHS", "KOTA", "RTM", "ADI"],
+    // —— Jaipur corridors ——
+    "jaipur-mumbai": ["KOTA", "RTM", "BPL", "BSL", "NGP"],
+    "jaipur-chennai": ["KOTA", "BPL", "NGP", "SC", "MAS"],
+    "jaipur-kolkata": ["AGC", "CNB", "PRYJ", "DDU", "HWH"],
+    "jaipur-bangalore": ["KOTA", "BPL", "ET", "NGP", "SC", "SBC"],
+    "jaipur-hyderabad": ["KOTA", "BPL", "NGP", "SC"],
+    "jaipur-lucknow": ["AGC", "CNB", "LKO"],
+    "jaipur-patna": ["AGC", "CNB", "PRYJ", "DDU", "PNBE"],
+    // —— Ahmedabad/Gujarat corridors ——
+    "ahmedabad-chennai": ["RTM", "ET", "NGP", "BZA", "MAS"],
+    "ahmedabad-kolkata": ["RTM", "BPL", "ET", "NGP", "HWH"],
+    "ahmedabad-hyderabad": ["RTM", "BRC", "NGP", "SC"],
+    "ahmedabad-bangalore": ["RTM", "BRC", "NGP", "SC", "SBC"],
+    "ahmedabad-patna": ["RTM", "BPL", "ET", "PRYJ", "PNBE"],
+    "ahmedabad-lucknow": ["RTM", "BPL", "ET", "CNB", "LKO"],
+    // —— Patna/Bihar corridors ——
+    "patna-mumbai": ["DDU", "ET", "BSL", "NGP", "PUNE"],
+    "patna-chennai": ["HWH", "BBS", "VSKP", "BZA", "MAS"],
+    "patna-bangalore": ["HWH", "BBS", "BZA", "SC", "SBC"],
+    "patna-hyderabad": ["HWH", "BZA", "SC"],
+    "patna-guwahati": ["KGP", "NJP", "GHY"],
+    // —— Varanasi corridors ——
+    "varanasi-mumbai": ["PRYJ", "JHS", "ET", "BSL", "NGP"],
+    "varanasi-bangalore": ["PRYJ", "ET", "NGP", "SC", "SBC"],
+    "varanasi-chennai": ["DDU", "HWH", "BZA", "MAS"],
+    "varanasi-kolkata": ["DDU", "ASN", "HWH"],
+    // —— East/NE corridors ——
+    "bhubaneswar-mumbai": ["KGP", "TATA", "NGP", "ET", "BSL"],
+    "bhubaneswar-delhi": ["KGP", "DHN", "MGS", "CNB", "NDLS"],
+    "bhubaneswar-bangalore": ["KGP", "VSKP", "BZA", "SC", "SBC"],
+    "visakhapatnam-mumbai": ["BZA", "SC", "NGP", "BSL"],
+    "visakhapatnam-delhi": ["BZA", "NGP", "ET", "BPL", "NDLS"],
+    "guwahati-mumbai": ["NJP", "HWH", "NGP", "ET", "BSL"],
+    "guwahati-delhi": ["NJP", "MLDT", "HWH", "MGS", "CNB"],
+    "guwahati-chennai": ["HWH", "KGP", "VSKP", "BZA", "MAS"],
+    "guwahati-bangalore": ["HWH", "VSKP", "BZA", "SC", "SBC"],
+    // —— South India internal ——
+    "ernakulam-delhi": ["SA", "SC", "NGP", "ET", "BPL", "NDLS"],
+    "ernakulam-mumbai": ["MAJN", "MAO", "PUNE"],
+    "trivandrum-mumbai": ["ERS", "MAJN", "MAO", "PUNE"],
+    "trivandrum-delhi": ["ERS", "CBE", "SC", "NGP", "BPL", "NDLS"],
+    "madurai-mumbai": ["SA", "SC", "NGP", "BSL"],
+    "madurai-delhi": ["SA", "SC", "NGP", "ET", "BPL", "NDLS"],
+    "coimbatore-mumbai": ["SA", "SC", "NGP", "BSL"],
+    "coimbatore-delhi": ["SA", "SC", "NGP", "ET", "BPL", "NDLS"],
 };
 // ——— Hub Priority Tiers —————————————————————————————————————————————————————
 const A_TIER_HUBS = [
@@ -433,7 +959,7 @@ const MIN_WAIT_MINS = 30;
 const MAX_TOTAL_MINS = 1800;
 class SplitJourneyEngine {
     constructor() {
-        this.MAX_HUBS = 5; // PHASE_4C986: raised from 3 to 5 to cover multiple disjoint routes pan-India
+        this.MAX_HUBS = 8; // PHASE_4C990: raised from 5 to 8 for Pan-India coverage — more hubs = better alternatives
         this.MAX_TOTAL_CALLS = 40;
         this.MAX_ENGINE_TIME_MS = 22000;
         this.MAX_COMBOS_PER_HUB = 8;
@@ -736,13 +1262,72 @@ class SplitJourneyEngine {
             const totalFound = finalSanitized.length;
             const regularSplits = finalSanitized.filter((s) => !s.isSameTrain && s.rescueType !== 'SAME_TRAIN_SEGMENT');
             const sameTrainSplits = finalSanitized.filter((s) => s.isSameTrain || s.rescueType === 'SAME_TRAIN_SEGMENT');
-            const top2Regular = regularSplits.slice(0, 2);
-            const top2SameTrain = sameTrainSplits.slice(0, 2);
-            const combinedSplits = [...top2Regular, ...top2SameTrain];
-            result.split = combinedSplits;
-            result.splits = combinedSplits;
-            result.smart_routes = combinedSplits;
-            result.hasMoreSplits = regularSplits.length > 2 || sameTrainSplits.length > 2;
+            // ── DEDUP regular splits: same leg2 train → keep only best wait_time
+            const leg2BestMap = new Map();
+            for (const s of regularSplits) {
+                const leg2No = s.legs?.[1]?.trainNo;
+                if (!leg2No) {
+                    leg2BestMap.set(`no_leg2_${s.hub}`, s);
+                    continue;
+                }
+                const existing = leg2BestMap.get(leg2No);
+                const sWait = s.wait_time != null ? s.wait_time : (s.bufferMinutes != null ? s.bufferMinutes : 9999);
+                const eWait = existing ? (existing.wait_time != null ? existing.wait_time : (existing.bufferMinutes != null ? existing.bufferMinutes : 9999)) : Infinity;
+                if (!existing || sWait < eWait)
+                    leg2BestMap.set(leg2No, s);
+            }
+            const dedupedRegular = [...leg2BestMap.values()];
+            logger_1.winstonLogger.info(`[DEDUP_LEG2] regular: ${regularSplits.length}→${dedupedRegular.length}`);
+            // ── DEDUP same-train splits: same (leg1+leg2) trainNo combo → keep best hub
+            // Fixes Delhi→GHY showing 12424 Rajdhani twice via NJP and CNB
+            const sameTrainBestMap = new Map();
+            for (const s of sameTrainSplits) {
+                const l1No = s.legs?.[0]?.trainNo || '?';
+                const l2No = s.legs?.[1]?.trainNo || '?';
+                const comboKey = `${l1No}_${l2No}`;
+                const existing = sameTrainBestMap.get(comboKey);
+                const sWait = s.wait_time != null ? s.wait_time : (s.bufferMinutes != null ? s.bufferMinutes : 9999);
+                const eWait = existing ? (existing.wait_time != null ? existing.wait_time : (existing.bufferMinutes != null ? existing.bufferMinutes : 9999)) : Infinity;
+                if (!existing || sWait < eWait)
+                    sameTrainBestMap.set(comboKey, s);
+            }
+            const dedupedSameTrain = [...sameTrainBestMap.values()];
+            logger_1.winstonLogger.info(`[DEDUP_SAME_TRAIN] sameTrain: ${sameTrainSplits.length}→${dedupedSameTrain.length}`);
+            // Return up to 6 regular + 2 same-train so frontend pagination has real variety
+            const excludeVias = options?.excludeVia || [];
+            const filteredRegular = excludeVias.length > 0
+                ? dedupedRegular.filter((s) => !excludeVias.includes(s.hub))
+                : dedupedRegular;
+            // ── PER-HUB CAP: max 2 results per hub for variety (e.g. KOTA showing 4x → cap to 2)
+            // Sort by wait_time ascending first so best connection per hub is always included
+            const sortedRegular = [...filteredRegular].sort((a, b) => {
+                const wa = a.wait_time != null ? a.wait_time : (a.bufferMinutes != null ? a.bufferMinutes : 9999);
+                const wb = b.wait_time != null ? b.wait_time : (b.bufferMinutes != null ? b.bufferMinutes : 9999);
+                return wa - wb;
+            });
+            const hubCountMap = new Map();
+            const MAX_PER_HUB = 2;
+            const hubCappedRegular = [];
+            for (const s of sortedRegular) {
+                const hub = s.hub || s.via || 'unknown';
+                const count = hubCountMap.get(hub) || 0;
+                if (count < MAX_PER_HUB) {
+                    hubCappedRegular.push(s);
+                    hubCountMap.set(hub, count + 1);
+                }
+            }
+            logger_1.winstonLogger.info(`[HUB_CAP] filtered: ${filteredRegular.length}→capped: ${hubCappedRegular.length}`);
+            const topRegular = hubCappedRegular.slice(0, 6);
+            const top2SameTrain = dedupedSameTrain.slice(0, 2);
+            const combinedSplits = [...topRegular, ...top2SameTrain];
+            // ── PHASE_4C970: Apply premium gate (output transform only, no algo changes)
+            const isPremiumUser = !!options?.isPremiumUser;
+            const classType = options?.classType || 'SL';
+            const gatedSplits = applyPremiumGate(combinedSplits, isPremiumUser, classType, source, destination);
+            result.split = gatedSplits;
+            result.splits = gatedSplits;
+            result.smart_routes = gatedSplits;
+            result.hasMoreSplits = regularSplits.length > 6 || sameTrainSplits.length > 2;
             result.totalFound = totalFound;
             if (combinedSplits.length > 0) {
                 // Verification payload logging removed

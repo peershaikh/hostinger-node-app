@@ -57,9 +57,9 @@ class AuthController {
                 }
                 res.cookie('refreshToken', result.tokens.refreshToken, {
                     httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'strict',
-                    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+                    secure: true, // required for sameSite:none
+                    sameSite: 'none', // cross-domain fix: www.trayago.com → app.trayago.in
+                    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
                 });
                 return res.json({
                     success: true,
@@ -86,9 +86,9 @@ class AuthController {
                 const result = await authService_1.authService.login(email, password, deviceId, referralCode);
                 res.cookie('refreshToken', result.tokens.refreshToken, {
                     httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'strict',
-                    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+                    secure: true, // required for sameSite:none
+                    sameSite: 'none', // cross-domain fix: www.trayago.com → app.trayago.in
+                    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
                 });
                 return res.json({
                     success: true,
@@ -264,8 +264,10 @@ class AuthController {
         };
         this.refresh = async (req, res) => {
             try {
-                // Dual-mode: cookie (web) first, then JSON body (mobile fallback)
-                const token = req.cookies?.refreshToken || req.body?.refreshToken;
+                // Dual-mode: cookie (web) first, then Authorization header, then JSON body (mobile)
+                const authHeader = req.headers['authorization'];
+                const headerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+                const token = req.cookies?.refreshToken || headerToken || req.body?.refreshToken;
                 if (!token) {
                     return res.status(401).json({
                         success: false,
@@ -274,12 +276,12 @@ class AuthController {
                     });
                 }
                 const tokens = await authService_1.authService.verifyRefreshToken(token);
-                // Re-set cookie for web clients (unchanged cookie security model)
+                // Re-set cookie with cross-domain settings
                 res.cookie('refreshToken', tokens.refreshToken, {
                     httpOnly: true,
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'strict',
-                    maxAge: 7 * 24 * 60 * 60 * 1000,
+                    secure: true,
+                    sameSite: 'none',
+                    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
                 });
                 // Return refreshToken in body too — mobile clients store it in AsyncStorage
                 return res.json({

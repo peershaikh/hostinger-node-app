@@ -774,6 +774,87 @@
     "created_at": "2026-07-13T11:25:11.284004+00:00"
   },
   {
+    "id": "1a685d65-52a9-4285-9d33-3dd1239b4751",
+    "query": "ringu",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-14T07:05:23.25+00:00",
+    "status": "pending",
+    "created_at": "2026-07-14T07:05:23.613654+00:00"
+  },
+  {
+    "id": "cbcb52c9-b7ba-4d6a-98b4-b1b89c98f105",
+    "query": "ringus",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-14T07:05:24.199+00:00",
+    "status": "pending",
+    "created_at": "2026-07-14T07:05:24.241552+00:00"
+  },
+  {
+    "id": "e87e6f14-8138-42df-b91b-edfee0359b79",
+    "query": "NEW DELHI (NDLNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:07:34.16+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:07:34.221177+00:00"
+  },
+  {
+    "id": "6d33e779-e446-4409-8561-8c74d9740570",
+    "query": "NEW DELHI (NDNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:07:34.152+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:07:34.236399+00:00"
+  },
+  {
+    "id": "0b79672e-75df-4c07-a7d5-ddf0285cd3af",
+    "query": "NEW DELHI (NNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:07:34.252+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:07:34.306353+00:00"
+  },
+  {
+    "id": "a5e3d711-84e2-4959-b31b-2c9728003e8a",
+    "query": "NEW DELHI (NDLSNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:07:34.411+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:07:34.4658+00:00"
+  },
+  {
+    "id": "0cc6371b-ba59-469d-909b-f91f33295680",
+    "query": "NEW DELHI (NDNDLSNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:07:51.949+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:07:52.002698+00:00"
+  },
+  {
+    "id": "421a389f-e5d0-4141-a2e1-03075c238ae3",
+    "query": "NEW DELHI (NDLNDLSNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:07:51.902+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:07:52.012755+00:00"
+  },
+  {
+    "id": "9639ec22-9f08-4bdb-9b92-cc98a5c5293d",
+    "query": "NEW DELHI (NNDLSNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:07:51.96+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:07:52.024928+00:00"
+  },
+  {
     "id": "d8dee1ac-4b3a-47e6-9ed6-3e74da6f7808",
     "query": "MUMBAI CST (C",
     "user_id": null,
@@ -873,6 +954,24 @@
     "created_at": "2026-07-07T05:11:38.144642+00:00"
   },
   {
+    "id": "28b1ca1f-7a9a-41ce-a11e-4f8d0b1060e6",
+    "query": "NEW DELHI (NDLSNDLSNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:07:52.043+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:07:52.08171+00:00"
+  },
+  {
+    "id": "310b2c78-41b6-40b1-9eba-baeea626eaf6",
+    "query": "NEW DELHI (NDLSNDNLSNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:08:01.634+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:08:01.778646+00:00"
+  },
+  {
     "id": "82b82b5b-e089-4a11-a4a4-1911e785ad0e",
     "query": "CSMTMumba",
     "user_id": null,
@@ -925,6 +1024,42 @@
     "last_seen": "2026-07-07T10:06:46.739+00:00",
     "status": "pending",
     "created_at": "2026-07-07T10:06:46.936388+00:00"
+  },
+  {
+    "id": "eb98f8bf-1833-416e-8b3d-e449f918675e",
+    "query": "NEW DELHI (NDLSNDNDLSLSNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:08:01.833+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:08:01.873366+00:00"
+  },
+  {
+    "id": "f74d32c4-623b-40db-b6a2-bf16a473f701",
+    "query": "NEW DELHI (NDLSNDNDLSNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:08:01.834+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:08:02.230196+00:00"
+  },
+  {
+    "id": "9d5327a7-ab6a-459c-9fff-857629560b52",
+    "query": "NEW DELHI (NDLSNDNDLLSNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:08:02.221+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:08:02.302787+00:00"
+  },
+  {
+    "id": "d0f3e4c9-4ef3-4383-b8d0-70750b8955fb",
+    "query": "NEW DELHI (NDLNDLSNDNDLSLSNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:08:18.763+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:08:18.820232+00:00"
   },
   {
     "id": "e456649d-cba2-4de0-ac6e-a409e0a1d220",
@@ -1168,5 +1303,167 @@
     "last_seen": "2026-07-11T09:35:21.475+00:00",
     "status": "pending",
     "created_at": "2026-07-11T09:35:21.745876+00:00"
+  },
+  {
+    "id": "ac3bbd7d-457c-48a8-84fc-a22b3c178919",
+    "query": "NEW DELHI (NDNDLSNDNDLSLSNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:08:18.767+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:08:18.820233+00:00"
+  },
+  {
+    "id": "5f077024-a66c-4ab5-ac3c-da566026b8e6",
+    "query": "NEW DELHI (NNDLSNDNDLSLSNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:08:18.761+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:08:18.825751+00:00"
+  },
+  {
+    "id": "ad86929f-98e8-42ad-bb8f-782a9f5199ad",
+    "query": "NEW DELHI (NDLSNDLSNDNDLSLSNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:08:18.759+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:08:18.862824+00:00"
+  },
+  {
+    "id": "439ddd23-c316-40f1-9d8b-2548f1e050cc",
+    "query": "NEW DELHI (NDLSNDNLSNDNDLSLSNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:08:40.602+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:08:40.706743+00:00"
+  },
+  {
+    "id": "0c2e52cb-c134-4cc8-aa32-6f55287328d3",
+    "query": "NEW DELHI (NDLSNDNDLSNDNDLSLSNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:08:40.691+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:08:40.735603+00:00"
+  },
+  {
+    "id": "fc3e842a-82c7-4a45-9afa-aa353a3f9a67",
+    "query": "NEW DELHI (NDLSNDNDLLSNDNDLSLSNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:08:40.671+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:08:40.734512+00:00"
+  },
+  {
+    "id": "99ac37e2-8e92-4147-b3c0-de369262f550",
+    "query": "NEW DELHI (NDLSNDNDLSLSNDNDLSLSNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:08:40.729+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:08:40.768063+00:00"
+  },
+  {
+    "id": "45d3a325-0725-429f-948c-aa2338c5613b",
+    "query": "NEW DELHI (NNDLSNDNDLSLSNDNDLSLSNDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:08:53.742+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:08:53.85975+00:00"
+  },
+  {
+    "id": "598c344d-67b9-4fdc-81ad-25dfeaddabf0",
+    "query": "NEW DELHI (NDL)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:09:14.024+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:09:14.068771+00:00"
+  },
+  {
+    "id": "25de1f59-8cd4-4dbf-83b5-de3c54bbd9c9",
+    "query": "NEW DELHI (N)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:09:14.018+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:09:14.076239+00:00"
+  },
+  {
+    "id": "83ba00ba-4f1e-4b3b-beaa-b9fc35d3c217",
+    "query": "NEW DELHI (ND)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:09:14.012+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:09:14.121222+00:00"
+  },
+  {
+    "id": "4320600d-7a04-4b87-90a3-1b6c1ab99e35",
+    "query": "NEW DELHI (NDLS)",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 1,
+    "last_seen": "2026-07-15T07:09:14.048+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:09:14.132417+00:00"
+  },
+  {
+    "id": "ae32a9d9-bca4-446c-9e8c-ba5b77741f14",
+    "query": "NEW DELHI (NDLS)M",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-15T07:17:50.86+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:17:50.973196+00:00"
+  },
+  {
+    "id": "7f7e0593-4bbb-4646-8e0a-9c33f735cedb",
+    "query": "NEW DELHI (NDLS)Mu",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-15T07:17:50.996+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:17:51.058836+00:00"
+  },
+  {
+    "id": "970e5c73-3470-45da-ad16-bba413f3373c",
+    "query": "NEW DELHI (NDLS)Mum",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-15T07:17:51.087+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:17:51.131892+00:00"
+  },
+  {
+    "id": "00104d26-2e19-4e91-b241-403c44704fa9",
+    "query": "NEW DELHI (NDLS)Mumba",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-15T07:17:51.001+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:17:51.171238+00:00"
+  },
+  {
+    "id": "d1f5f258-165b-491d-ba10-415457eb52c7",
+    "query": "NEW DELHI (NDLS)Mumbai",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-15T07:17:51.079+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:17:51.270911+00:00"
+  },
+  {
+    "id": "ffd8623a-c025-46de-91a1-3324a68706a6",
+    "query": "NEW DELHI (NDLS)Mumb",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-15T07:17:51.081+00:00",
+    "status": "pending",
+    "created_at": "2026-07-15T07:17:51.308873+00:00"
   }
 ]

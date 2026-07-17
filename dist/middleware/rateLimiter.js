@@ -6,30 +6,54 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.alarmLimiter = exports.notificationPrefsLimiter = exports.notificationRegisterLimiter = exports.cacheClearLimiter = exports.diagnosticsLimiter = exports.adminLimiter = exports.referralLimiter = exports.authLimiter = exports.complaintLimiter = exports.liveLimiter = exports.pnrLimiter = exports.sameTrainRescueLimiter = exports.availabilityLimiter = exports.advancedSearchLimiter = exports.searchLimiter = void 0;
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const logger_1 = require("./logger");
+// ── Loopback IPs — never rate-limit these (internal health checks, local tests)
+const LOOPBACK_IPS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1', 'localhost']);
+/**
+ * Smart key generator: use userId (from JWT) if authenticated, else fall back to IP.
+ * This prevents different users behind the same NAT/mobile-network IP from sharing limits.
+ */
+function smartKey(req) {
+    if (req.user?.userId)
+        return `uid:${req.user.userId}`;
+    if (req.user?.id)
+        return `uid:${req.user.id}`;
+    return req.ip || 'unknown';
+}
+/**
+ * Skip function: exempt loopback / internal IPs from all rate limits.
+ */
+function skipLoopback(req) {
+    return LOOPBACK_IPS.has(req.ip || '');
+}
 /**
  * Rate limiter for regular search endpoints
  */
 exports.searchLimiter = (0, express_rate_limit_1.default)({
     windowMs: 5 * 60 * 1000, // 5 minutes
-    max: 200, // limit each IP to 200 requests per windowMs
+    max: 300, // 300 req per 5 min per user/IP
+    keyGenerator: smartKey,
+    skip: skipLoopback,
     message: { success: false, error: 'Too many search requests, please try again later.' },
     standardHeaders: true, legacyHeaders: false,
-    handler: (req, res, next) => {
-        logger_1.winstonLogger.warn(`[RATE_LIMIT] Search limit exceeded for IP: ${req.ip}`);
+    handler: (req, res) => {
+        logger_1.winstonLogger.warn(`[RATE_LIMIT] Search limit exceeded key=${smartKey(req)}`);
         res.status(429).json({ success: false, error: 'Too many search requests, please try again later.' });
     }
 });
 /**
- * Strict Rate limiter for split/advanced search endpoints (30 req / min)
+ * Rate limiter for split/advanced search (60 req/min per user — was 30/min per IP)
+ * Raised because: one split search = 1 user click, 3 route tests = 3 requests, no reason to block.
  */
 exports.advancedSearchLimiter = (0, express_rate_limit_1.default)({
     windowMs: 1 * 60 * 1000, // 1 minute
-    max: 30, // 30 req/min
-    message: { success: false, error: 'Too many split search requests, please wait.' },
+    max: 60, // 60 req/min per user (was 30 per IP)
+    keyGenerator: smartKey,
+    skip: skipLoopback,
+    message: { success: false, error: 'Too many split search requests, please wait a moment.' },
     standardHeaders: true, legacyHeaders: false,
-    handler: (req, res, next) => {
-        logger_1.winstonLogger.warn(`[RATE_LIMIT] Advanced search limit exceeded for IP: ${req.ip}`);
-        res.status(429).json({ success: false, error: 'Too many split search requests, please wait.' });
+    handler: (req, res) => {
+        logger_1.winstonLogger.warn(`[RATE_LIMIT] Advanced search limit exceeded key=${smartKey(req)}`);
+        res.status(429).json({ success: false, error: 'Too many split search requests, please wait a moment.' });
     }
 });
 /**
@@ -37,11 +61,13 @@ exports.advancedSearchLimiter = (0, express_rate_limit_1.default)({
  */
 exports.availabilityLimiter = (0, express_rate_limit_1.default)({
     windowMs: 1 * 60 * 1000, // 1 minute
-    max: 30, // 30 req/min
+    max: 60, // 60 req/min per user
+    keyGenerator: smartKey,
+    skip: skipLoopback,
     message: { success: false, error: 'Too many availability requests, please wait.' },
     standardHeaders: true, legacyHeaders: false,
-    handler: (req, res, next) => {
-        logger_1.winstonLogger.warn(`[RATE_LIMIT] Availability limit exceeded for IP: ${req.ip}`);
+    handler: (req, res) => {
+        logger_1.winstonLogger.warn(`[RATE_LIMIT] Availability limit exceeded key=${smartKey(req)}`);
         res.status(429).json({ success: false, error: 'Too many availability requests, please wait.' });
     }
 });
