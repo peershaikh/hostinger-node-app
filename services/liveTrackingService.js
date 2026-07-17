@@ -98,7 +98,8 @@ class LiveTrackingService {
     async fetchDbScheduleWithDays(trainNo) {
         try {
             let stops = [];
-            const { data: dbStops, error } = await supabase_1.supabase
+            // Try DB first — both numeric and string match for Train_No column
+            const { data: dbStops } = await supabase_1.supabase
                 .from('train_schedule')
                 .select('Station_Code, Station_Name, Arrival_time, Departure_Time, SN')
                 .eq('Train_No', Number(trainNo) || trainNo)
@@ -107,16 +108,42 @@ class LiveTrackingService {
                 stops = dbStops;
             }
             else {
-                logger_1.winstonLogger.info(`[LIVE_DB_SCHED] ${trainNo} not in DB, falling back to IRCTC getTrainInfo`);
-                const info = await irctcService_1.irctcService.getTrainInfo(trainNo);
-                if (info && info.route && info.route.length > 0) {
-                    stops = info.route.map((s, idx) => ({
-                        Station_Code: s.stationCode || s.code || '--',
-                        Station_Name: s.stationName || s.name || '',
-                        Arrival_time: s.arrivalTime || s.arrival || '--:--',
-                        Departure_Time: s.departureTime || s.departure || '--:--',
-                        SN: idx + 1
-                    }));
+                // Try string match too (some DBs store as text)
+                const { data: dbStops2 } = await supabase_1.supabase
+                    .from('train_schedule')
+                    .select('Station_Code, Station_Name, Arrival_time, Departure_Time, SN')
+                    .eq('Train_No', String(trainNo))
+                    .order('SN', { ascending: true });
+                if (dbStops2 && dbStops2.length > 0) {
+                    stops = dbStops2;
+                }
+                else {
+                    logger_1.winstonLogger.info(`[LIVE_DB_SCHED] ${trainNo} not in DB, falling back to IRCTC getTrainInfo`);
+                    const info = await irctcService_1.irctcService.getTrainInfo(trainNo);
+                    if (info) {
+                        // IRCTC getTrainInfo can return route data under many field names
+                        const rawRoute = info.route ||
+                            info.station_list ||
+                            info.stops ||
+                            info.stations ||
+                            info.trainRoute ||
+                            info.stationList ||
+                            [];
+                        if (Array.isArray(rawRoute) && rawRoute.length > 0) {
+                            stops = rawRoute.map((s, idx) => ({
+                                Station_Code: (s.stationCode || s.stnCode || s.station_code ||
+                                    s.Station_Code || s.code || '').toUpperCase().trim() || '--',
+                                Station_Name: s.stationName || s.stnName || s.station_name ||
+                                    s.Station_Name || s.name || '',
+                                Arrival_time: s.arrivalTime || s.arrival_time || s.arrival ||
+                                    s.Arrival_time || '--:--',
+                                Departure_Time: s.departureTime || s.departure_time || s.departure ||
+                                    s.Departure_Time || '--:--',
+                                SN: s.sn || s.SN || idx + 1
+                            }));
+                            logger_1.winstonLogger.info(`[LIVE_DB_SCHED] ${trainNo}: got ${stops.length} stops from IRCTC getTrainInfo`);
+                        }
+                    }
                 }
             }
             if (!stops || stops.length === 0)
@@ -137,10 +164,12 @@ class LiveTrackingService {
                         currentDay++;
                     }
                 }
+                const code = (s.Station_Code || '--').trim();
+                const rawName = (s.Station_Name || '').trim();
                 const stop = {
-                    station_code: s.Station_Code || '--',
+                    station_code: code,
                     // If Station_Name is null/empty in DB, fall back to code so UI never shows '--'
-                    station_name: (s.Station_Name && s.Station_Name.trim()) ? s.Station_Name.trim() : (s.Station_Code || '--'),
+                    station_name: rawName || code,
                     arrival_time: s.Arrival_time || '--:--',
                     departure_time: s.Departure_Time || '--:--',
                     day: currentDay,
