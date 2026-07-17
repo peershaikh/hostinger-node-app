@@ -139,7 +139,8 @@ class LiveTrackingService {
                 }
                 const stop = {
                     station_code: s.Station_Code || '--',
-                    station_name: s.Station_Name || '',
+                    // If Station_Name is null/empty in DB, fall back to code so UI never shows '--'
+                    station_name: (s.Station_Name && s.Station_Name.trim()) ? s.Station_Name.trim() : (s.Station_Code || '--'),
                     arrival_time: s.Arrival_time || '--:--',
                     departure_time: s.Departure_Time || '--:--',
                     day: currentDay,

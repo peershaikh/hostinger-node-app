@@ -94,27 +94,28 @@ Rules:
         }
     }
     /**
-     * Gemini schedule ko Supabase `train_schedule` table mein save karo.
-     * Taaki next time DB se directly milega (seedha Gemini call nahi padega).
+     * Gemini schedule ko Supabase `train_schedule` + `trains` tables mein save karo.
+     * train_schedule → stops/times (next live-track call pe DB se milega)
+     * trains          → train name (fetchDbTrainName ke liye)
      */
     async saveToDatabase(schedule) {
         if (!schedule.stations || schedule.stations.length === 0)
             return;
+        // ── 1. Save schedule stops ─────────────────────────────────────────────
         try {
             const rows = schedule.stations.map((s) => ({
                 Train_No: Number(schedule.train_number) || schedule.train_number,
                 Station_Code: (s.station_code || '').toUpperCase().trim(),
-                Station_Name: s.station_name || s.station_code,
+                // Always ensure Station_Name is non-empty (fallback to code)
+                Station_Name: (s.station_name && s.station_name.trim()) ? s.station_name.trim() : s.station_code.toUpperCase(),
                 Arrival_time: s.arrival_time || '--:--',
                 Departure_Time: s.departure_time || '--:--',
                 SN: s.sn,
             }));
-            // Upsert — conflict pe update (same Train_No + Station_Code)
             const { error } = await supabase_1.supabase
                 .from('train_schedule')
                 .upsert(rows, { onConflict: 'Train_No,Station_Code' });
             if (error) {
-                // Log but don't throw — saving to DB is best-effort
                 logger_1.winstonLogger.warn(`[GEMINI_SCHEDULE_SAVE] Partial save error for ${schedule.train_number}: ${error.message}`);
             }
             else {
@@ -122,7 +123,31 @@ Rules:
             }
         }
         catch (err) {
-            logger_1.winstonLogger.warn(`[GEMINI_SCHEDULE_SAVE] Save failed for ${schedule.train_number}: ${err.message}`);
+            logger_1.winstonLogger.warn(`[GEMINI_SCHEDULE_SAVE] Schedule save failed for ${schedule.train_number}: ${err.message}`);
+        }
+        // ── 2. Save train name to `trains` table ───────────────────────────────
+        // This makes fetchDbTrainName() return the correct name on next request.
+        if (schedule.train_name && schedule.train_name.trim()) {
+            try {
+                const trainNo = String(schedule.train_number);
+                // Try `number` column first (new schema)
+                const { error: e1 } = await supabase_1.supabase
+                    .from('trains')
+                    .upsert({ number: trainNo, name: schedule.train_name.trim() }, { onConflict: 'number' });
+                if (e1) {
+                    // Try legacy Train_No / Train_Name columns
+                    try {
+                        await supabase_1.supabase
+                            .from('trains')
+                            .upsert({ Train_No: trainNo, Train_Name: schedule.train_name.trim() }, { onConflict: 'Train_No' });
+                    }
+                    catch { /* best-effort */ }
+                }
+                logger_1.winstonLogger.info(`[GEMINI_SCHEDULE_SAVE] Saved train name "${schedule.train_name}" for ${trainNo} to trains table`);
+            }
+            catch (err) {
+                logger_1.winstonLogger.warn(`[GEMINI_SCHEDULE_SAVE] Train name save failed: ${err.message}`);
+            }
         }
     }
     /**
