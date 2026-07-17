@@ -127,6 +127,7 @@ app.get(['/health', '/api/health'], async (req, res) => {
     }
 });
 // ====================== ROUTES ======================
+// Primary routes (with /api/ prefix — used by internal callers)
 app.use('/api/auth', auth_1.default);
 app.use('/api/trains', trains_1.default);
 app.use('/api/pnr', pnr_1.default);
@@ -142,8 +143,27 @@ app.use('/api/content', contentRoutes_1.default);
 app.use('/api/beta', beta_1.default);
 app.use('/api/alarms', alarms_1.default);
 app.use('/api/ai', ai_1.default);
-// PHASE_4C839 NF-010: align with /api/trains/live â€” rate limit + guest quota enforcement
+// PHASE_4C971 PROXY FIX: Mirror all routes WITHOUT /api/ prefix.
+// Next.js rewrite: source=/api/:path* → destination=https://api.trayago.in/:path*
+// The proxy STRIPS /api/ — Express never sees it. Both path forms now work.
+app.use('/auth', auth_1.default);
+app.use('/trains', trains_1.default);
+app.use('/pnr', pnr_1.default);
+app.use('/analytics', analytics_1.default);
+app.use('/stations', stations_1.default);
+app.use('/admin', admin_1.default);
+app.use('/referrals', referrals_1.default);
+app.use('/news', news_1.default);
+app.use('/feedback', feedback_1.default);
+app.use('/payments', payment_1.default);
+app.use('/notifications', notifications_1.default);
+app.use('/content', contentRoutes_1.default);
+app.use('/beta', beta_1.default);
+app.use('/alarms', alarms_1.default);
+app.use('/ai', ai_1.default);
+// Live train endpoint — both prefixed and un-prefixed
 app.get('/api/live-train/:trainNo', rateLimiter_1.liveLimiter, (0, usageMiddleware_1.usageMiddleware)('live'), trainController_1.trainController.getLiveStatus);
+app.get('/live-train/:trainNo', rateLimiter_1.liveLimiter, (0, usageMiddleware_1.usageMiddleware)('live'), trainController_1.trainController.getLiveStatus);
 // ====================== ERROR HANDLING ======================
 app.use(errorHandler_1.notFoundHandler);
 app.use(csrfProtection_1.csrfErrorHandler); // PHASE_4C759 Fix #2 - CSRF violations (EBADCSRFTOKEN)
