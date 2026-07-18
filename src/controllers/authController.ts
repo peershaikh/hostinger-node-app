@@ -13,8 +13,7 @@ import { winstonLogger } from '../middleware/logger';
 import fs from 'fs';
 import path from 'path';
 
-import { OAuth2Client } from 'google-auth-library';
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+import * as admin from 'firebase-admin';
 
 export class AuthController {
   googleLogin = async (req: Request, res: Response) => {
@@ -24,11 +23,16 @@ export class AuthController {
         return res.status(400).json({ success: false, error: 'Google ID Token is required' });
       }
 
-      const ticket = await googleClient.verifyIdToken({
-        idToken,
-        audience: process.env.GOOGLE_CLIENT_ID,
-      });
-      const payload = ticket.getPayload();
+      if (!admin.apps.length) {
+        return res.status(500).json({ success: false, error: 'Firebase Admin SDK not initialized on server' });
+      }
+
+      const decodedToken = await admin.auth().verifyIdToken(idToken);
+      const payload = {
+        email: decodedToken.email,
+        name: decodedToken.name,
+        picture: decodedToken.picture
+      };
       
       if (!payload || !payload.email) {
         return res.status(400).json({ success: false, error: 'Invalid Google token' });
