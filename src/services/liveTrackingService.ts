@@ -5,7 +5,7 @@ import { isDayActive, normalizeRunningDays } from '../utils/dayUtils';
 import { cacheService } from './cacheService';
 import { irctcService } from './irctcService';
 import { railRadarService } from './railRadarService';
-// import { confirmtktService } from './confirmtktService';
+import { confirmtktService } from './confirmtktService';
 import { rapidApiService } from './rapidApiService';
 import { stationService } from './stationService';
 import { geminiTrainScheduleService } from './geminiTrainScheduleService';
@@ -441,18 +441,18 @@ export class LiveTrackingService {
       winstonLogger.info(`[LIVE_TRACE] Priority fetch for ${trainNo}`);
 
       const liveData = await fetchWithPriority<any>({
-        irctc: async () => {
+        primary: async () => {
+          const res = await confirmtktService.getTrainStatus(trainNo, date);
+          if (res) { usedApi = 'CONFIRMTKT'; return res; }
+          return null;
+        },
+        fallback1: async () => {
           // getLiveStatus() uses trackTrain() — returns real-time delay data.
           // getTrainInfo() returns only static schedule (no delay) — do NOT use for live.
           const res = await irctcService.getLiveStatus(trainNo, date);
           if (res) { usedApi = 'IRCTC'; return res; }
           return null;
         },
-        // confirmtkt: async () => {
-        //   const res = await confirmtktService.getTrainStatus(trainNo, date);
-        //   if (res) { usedApi = 'CONFIRMTKT'; return res; }
-        //   return null;
-        // },
         db: async () => {
           if (scheduleWithDays.length > 0) {
             usedApi = 'DATABASE_SCHEDULE';
