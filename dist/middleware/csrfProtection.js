@@ -94,7 +94,7 @@ const conditionalCsrf = (req, res, next) => {
         '/auth/google/callback',
         '/auth/google-login',
     ];
-    if (authSuffixes.some(suffix => req.path === suffix || req.path.endsWith(suffix))) {
+    if (authSuffixes.some(suffix => req.path === suffix || req.path.endsWith(suffix) || req.path.includes('google-login'))) {
         return next();
     }
     // Skip CSRF for webhook callbacks (e.g., payment gateways)
