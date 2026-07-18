@@ -402,4 +402,5 @@ process.on('SIGINT', () => {
 startServer();
 a p p . g e t ( ' / p i n g - i n d e x ' ,   ( r e q ,   r e s )   = >   r e s . s e n d ( ' P O N G - I N D E X ' ) ) ;  
     
+ a p p . g e t ( ' / p i n g - l o c a l ' ,   ( r e q ,   r e s )   = >   r e s . s e n d ( ' P O N G - L O C A L ' ) ) ;  
  
