@@ -10,10 +10,8 @@ import {
 import { supabase, isSupabaseConfigured } from '../config/supabase';
 import { userRepository } from '../repositories/userRepository';
 import { winstonLogger } from '../middleware/logger';
-import fs from 'fs';
-import path from 'path';
-
 import * as admin from 'firebase-admin';
+import jwt from 'jsonwebtoken';
 
 export class AuthController {
   googleLogin = async (req: Request, res: Response) => {
@@ -24,7 +22,12 @@ export class AuthController {
       }
 
       if (!admin.apps.length) {
-        return res.status(500).json({ success: false, error: 'Firebase Admin SDK not initialized on server' });
+        // Initialize Firebase Admin dynamically just for token verification
+        const decodedUnverified = jwt.decode(idToken) as any;
+        if (!decodedUnverified || !decodedUnverified.aud) {
+          return res.status(400).json({ success: false, error: 'Invalid token structure' });
+        }
+        admin.initializeApp({ projectId: decodedUnverified.aud });
       }
 
       const decodedToken = await admin.auth().verifyIdToken(idToken);
