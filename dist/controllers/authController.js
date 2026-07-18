@@ -12,8 +12,44 @@ const userRepository_1 = require("../repositories/userRepository");
 const logger_1 = require("../middleware/logger");
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
+const google_auth_library_1 = require("google-auth-library");
+const googleClient = new google_auth_library_1.OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 class AuthController {
     constructor() {
+        this.googleLogin = async (req, res) => {
+            try {
+                const { idToken, deviceId, referralCode } = req.body;
+                if (!idToken) {
+                    return res.status(400).json({ success: false, error: 'Google ID Token is required' });
+                }
+                const ticket = await googleClient.verifyIdToken({
+                    idToken,
+                    audience: process.env.GOOGLE_CLIENT_ID,
+                });
+                const payload = ticket.getPayload();
+                if (!payload || !payload.email) {
+                    return res.status(400).json({ success: false, error: 'Invalid Google token' });
+                }
+                const result = await authService_1.authService.googleLogin(payload.email, payload.name || '', payload.picture || '', deviceId, referralCode);
+                res.cookie('refreshToken', result.tokens.refreshToken, {
+                    httpOnly: true,
+                    secure: true,
+                    sameSite: 'none',
+                    maxAge: 30 * 24 * 60 * 60 * 1000
+                });
+                return res.json({
+                    success: true,
+                    data: result.user,
+                    accessToken: result.tokens.accessToken,
+                    refreshToken: result.tokens.refreshToken,
+                    ...(result.referralMeta ? { referralMeta: result.referralMeta } : {})
+                });
+            }
+            catch (err) {
+                logger_1.winstonLogger.error(`[AUTH_GOOGLE] Failed google login: ${err.message}`);
+                return res.status(400).json({ success: false, error: err.message });
+            }
+        };
         this.signup = async (req, res) => {
             try {
                 const { email, password, referralCode, deviceId, otp, fullName, mobileNumber, dob } = req.body;

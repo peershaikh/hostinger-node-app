@@ -9,6 +9,7 @@ const dayUtils_1 = require("../utils/dayUtils");
 const cacheService_1 = require("./cacheService");
 const irctcService_1 = require("./irctcService");
 const stationService_1 = require("./stationService");
+const geminiTrainScheduleService_1 = require("./geminiTrainScheduleService");
 // ── Known major railway junction codes (India) ───────────────────────────────
 const MAJOR_JUNCTION_CODES = new Set([
     // Mumbai zone
@@ -95,9 +96,11 @@ class LiveTrackingService {
         }
     }
     async fetchDbScheduleWithDays(trainNo) {
+        let irctcTrainName = '';
         try {
             let stops = [];
-            const { data: dbStops, error } = await supabase_1.supabase
+            // Try DB first — both numeric and string match for Train_No column
+            const { data: dbStops } = await supabase_1.supabase
                 .from('train_schedule')
                 .select('Station_Code, Station_Name, Arrival_time, Departure_Time, SN')
                 .eq('Train_No', Number(trainNo) || trainNo)
@@ -106,20 +109,51 @@ class LiveTrackingService {
                 stops = dbStops;
             }
             else {
-                logger_1.winstonLogger.info(`[LIVE_DB_SCHED] ${trainNo} not in DB, falling back to IRCTC getTrainInfo`);
-                const info = await irctcService_1.irctcService.getTrainInfo(trainNo);
-                if (info && info.route && info.route.length > 0) {
-                    stops = info.route.map((s, idx) => ({
-                        Station_Code: s.stationCode || s.code || '--',
-                        Station_Name: s.stationName || s.name || '',
-                        Arrival_time: s.arrivalTime || s.arrival || '--:--',
-                        Departure_Time: s.departureTime || s.departure || '--:--',
-                        SN: idx + 1
-                    }));
+                // Try string match too (some DBs store as text)
+                const { data: dbStops2 } = await supabase_1.supabase
+                    .from('train_schedule')
+                    .select('Station_Code, Station_Name, Arrival_time, Departure_Time, SN')
+                    .eq('Train_No', String(trainNo))
+                    .order('SN', { ascending: true });
+                if (dbStops2 && dbStops2.length > 0) {
+                    stops = dbStops2;
+                }
+                else {
+                    logger_1.winstonLogger.info(`[LIVE_DB_SCHED] ${trainNo} not in DB, falling back to IRCTC getTrainInfo`);
+                    const info = await irctcService_1.irctcService.getTrainInfo(trainNo);
+                    if (info) {
+                        // Capture train name from getTrainInfo response
+                        irctcTrainName =
+                            info.trainName || info.train_name || info.name ||
+                                info.trainInfo?.name || info.trainInfo?.trainName ||
+                                info.data?.trainName || '';
+                        // IRCTC getTrainInfo can return route data under many field names
+                        const rawRoute = info.route ||
+                            info.station_list ||
+                            info.stops ||
+                            info.stations ||
+                            info.trainRoute ||
+                            info.stationList ||
+                            [];
+                        if (Array.isArray(rawRoute) && rawRoute.length > 0) {
+                            stops = rawRoute.map((s, idx) => ({
+                                Station_Code: (s.stationCode || s.stnCode || s.station_code ||
+                                    s.Station_Code || s.code || '').toUpperCase().trim() || '--',
+                                Station_Name: s.stationName || s.stnName || s.station_name ||
+                                    s.Station_Name || s.name || '',
+                                Arrival_time: s.arrivalTime || s.arrival_time || s.arrival ||
+                                    s.Arrival_time || '--:--',
+                                Departure_Time: s.departureTime || s.departure_time || s.departure ||
+                                    s.Departure_Time || '--:--',
+                                SN: s.sn || s.SN || idx + 1
+                            }));
+                            logger_1.winstonLogger.info(`[LIVE_DB_SCHED] ${trainNo}: got ${stops.length} stops from IRCTC getTrainInfo (trainName="${irctcTrainName}")`);
+                        }
+                    }
                 }
             }
             if (!stops || stops.length === 0)
-                return [];
+                return { stops: [], irctcTrainName };
             const parseToMins = (time) => {
                 if (!time || time === '--:--')
                     return 0;
@@ -128,7 +162,7 @@ class LiveTrackingService {
             };
             let currentDay = 1;
             let prevMins = 0;
-            return stops.map((s, idx) => {
+            const result = stops.map((s, idx) => {
                 const arrMins = parseToMins(s.Arrival_time);
                 const depMins = parseToMins(s.Departure_Time);
                 if (idx > 0) {
@@ -136,9 +170,12 @@ class LiveTrackingService {
                         currentDay++;
                     }
                 }
+                const code = (s.Station_Code || '--').trim();
+                const rawName = (s.Station_Name || '').trim();
                 const stop = {
-                    station_code: s.Station_Code || '--',
-                    station_name: s.Station_Name || '',
+                    station_code: code,
+                    // If Station_Name is null/empty in DB, fall back to code so UI never shows '--'
+                    station_name: rawName || code,
                     arrival_time: s.Arrival_time || '--:--',
                     departure_time: s.Departure_Time || '--:--',
                     day: currentDay,
@@ -150,17 +187,20 @@ class LiveTrackingService {
                 prevMins = depMins;
                 return stop;
             });
+            return { stops: result, irctcTrainName };
         }
         catch (err) {
             logger_1.winstonLogger.warn(`[LIVE_DB_SCHED_WITH_DAYS] ${trainNo}: ${err.message}`);
-            return [];
+            return { stops: [], irctcTrainName };
         }
     }
     async getActiveJourneyDate(trainNo, prefetchedSchedule) {
         try {
-            const schedule = prefetchedSchedule && prefetchedSchedule.length > 0
+            const rawResult = prefetchedSchedule && prefetchedSchedule.length > 0
                 ? prefetchedSchedule
-                : await this.fetchDbScheduleWithDays(trainNo);
+                : (await this.fetchDbScheduleWithDays(trainNo)).stops;
+            // Handle both old array shape and new {stops, irctcTrainName} shape (prefetchedSchedule is always an array)
+            const schedule = Array.isArray(rawResult) ? rawResult : rawResult?.stops || [];
             if (!schedule || schedule.length === 0) {
                 return null;
             }
@@ -317,7 +357,9 @@ class LiveTrackingService {
             this.fetchDbScheduleWithDays(trainNo),
             this.fetchDbTrainName(trainNo),
         ]);
-        const scheduleWithDays = scheduleWithDaysResult.status === 'fulfilled' ? scheduleWithDaysResult.value : [];
+        const scheduleWithDaysData = scheduleWithDaysResult.status === 'fulfilled' ? scheduleWithDaysResult.value : { stops: [], irctcTrainName: '' };
+        const scheduleWithDays = scheduleWithDaysData.stops || [];
+        const irctcScheduleTrainName = scheduleWithDaysData.irctcTrainName || '';
         const dbSchedule = scheduleWithDays.map((s) => ({
             station_name: s.station_name || s.Station_Name || s.station_code || s.Station_Code || 'Station',
             station_code: s.station_code || s.Station_Code || '--',
@@ -327,7 +369,7 @@ class LiveTrackingService {
             is_current: false,
             is_departed: false,
         }));
-        const dbTrainName = dbTrainNameResult.status === 'fulfilled' ? dbTrainNameResult.value : '';
+        const dbTrainName = (dbTrainNameResult.status === 'fulfilled' ? dbTrainNameResult.value : '') || irctcScheduleTrainName;
         const activeDate = await this.getActiveJourneyDate(trainNo, scheduleWithDays);
         let usedApi = 'DATABASE_SCHEDULE';
         try {
@@ -409,6 +451,62 @@ class LiveTrackingService {
                     return null;
                 }
             });
+            // ── GEMINI AI FALLBACK ────────────────────────────────────────────────────
+            // Triggered only when: IRCTC failed + train NOT in DB (scheduleWithDays empty)
+            // Gemini fetches static schedule from its training knowledge, saves to DB in
+            // background so the next request hits DB directly (no Gemini call needed).
+            if (!liveData && scheduleWithDays.length === 0) {
+                logger_1.winstonLogger.info(`[GEMINI_SCHEDULE_FALLBACK] Train ${trainNo} not in DB and IRCTC failed — trying Gemini`);
+                try {
+                    const geminiResult = await geminiTrainScheduleService_1.geminiTrainScheduleService.getAndSave(trainNo);
+                    if (geminiResult) {
+                        usedApi = 'GEMINI_AI';
+                        logger_1.winstonLogger.info(`[GEMINI_SCHEDULE_SUCCESS] Train ${trainNo}: ${geminiResult.stations.length} stops from Gemini`);
+                        // Build LiveTrainStatus directly from Gemini result
+                        const currentIdx = geminiResult.stations.findIndex((s) => s.is_current);
+                        const safeIdx = currentIdx >= 0 ? currentIdx : 0;
+                        const geminiStatus = {
+                            train_number: trainNo,
+                            train_name: geminiResult.train_name || `Train ${trainNo}`,
+                            current_station: geminiResult.stations[safeIdx]?.station_name || 'En Route',
+                            next_station: geminiResult.stations[safeIdx + 1]?.station_name || 'Unknown',
+                            current_station_index: safeIdx,
+                            train_location: null,
+                            delay_minutes: 0,
+                            status_summary: 'AI Estimated Schedule',
+                            last_updated: new Date().toLocaleTimeString('en-IN'),
+                            is_running: true,
+                            journey_timeline: geminiResult.stations.map((s, idx) => ({
+                                station_name: s.station_name,
+                                station_code: s.station_code,
+                                arrival_time: s.arrival_time,
+                                departure_time: s.departure_time,
+                                delay_minutes: 0,
+                                is_current: s.is_current,
+                                is_departed: s.is_departed,
+                                status: s.status,
+                                station_type: classifyStation(s.station_code, s.station_name, idx, geminiResult.stations.length),
+                                platform: null,
+                            })),
+                            api_used: 'GEMINI_AI',
+                            active_journey_date: activeDate || undefined,
+                            is_ai_estimated: true,
+                        };
+                        cacheService_1.cacheService.set(cacheKey, geminiStatus, 300); // 5 min cache for AI data
+                        return geminiStatus;
+                    }
+                }
+                catch (geminiErr) {
+                    logger_1.winstonLogger.warn(`[GEMINI_SCHEDULE_FALLBACK_FAIL] ${trainNo}: ${geminiErr.message}`);
+                }
+            }
+            // ── BACKGROUND GEMINI POPULATE ─────────────────────────────────────────────
+            // Even when IRCTC is working, if DB has NO schedule for this train,
+            // trigger Gemini in background to save station names/schedule for future requests.
+            if (scheduleWithDays.length === 0 && liveData) {
+                logger_1.winstonLogger.info(`[GEMINI_BG_POPULATE] Train ${trainNo} has no DB schedule — triggering Gemini to populate in background`);
+                geminiTrainScheduleService_1.geminiTrainScheduleService.getAndSave(trainNo).catch((e) => logger_1.winstonLogger.warn(`[GEMINI_BG_POPULATE_FAIL] ${trainNo}: ${e.message}`));
+            }
             if (!liveData)
                 throw new Error('No live data from any API');
             // --- station name ---
@@ -482,31 +580,74 @@ class LiveTrackingService {
                     throw new Error('PROVIDER_DATA_CORRUPTED');
                 }
             }
-            const routeSchedule = Array.isArray(liveData.route)
-                ? liveData.route.map((stop) => ({
-                    Station_Code: stop.stnCode || stop.station_code || stop.code || '--',
-                    Station_Name: stop.stnName || stop.station_name || stop.name || 'Station',
-                    Arrival_time: stop.arrival || stop.arrival_time || '--:--',
-                    Departure_Time: stop.departure || stop.departure_time || '--:--',
-                }))
-                : [];
-            let schedule = routeSchedule.length > 0 ? routeSchedule : liveTimeline.length > 0 ? liveTimeline.map((stop) => ({
-                Station_Code: stop.station_code,
-                Station_Name: stop.station_name,
-                Arrival_time: stop.arrival_time,
-                Departure_Time: stop.departure_time,
-            })) : dbSchedule;
-            if ((!schedule || schedule.length === 0) && dbSchedule.length > 0) {
-                schedule = dbSchedule;
+            // ── FIX(ROUTE_BLOAT): DB schedule is authoritative for route structure ──
+            // IRCTC sometimes returns 80-100 station "extended" runs that include
+            // the train's previous/next loco journey (e.g. 12116 carries CSMT→SUR
+            // run data inside its SUR→CSMT response, inflating station count and
+            // making the wrong city appear as origin).
+            // Strategy:
+            //   • If DB has a schedule → use it as the route skeleton (correct stops).
+            //   • Merge IRCTC live data (is_current, is_departed, delay) by code match.
+            //   • If DB is empty → fall back to IRCTC timeline as before.
+            //   • In both cases: resolve missing station names via stationService.
+            let schedule;
+            if (dbSchedule.length > 0) {
+                // DB route is authoritative — IRCTC only contributes live status fields.
+                schedule = dbSchedule.map((dbStop) => {
+                    const code = (dbStop.station_code || dbStop.Station_Code || '').toUpperCase();
+                    const live = liveTimeline.find((l) => l.station_code && l.station_code.toUpperCase() === code);
+                    // Prefer live station name if DB has only a code-as-name placeholder
+                    const liveName = live?.station_name && live.station_name !== code ? live.station_name : '';
+                    const dbName = dbStop.station_name || dbStop.Station_Name || '';
+                    return {
+                        Station_Code: code || '--',
+                        Station_Name: liveName || dbName || code || '--',
+                        Arrival_time: dbStop.arrival_time || dbStop.Arrival_time || '--:--',
+                        Departure_Time: dbStop.departure_time || dbStop.Departure_Time || '--:--',
+                        // Overlay live fields if IRCTC has a matching stop
+                        is_current: live?.is_current || false,
+                        is_departed: live?.is_departed || false,
+                        delay_minutes: live?.delay_minutes ?? delayMins ?? 0,
+                        platform: live?.platform || null,
+                    };
+                });
+                logger_1.winstonLogger.info(`[SCHEDULE_SOURCE] ${trainNo}: using DB schedule (${schedule.length} stops) over IRCTC (${liveTimeline.length} stops)`);
             }
-            if ((!schedule || schedule.length === 0) && liveTimeline.length > 0) {
-                schedule = liveTimeline.map((stop) => ({
-                    station_code: stop.station_code,
-                    station_name: stop.station_name,
-                    arrival_time: stop.arrival_time,
-                    departure_time: stop.departure_time,
-                }));
+            else {
+                // No DB data — fall back to IRCTC timeline
+                const routeSchedule = Array.isArray(liveData.route)
+                    ? liveData.route.map((stop) => ({
+                        Station_Code: stop.stnCode || stop.station_code || stop.code || '--',
+                        Station_Name: stop.stnName || stop.station_name || stop.name || '',
+                        Arrival_time: stop.arrival || stop.arrival_time || '--:--',
+                        Departure_Time: stop.departure || stop.departure_time || '--:--',
+                    }))
+                    : [];
+                schedule = routeSchedule.length > 0
+                    ? routeSchedule
+                    : liveTimeline.length > 0
+                        ? liveTimeline.map((stop) => ({
+                            Station_Code: stop.station_code || '--',
+                            Station_Name: stop.station_name || stop.station_code || '--',
+                            Arrival_time: stop.arrival_time,
+                            Departure_Time: stop.departure_time,
+                        }))
+                        : [];
+                logger_1.winstonLogger.info(`[SCHEDULE_SOURCE] ${trainNo}: DB empty, using IRCTC timeline (${schedule.length} stops)`);
             }
+            // ── Resolve any remaining missing station names via stationService ──
+            // Runs async for any stop where Station_Name == Station_Code or is '--'.
+            await Promise.all(schedule.map(async (stop) => {
+                const code = (stop.Station_Code || '').toUpperCase();
+                const name = stop.Station_Name || '';
+                // Resolve if name looks like a raw code (short, all caps) or is '--'
+                if (code && code !== '--' && (name === code || name === '--' || !name || name.length <= 5)) {
+                    const resolved = await stationService_1.stationService.getStationName(code).catch(() => '');
+                    if (resolved && resolved !== code) {
+                        stop.Station_Name = resolved;
+                    }
+                }
+            }));
             let currentCode = liveData.current_station_code ||
                 liveData.station_code ||
                 liveData.currentStation ||
@@ -662,16 +803,39 @@ class LiveTrackingService {
                 };
             });
             logger_1.winstonLogger.debug(`[LIVE_TRACK_FIX] currentCode=${currentCode} matchedIdx=${actualCurrentIndex} totalStops=${fullSchedule.length} currentStation=${finalTimeline[actualCurrentIndex]?.station_name}`);
-            const finalCurrentStation = fullSchedule[actualCurrentIndex]?.Station_Name ||
+            const finalCurrentStation = finalTimeline[actualCurrentIndex]?.station_name ||
+                fullSchedule[actualCurrentIndex]?.Station_Name ||
                 fullSchedule[actualCurrentIndex]?.station_name ||
                 currentStation ||
                 trainNo;
-            const finalNextStation = fullSchedule[actualCurrentIndex + 1]?.Station_Name ||
+            const finalNextStation = finalTimeline[actualCurrentIndex + 1]?.station_name ||
+                fullSchedule[actualCurrentIndex + 1]?.Station_Name ||
                 fullSchedule[actualCurrentIndex + 1]?.station_name ||
                 nextStation ||
                 finalCurrentStation;
-            const trainName = liveData.train_name || liveData.name || dbTrainName || `Train ${trainNo}`;
+            const trainName = liveData.trainName || liveData.train_name || liveData.name ||
+                dbTrainName || irctcScheduleTrainName ||
+                `Train ${trainNo}`;
             const isJourneyCompleted = isTimeCompleted || actualCurrentIndex === fullSchedule.length - 1;
+            // ── Detect if train is cancelled for this date ───────────────────────────────
+            // IRCTC may signal cancellation via various fields in the response.
+            const cancelCheckStr = [
+                liveData.status_as_of,
+                liveData.position,
+                liveData.current_status,
+                liveData.statusNote,
+                liveData.trainStatus,
+                liveData.remark,
+                liveData.status,
+                liveData.message,
+            ].filter(Boolean).join(' ').toLowerCase();
+            const isCancelled = cancelCheckStr.includes('cancel') ||
+                cancelCheckStr.includes('not running') ||
+                (liveData.isCancelled === true) ||
+                (liveData.is_cancelled === true);
+            if (isCancelled) {
+                logger_1.winstonLogger.info(`[CANCELLED] Train ${trainNo} appears CANCELLED for ${date || 'today'}: "${cancelCheckStr.slice(0, 80)}"`);
+            }
             const result = {
                 train_number: trainNo,
                 train_name: trainName,
@@ -687,9 +851,10 @@ class LiveTrackingService {
                     }
                     : null,
                 delay_minutes: delayMins,
-                status_summary: isJourneyCompleted ? 'Train has reached destination' : (liveData.status_as_of || liveData.position || liveData.current_status || 'Running'),
+                status_summary: isCancelled ? 'Train Cancelled' : (isJourneyCompleted ? 'Train has reached destination' : (liveData.status_as_of || liveData.position || liveData.current_status || 'Running')),
                 last_updated: liveData.last_updated_time || liveData.updated_at || new Date().toLocaleTimeString('en-IN'),
-                is_running: isJourneyCompleted ? false : (liveData.is_running ?? true),
+                is_running: isCancelled ? false : (isJourneyCompleted ? false : (liveData.is_running ?? true)),
+                is_cancelled: isCancelled,
                 journey_timeline: finalTimeline,
                 api_used: usedApi,
                 active_journey_date: activeDate || undefined

@@ -8,6 +8,7 @@ const router = (0, express_1.Router)();
 router.post('/send-otp', rateLimiter_1.authLimiter, authController_1.authController.sendOtp);
 router.post('/signup', rateLimiter_1.authLimiter, authController_1.authController.signup);
 router.post('/login', rateLimiter_1.authLimiter, authController_1.authController.login);
+router.post('/google-login', rateLimiter_1.authLimiter, authController_1.authController.googleLogin);
 router.post('/refresh', authController_1.authController.refresh);
 router.post('/logout', authController_1.authController.logout);
 router.post('/check-device-lock', rateLimiter_1.authLimiter, authController_1.authController.checkDeviceLock);

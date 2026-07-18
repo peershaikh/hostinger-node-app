@@ -87,6 +87,8 @@ function normalizeLiveTrainData(rawData) {
         journey_timeline: stations, // alias — LiveTrackingModal reads journey_timeline
         updatedAt,
         status,
-        activeJourneyDate
+        activeJourneyDate,
+        api_used: rawData.api_used || rawData.apiUsed || '',
+        is_ai_estimated: rawData.is_ai_estimated || rawData.api_used === 'GEMINI_AI' || false,
     };
 }

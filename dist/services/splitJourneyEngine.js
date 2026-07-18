@@ -2415,7 +2415,16 @@ class SplitJourneyEngine {
                         // —— ABSOLUTE DATETIME WAIT CALCULATION ————————————————————————
                         // Convert HH:mm + date string to an epoch ms value so we never
                         // suffer from rollover/timezone arithmetic errors.
-                        const leg1ArrivalMs = this.toEpochMs(date, l1.arrival, l1.dayNumber || 1);
+                        //
+                        // FIX(DATE_OVERFLOW): l1.dayNumber from IRCTC/DB is the entire
+                        // train's scheduled day-number — NOT the day-offset for this leg's
+                        // hub-arrival. Detect midnight rollover by comparing raw HH:mm values:
+                        //   arrival < departure (time-of-day)  →  train crossed midnight
+                        //   → hub arrives on day 2 (dayOffset=2), otherwise same day (1).
+                        const l1DepMins = this.parseToMins(l1.departure || '00:00');
+                        const l1ArrMins = this.parseToMins(l1.arrival || '00:00');
+                        const l1ArrDayOffset = (l1ArrMins < l1DepMins && l1DepMins > 0) ? 2 : 1;
+                        const leg1ArrivalMs = this.toEpochMs(date, l1.arrival, l1ArrDayOffset);
                         const leg2DepartureMs = this.toEpochMs(leg2Date, l2.departure, 1);
                         // If leg2 departs BEFORE leg1 arrives, it must be a next-day train
                         // — push departure forward in 24h increments (handles multi-day trains).

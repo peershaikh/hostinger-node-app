@@ -18,40 +18,36 @@ const MAX_TOTAL_ARTICLES = 40;
 // Priority order: official government sources first, then trusted media.
 // PIB feed removed due to persistent HTTP 403 errors (PHASE_4C756 diagnostic)
 const NEWS_SOURCES = [
+    // ── Dedicated railway feeds (highest priority) ─────────────────────────────
     {
-        name: 'The Hindu',
-        url: 'https://www.thehindu.com/news/national/feeder/default.rss',
+        name: 'NDTV (Railway)',
+        url: 'https://feeds.feedburner.com/ndtvnews-india-news',
         category: 'Railway Updates',
-    },
-    {
-        name: 'Times of India (Business)',
-        url: 'https://timesofindia.indiatimes.com/rssfeeds/1898055.cms',
-        category: 'Railway Updates',
-    },
-    {
-        name: 'Times of India (India)',
-        url: 'https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms',
-        category: 'Railway Updates',
+        strictFilter: true, // must pass railway relevance check
     },
     {
         name: 'Indian Express',
         url: 'https://indianexpress.com/section/india/feed/',
         category: 'Railway Updates',
+        strictFilter: true,
     },
     {
         name: 'Hindustan Times',
         url: 'https://www.hindustantimes.com/feeds/rss/india-news/rssfeed.xml',
         category: 'Railway Updates',
+        strictFilter: true,
     },
     {
-        name: 'News18',
-        url: 'https://www.news18.com/rss/india.xml',
+        name: 'Times of India',
+        url: 'https://timesofindia.indiatimes.com/rssfeeds/1898055.cms',
         category: 'Railway Updates',
+        strictFilter: true,
     },
     {
-        name: 'NDTV',
-        url: 'https://feeds.feedburner.com/ndtvnews-india-news',
+        name: 'The Hindu',
+        url: 'https://www.thehindu.com/news/national/feeder/default.rss',
         category: 'Railway Updates',
+        strictFilter: true,
     },
 ];
 // ─── Schema Transformation ────────────────────────────────────────────────────
@@ -207,8 +203,23 @@ function isRailwayRelevant(title, summary, sourceName) {
     if (hasRailwayBase && hasOperationalEvent) {
         score += 30;
     }
+    // Extra penalty: political/opinion pieces about railway policy (not operational news)
+    // e.g. "India Rejects Ex-Minister's Bullet Train Remarks" — no operational info
+    if (/\b(remarks?|rejects?|controversy|statements?|claims?|argues?|criticized|dispute|variance|refutes?)\b/i.test(text)) {
+        const hasOperational = /\b(route|schedule|train\s+number|station|platform|booking|ticket|cancel|delay|derail|accident|inaugurate|launch)\b/i.test(text);
+        if (!hasOperational) {
+            penalty += 60;
+        }
+    }
+    // External affairs / foreign policy (unless railway-specific international project)
+    if (/\b(foreign\s+minister|external\s+affairs|embassy|ambassador|bilateral|geopolitics|sanctions|diplomacy|visa|passport)\b/i.test(text)) {
+        const isRailwayInternational = /\b(bullet\s+train\s+project|japan|shinkansen|high.?speed\s+rail\s+project|india.japan)\b/i.test(text);
+        if (!isRailwayInternational)
+            penalty += 70;
+    }
     const finalScore = Math.max(0, score - penalty);
-    const isRelevant = finalScore >= 80;
+    // Raised from 80 → 120: stricter railway-only filter
+    const isRelevant = finalScore >= 120;
     if (isRelevant) {
         logger_1.winstonLogger.info(`[NEWS_RELEVANCE_PASS] "${title.slice(0, 60)}" | Score: ${finalScore} | Positives: ${score} | Penalty: ${penalty}`);
     }

@@ -70,7 +70,8 @@ class AuthService {
         this.refreshLocks = new Map();
         this.loadUsers();
         this.loadGuests();
-        this.ensureAdmin();
+        // ensureAdmin is now async (persists to DB); fire-and-forget from constructor
+        this.ensureAdmin().catch(e => console.warn('[AuthService] ensureAdmin error:', e));
         this.syncWithSupabase();
     }
     async getAllUsers() {
@@ -621,47 +622,62 @@ class AuthService {
             // Silent
         }
     }
-    ensureAdmin() {
-        const adminEmail = (process.env.ADMIN_EMAIL || '').trim();
+    async ensureAdmin() {
         const adminPassword = (process.env.ADMIN_PASSWORD || '').trim();
-        if (!adminEmail || !adminPassword) {
+        if (!adminPassword)
             return;
-        }
-        const existingAdmin = this.users.find(u => u.email === adminEmail);
-        if (existingAdmin) {
-            existingAdmin.isAdmin = true;
-            existingAdmin.planType = 'admin';
+        // Support multiple admins: ADMIN_EMAILS=a@b.com,c@d.com
+        // Falls back to legacy ADMIN_EMAIL for single-email setups
+        const rawEmails = process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || '';
+        const adminEmails = rawEmails.split(',').map((e) => e.trim()).filter(Boolean);
+        if (adminEmails.length === 0)
             return;
+        for (const adminEmail of adminEmails) {
+            const existingAdmin = this.users.find(u => u.email === adminEmail);
+            if (existingAdmin) {
+                existingAdmin.isAdmin = true;
+                existingAdmin.planType = 'admin';
+                if ((0, supabase_1.isSupabaseConfigured)()) {
+                    try {
+                        await userRepository_1.userRepository.update(existingAdmin.id, { isAdmin: true, planType: 'admin' });
+                    }
+                    catch (e) {
+                        logger_1.winstonLogger.warn(`[ensureAdmin] Failed to persist admin flag for ${adminEmail}:`, e);
+                    }
+                }
+            }
+            else {
+                const today = new Date().toISOString().split('T')[0];
+                const adminUser = {
+                    id: crypto_1.default.randomUUID(),
+                    email: adminEmail,
+                    password: bcryptjs_1.default.hashSync(adminPassword, 10),
+                    referralCode: '',
+                    deviceId: undefined,
+                    createdAt: new Date().toISOString(),
+                    dailySearchCount: 0,
+                    dailyPnrCount: 0,
+                    dailyLiveCount: 0,
+                    lastUsageReset: today,
+                    splitAccessUntil: null,
+                    planType: 'admin',
+                    planExpiry: null,
+                    isAdmin: true,
+                    credits: 0,
+                    aiSplitSearches: 0,
+                    adsWatchedToday: 0,
+                    lastAdWatchTime: 0,
+                    tokenVersion: 1,
+                    sessionEpoch: 1,
+                    fullName: 'Admin',
+                    mobileNumber: '',
+                    dob: ''
+                };
+                adminUser.referralCode = (0, referralService_1.generateReferralCodeSync)(adminUser.id);
+                this.users.push(adminUser);
+                this.saveUsers();
+            }
         }
-        const today = new Date().toISOString().split('T')[0];
-        const adminUser = {
-            id: crypto_1.default.randomUUID(),
-            email: adminEmail,
-            password: bcryptjs_1.default.hashSync(adminPassword, 10),
-            referralCode: '',
-            deviceId: undefined,
-            createdAt: new Date().toISOString(),
-            dailySearchCount: 0,
-            dailyPnrCount: 0,
-            dailyLiveCount: 0,
-            lastUsageReset: today,
-            splitAccessUntil: null,
-            planType: 'admin',
-            planExpiry: null,
-            isAdmin: true,
-            credits: 0,
-            aiSplitSearches: 0,
-            adsWatchedToday: 0,
-            lastAdWatchTime: 0,
-            tokenVersion: 1,
-            sessionEpoch: 1,
-            fullName: 'Admin',
-            mobileNumber: '',
-            dob: ''
-        };
-        adminUser.referralCode = (0, referralService_1.generateReferralCodeSync)(adminUser.id);
-        this.users.push(adminUser);
-        this.saveUsers();
     }
     resetDailyUsage(entity) {
         const today = new Date().toISOString().split('T')[0];
@@ -906,6 +922,124 @@ class AuthService {
         this.updateLocalUser(user);
         this.saveUsers();
         // Fire-and-forget: migrate any guest alarms created before this login to this user
+        if (deviceId && (0, supabase_1.isSupabaseConfigured)()) {
+            this.migrateGuestAlarms(user.id, deviceId).catch(err => logger_1.winstonLogger.warn(`[AUTH_MIGRATION] Guest alarm migration failed for ${user.id}: ${err.message}`));
+        }
+        const sanitizedUser = this.sanitizeUser(user);
+        return {
+            user: sanitizedUser,
+            tokens: this.generateTokens(user),
+            ...(referralMeta ? { referralMeta } : {})
+        };
+    }
+    async googleLogin(email, fullName, avatarUrl, deviceId, referralCode) {
+        let user = await this.getUserByEmail(email);
+        let referralMeta;
+        if (!user) {
+            // Register new user automatically
+            const newUserId = crypto_1.default.randomUUID();
+            const secureRandomPassword = crypto_1.default.randomBytes(32).toString('hex');
+            const hashedPassword = await bcryptjs_1.default.hash(secureRandomPassword, 10);
+            const newReferralCode = (0, referralService_1.generateReferralCodeSync)(newUserId);
+            const now = new Date().toISOString();
+            user = {
+                id: newUserId,
+                email: email,
+                password: hashedPassword,
+                referralCode: newReferralCode,
+                deviceId: deviceId,
+                createdAt: now,
+                // Limits
+                dailySearchCount: 0,
+                dailyPnrCount: 0,
+                dailyLiveCount: 0,
+                lastUsageReset: now,
+                // Monetization
+                splitAccessUntil: null,
+                planType: 'free',
+                planExpiry: null,
+                credits: 0,
+                aiSplitSearches: 0,
+                // Ads
+                adsWatchedToday: 0,
+                lastAdWatchTime: 0,
+                isAdmin: false,
+                isBlocked: false,
+                tokenVersion: 1,
+                fullName: fullName || '',
+                avatarUrl: avatarUrl || '',
+                mobileVerified: false
+            };
+            // Referral logic
+            const normalizedReferralCode = (referralCode || '').trim().toUpperCase();
+            if (normalizedReferralCode) {
+                const referralResult = await (0, referralService_1.applyReferralCode)(newUserId, normalizedReferralCode, deviceId);
+                if (referralResult.success) {
+                    const thirtyMinutesFromNow = new Date(Date.now() + 30 * 60000).toISOString();
+                    user.splitAccessUntil = thirtyMinutesFromNow;
+                    user.referredBy = referralResult.data?.referredBy;
+                    const referrer = await this.getUserById(referralResult.data?.referredBy);
+                    if (referrer) {
+                        referrer.splitAccessUntil = thirtyMinutesFromNow;
+                        this.updateLocalUser(referrer);
+                    }
+                    referralMeta = { applied: true, referredBy: referralResult.data?.referredBy };
+                }
+                else {
+                    referralMeta = { applied: false, message: referralResult.message };
+                }
+            }
+            this.users.push(user);
+            this.saveUsers();
+            if ((0, supabase_1.isSupabaseConfigured)()) {
+                try {
+                    await userRepository_1.userRepository.create(user);
+                    await userCache_1.userCache.setUser(user);
+                }
+                catch (err) {
+                    logger_1.winstonLogger.error(`[AUTH_SUPABASE] Failed to create Google user in Supabase: ${err.message}`);
+                }
+            }
+        }
+        else {
+            if (user.isBlocked)
+                throw new Error('Account has been blocked');
+            let updated = false;
+            if (!user.fullName && fullName) {
+                user.fullName = fullName;
+                updated = true;
+            }
+            if (!user.avatarUrl && avatarUrl) {
+                user.avatarUrl = avatarUrl;
+                updated = true;
+            }
+            if (deviceId && user.deviceId !== deviceId) {
+                user.deviceId = deviceId;
+                updated = true;
+            }
+            if (updated) {
+                this.updateLocalUser(user);
+                this.saveUsers();
+                if ((0, supabase_1.isSupabaseConfigured)()) {
+                    userRepository_1.userRepository.update(user.id, {
+                        fullName: user.fullName,
+                        avatarUrl: user.avatarUrl,
+                        deviceId: user.deviceId
+                    }).catch(err => logger_1.winstonLogger.error(`[AUTH_SUPABASE] Failed to update Google user info: ${err.message}`));
+                    await userCache_1.userCache.invalidate(user.id);
+                }
+            }
+        }
+        this.resetDailyUsage(user);
+        if (!user.tokenVersion) {
+            user.tokenVersion = 1;
+            if ((0, supabase_1.isSupabaseConfigured)()) {
+                userRepository_1.userRepository.updateTokenVersion(user.id, 1).catch(err => logger_1.winstonLogger.error(`[AUTH_PHASE1] Failed to sync tokenVersion to Supabase: ${err.message}`));
+                await userCache_1.userCache.invalidate(user.id);
+            }
+            this.updateLocalUser(user);
+            this.saveUsers();
+        }
         if (deviceId && (0, supabase_1.isSupabaseConfigured)()) {
             this.migrateGuestAlarms(user.id, deviceId).catch(err => logger_1.winstonLogger.warn(`[AUTH_MIGRATION] Guest alarm migration failed for ${user.id}: ${err.message}`));
         }
