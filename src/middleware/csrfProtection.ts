@@ -19,11 +19,10 @@ import { winstonLogger } from './logger';
 export const csrfProtection = csrf({
   cookie: {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production', // HTTPS only in production
-    sameSite: 'strict',
-    maxAge: 3600000 // 1 hour
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',   // PHASE_4C971: 'strict' blocks cross-domain cookies — use 'lax'
+    maxAge: 3600000    // 1 hour
   },
-  // Ignore CSRF for safe methods (GET, HEAD, OPTIONS)
   ignoreMethods: ['GET', 'HEAD', 'OPTIONS']
 });
 
@@ -75,36 +74,42 @@ export const csrfErrorHandler = (err: any, req: Request, res: Response, next: Ne
  */
 export const conditionalCsrf = (req: Request, res: Response, next: NextFunction) => {
   // Skip CSRF for health checks and monitoring endpoints
-  if (req.path === '/api/health' || req.path === '/') {
+  if (req.path === '/api/health' || req.path === '/' || req.path === '/health') {
     return next();
   }
-  
-  // Skip CSRF for public auth routes (login, signup, etc.) which don't have a token yet
-  const publicAuthRoutes = [
-    '/api/auth/login',
-    '/api/auth/signup',
-    '/api/auth/refresh',
-    '/api/auth/logout',
-    '/api/auth/send-otp',
-    '/api/auth/verify-otp',
-    '/api/auth/forgot-password',
-    '/api/auth/reset-password',
-    '/api/auth/mobile/send-otp',
-    '/api/auth/mobile/verify-otp',
-    '/api/auth/app-open'
+
+  // PHASE_4C971 FIX: Next.js proxy strips '/api/' prefix before forwarding to backend.
+  // So backend receives '/auth/login' NOT '/api/auth/login'.
+  // Use endsWith matching to handle BOTH '/api/auth/login' and '/auth/login'.
+  const authSuffixes = [
+    '/auth/login',
+    '/auth/signup',
+    '/auth/refresh',
+    '/auth/logout',
+    '/auth/send-otp',
+    '/auth/verify-otp',
+    '/auth/forgot-password',
+    '/auth/reset-password',
+    '/auth/mobile/send-otp',
+    '/auth/mobile/verify-otp',
+    '/auth/app-open',
+    '/auth/google',
+    '/auth/google/callback',
+    '/auth/google-login',
   ];
-  if (publicAuthRoutes.includes(req.path)) {
+  if (authSuffixes.some(suffix => req.path === suffix || req.path.endsWith(suffix) || req.path.includes('google-login'))) {
     return next();
   }
-  
+
+
   // Skip CSRF for webhook callbacks (e.g., payment gateways)
-  if (req.path.startsWith('/api/webhooks/') || req.path.startsWith('/api/payments/webhook')) {
+  if (req.path.startsWith('/api/webhooks/') || req.path.startsWith('/api/payments/webhook')
+      || req.path.startsWith('/webhooks/') || req.path.startsWith('/payments/webhook')) {
     return next();
   }
 
   // same-train-rescue is a read-only availability scan (no state-changing writes).
-  // PHASE_4C804: exempt so cross-origin fetch from DirectTrainCard.tsx can reach the controller.
-  if (req.path === '/api/trains/same-train-rescue') {
+  if (req.path.endsWith('/trains/same-train-rescue')) {
     return next();
   }
 

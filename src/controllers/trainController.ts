@@ -250,7 +250,28 @@ export class TrainController {
           winstonLogger.info('[ADVANCED] classType not specified — defaulting to 3A for segment scan');
         }
         const splitQuota = (req.body.quota || req.query.quota || 'GN') as string;
-        const splitRouteOptions = { classType: effectiveClass2 || '3A', quota: splitQuota };
+        // excludeVia: comma-separated hub codes to skip (used by "Generate New Alternative Routes")
+        const excludeViaRaw = (req.body.excludeVia || req.query.excludeVia || '') as string;
+        const excludeVia = excludeViaRaw ? excludeViaRaw.split(',').map((v: string) => v.trim().toUpperCase()).filter(Boolean) : [];
+
+        // PHASE_4C970: Determine premium status for gate isolation.
+        // ADMIN, safar_pro_*, paid, beta all unlock premium features.
+        // Free users see locked WVI/CCAM/SameTrainReuse in the output JSON.
+        const userId2 = req.headers['x-user-id'] as string || null;
+        let isPremiumUser = false;
+        if (userId2) {
+          try {
+            const userForGate = await authService.getUserById(userId2);
+            if (userForGate) {
+              const PREMIUM_PLANS = ['paid', 'beta', 'admin', 'safar_pro', 'safar_pro_30m', 'safar_pro_1d', 'safar_pro_7d', 'safar_pro_30d', 'safar_pro_90d'];
+              const planOk = PREMIUM_PLANS.includes(userForGate.planType || '');
+              const notExpired = !userForGate.planExpiry || new Date(userForGate.planExpiry) > new Date();
+              isPremiumUser = (planOk && notExpired) || !!userForGate.isAdmin;
+            }
+          } catch { /* leave isPremiumUser=false */ }
+        }
+
+        const splitRouteOptions = { classType: effectiveClass2 || '3A', quota: splitQuota, excludeVia, isPremiumUser };
 
         knowledgeMetricsService.beginSearchContext(source, destination);
 

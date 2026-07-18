@@ -13,7 +13,55 @@ import { winstonLogger } from '../middleware/logger';
 import fs from 'fs';
 import path from 'path';
 
+import { OAuth2Client } from 'google-auth-library';
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
 export class AuthController {
+  googleLogin = async (req: Request, res: Response) => {
+    try {
+      const { idToken, deviceId, referralCode } = req.body;
+      if (!idToken) {
+        return res.status(400).json({ success: false, error: 'Google ID Token is required' });
+      }
+
+      const ticket = await googleClient.verifyIdToken({
+        idToken,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
+      const payload = ticket.getPayload();
+      
+      if (!payload || !payload.email) {
+        return res.status(400).json({ success: false, error: 'Invalid Google token' });
+      }
+
+      const result = await authService.googleLogin(
+        payload.email,
+        payload.name || '',
+        payload.picture || '',
+        deviceId,
+        referralCode
+      );
+
+      res.cookie('refreshToken', result.tokens.refreshToken, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none',
+        maxAge: 30 * 24 * 60 * 60 * 1000
+      });
+
+      return res.json({ 
+        success: true, 
+        data: result.user,
+        accessToken: result.tokens.accessToken,
+        refreshToken: result.tokens.refreshToken,
+        ...(result.referralMeta ? { referralMeta: result.referralMeta } : {})
+      });
+    } catch (err: any) {
+      winstonLogger.error(`[AUTH_GOOGLE] Failed google login: ${err.message}`);
+      return res.status(400).json({ success: false, error: err.message });
+    }
+  };
+
   signup = async (req: Request, res: Response) => {
     try {
       const { email, password, referralCode, deviceId, otp, fullName, mobileNumber, dob } = req.body;
@@ -64,9 +112,9 @@ export class AuthController {
 
       res.cookie('refreshToken', result.tokens.refreshToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        secure: true, // required for sameSite:none
+        sameSite: 'none', // cross-domain fix: www.trayago.com → app.trayago.in
+        maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
       });
 
       return res.json({ 
@@ -97,9 +145,9 @@ export class AuthController {
 
       res.cookie('refreshToken', result.tokens.refreshToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        secure: true, // required for sameSite:none
+        sameSite: 'none', // cross-domain fix: www.trayago.com → app.trayago.in
+        maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
       });
 
       return res.json({ 
@@ -290,8 +338,10 @@ export class AuthController {
 
   refresh = async (req: Request, res: Response) => {
     try {
-      // Dual-mode: cookie (web) first, then JSON body (mobile fallback)
-      const token = req.cookies?.refreshToken || req.body?.refreshToken;
+      // Dual-mode: cookie (web) first, then Authorization header, then JSON body (mobile)
+      const authHeader = req.headers['authorization'];
+      const headerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+      const token = req.cookies?.refreshToken || headerToken || req.body?.refreshToken;
       if (!token) {
         return res.status(401).json({
           success: false,
@@ -302,12 +352,12 @@ export class AuthController {
 
       const tokens = await authService.verifyRefreshToken(token);
 
-      // Re-set cookie for web clients (unchanged cookie security model)
+      // Re-set cookie with cross-domain settings
       res.cookie('refreshToken', tokens.refreshToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 7 * 24 * 60 * 60 * 1000,
+        secure: true,
+        sameSite: 'none',
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
       });
 
       // Return refreshToken in body too — mobile clients store it in AsyncStorage

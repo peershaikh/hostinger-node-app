@@ -75,13 +75,16 @@ app.use(xss()); // Prevent XSS attacks
 
 // Global Fallback Rate Limiter for unmatched routes
 const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
+  windowMs: 15 * 60 * 1000,
+  max: 300,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { ip: false }, // PHASE_4C971: suppress express-rate-limit v8 ValidationError
+  skip: (req: any) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip || ''),
   message: { success: false, error: 'Too many requests from this IP, please try again after 15 minutes' },
 });
 app.use('/api', globalLimiter);
+
 
 
 // CSRF Protection - PHASE_4C759 Fix #2 (P1-SEC-003)
@@ -133,7 +136,7 @@ app.get(['/health', '/api/health'], async (req, res) => {
       memory: process.memoryUsage(),
       timestamp: new Date().toISOString()
     };
-    // PHASE_4C823 — expose event pipeline metrics only when the stream is enabled
+    // PHASE_4C823 â€” expose event pipeline metrics only when the stream is enabled
     if (featureFlags.eventStream) {
       response.event_pipeline = eventMetrics.snapshot();
     }
@@ -144,6 +147,7 @@ app.get(['/health', '/api/health'], async (req, res) => {
 });
 
 // ====================== ROUTES ======================
+// Primary routes (with /api/ prefix — used by internal callers)
 app.use('/api/auth', authRoutes);
 app.use('/api/trains', trainRoutes);
 app.use('/api/pnr', pnrRoutes);
@@ -160,9 +164,28 @@ app.use('/api/beta', betaRoutes);
 app.use('/api/alarms', alarmRoutes);
 app.use('/api/ai', aiRoutes);
 
+// PHASE_4C971 PROXY FIX: Mirror all routes WITHOUT /api/ prefix.
+// Next.js rewrite: source=/api/:path* → destination=https://api.trayago.in/:path*
+// The proxy STRIPS /api/ — Express never sees it. Both path forms now work.
+app.use('/auth', authRoutes);
+app.use('/trains', trainRoutes);
+app.use('/pnr', pnrRoutes);
+app.use('/analytics', analyticsRoutes);
+app.use('/stations', stationRoutes);
+app.use('/admin', adminRoutes);
+app.use('/referrals', referralRoutes);
+app.use('/news', newsRoutes);
+app.use('/feedback', feedbackRoutes);
+app.use('/payments', paymentRoutes);
+app.use('/notifications', notificationRoutes);
+app.use('/content', contentRoutes);
+app.use('/beta', betaRoutes);
+app.use('/alarms', alarmRoutes);
+app.use('/ai', aiRoutes);
 
-// PHASE_4C839 NF-010: align with /api/trains/live — rate limit + guest quota enforcement
+// Live train endpoint — both prefixed and un-prefixed
 app.get('/api/live-train/:trainNo', liveLimiter, usageMiddleware('live'), trainController.getLiveStatus);
+app.get('/live-train/:trainNo', liveLimiter, usageMiddleware('live'), trainController.getLiveStatus);
 
 
 // ====================== ERROR HANDLING ======================
@@ -173,233 +196,194 @@ app.use(errorHandler);
 // ====================== START SERVER ======================
 const startServer = async () => {
   try {
-    winstonLogger.info(`🚀 Starting Trayago Backend on port ${PORT}...`);
+    winstonLogger.info(`ðŸš€ Starting Trayago Backend on port ${PORT}...`);
 
-    // Validate Supabase connection
-    const dbConnected = await validateConnection();
-
-    if (!dbConnected) {
-      winstonLogger.warn('⚠️ Supabase connection warning - some features may be degraded');
-      global.SYSTEM_MODE = 'MODE_A';
-    } else {
-      winstonLogger.info('✅ Supabase connection successful');
-      global.SYSTEM_MODE = 'MODE_C';
-    }
-
-    // PHASE_4C931 TASK 4: Replaced misleading hardcoded "IRCTC: CONNECTED" log.
-    // Actual IRCTC status is determined after warmup() below — logged there with real initialized value.
-    winstonLogger.info('[STARTUP] Provider init in progress. DB fallback: ACTIVE');
-    winstonLogger.info(`[STARTUP] RapidAPI key: ${process.env.RAPIDAPI_KEY ? 'LOADED' : 'MISSING — live fallback disabled'}`);
-    if (!process.env.RAPIDAPI_KEY) {
-      winstonLogger.warn('[STARTUP] RAPIDAPI_KEY not set. RapidAPI fallback will be skipped.');
-    }
-
-    if (process.env.USE_DB_PROVIDERS === 'true') {
-      winstonLogger.info('[STARTUP] Preloading ProviderConfigService cache...');
-      const { providerConfigService } = require('./services/providerConfigService');
-      await Promise.all([
-        providerConfigService.getKeysFor('IRCTC'),
-        providerConfigService.getKeysFor('RAPIDAPI'),
-        providerConfigService.getKeysFor('RAILRADAR')
-      ]);
-    }
-
-    // Create HTTP server
+    // PHASE_4C971 HOSTINGER FIX: Call listen() FIRST before any async init.
+    // Hostinger kills the process if listen() is not called within 3 seconds.
+    // Previously: validateConnection â†’ jobs â†’ IRCTC warmup â†’ listen() â€” exceeded 3s limit.
+    // Now: createServer â†’ listen() immediately â†’ all async init in setImmediate background.
     const httpServer = createServer(app);
-
-    // Initialize socket service
     socketService.initialize(httpServer);
 
-    // Start background services
-    pnrWorker.start();
-    metricsService.startSnapshotScheduler();
-    alarmWorker.start();
-
-    // PHASE_4C823 — Start universal event queue worker (always starts, no-op when eventStream off)
-    startEventQueueWorker();
-
-    const { alertDispatcher } = require('./workers/alertDispatcher');
-    alertDispatcher.start();
-
-    const { dailyHealthReportJob } = require('./jobs/dailyHealthReport');
-    dailyHealthReportJob.start();
-
-    // PHASE_4C750 FIX: Await news refresh job startup to ensure warm cache
-    const { newsRefreshJob } = require('./jobs/newsRefreshJob');
-    await newsRefreshJob.start();
-
-    // PHASE_4C871 — Knowledge hub catalog job (no-op when flags OFF)
-    const { hubCatalogRefreshJob } = require('./jobs/hubCatalogRefreshJob');
-    await hubCatalogRefreshJob.start();
-
-    // ─── Alarm Lifecycle Crons ────────────────────────────────────────────────
-    // Hourly: disable alarms whose expires_at has passed (stale zombie alarms)
-    const scheduleAlarmExpiryCron = () => {
-      const MS_1_HOUR = 60 * 60 * 1000;
-      setTimeout(async () => {
-        try {
-          const { supabase: sb } = require('./config/supabase');
-          const { error } = await sb
-            .from('user_station_alarms')
-            .update({ enabled: false, updated_at: new Date().toISOString() })
-            .eq('enabled', true)
-            .lt('expires_at', new Date().toISOString());
-
-          if (error && error.code !== '42P01') {
-            winstonLogger.warn(`[ALARM_CRON_EXPIRY] Failed to disable expired alarms: ${error.message}`);
-          } else if (!error) {
-            winstonLogger.info('[ALARM_CRON_EXPIRY] Expired alarm cleanup completed');
-          }
-        } catch (err: any) {
-          winstonLogger.warn(`[ALARM_CRON_EXPIRY] Exception during expiry cron: ${err.message}`);
-        } finally {
-          scheduleAlarmExpiryCron(); // self-reschedule
-        }
-      }, MS_1_HOUR);
-    };
-    scheduleAlarmExpiryCron();
-
-    // Daily: hard-delete alarm records older than 7 days (prevents table bloat)
-    const scheduleAlarmHardDelete = () => {
-      const MS_24_HOURS = 24 * 60 * 60 * 1000;
-      setTimeout(async () => {
-        try {
-          const { supabase: sb } = require('./config/supabase');
-          const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-          const { error } = await sb
-            .from('user_station_alarms')
-            .delete()
-            .lt('created_at', sevenDaysAgo);
-
-          if (error && error.code !== '42P01') {
-            winstonLogger.warn(`[ALARM_CRON_PURGE] Failed to purge old alarm records: ${error.message}`);
-          } else if (!error) {
-            winstonLogger.info('[ALARM_CRON_PURGE] Old alarm record purge completed (>7 days)');
-          }
-        } catch (err: any) {
-          winstonLogger.warn(`[ALARM_CRON_PURGE] Exception during hard delete cron: ${err.message}`);
-        } finally {
-          scheduleAlarmHardDelete(); // self-reschedule
-        }
-      }, MS_24_HOURS);
-    };
-    scheduleAlarmHardDelete();
-    // ─────────────────────────────────────────────────────────────────────────
-
-    // Native daily limits reset scheduler (runs daily at midnight)
-    const scheduleMidnightReset = () => {
-      const now = new Date();
-      const nextMidnight = new Date();
-      nextMidnight.setHours(24, 0, 0, 0); // next midnight
-      const msUntilMidnight = nextMidnight.getTime() - now.getTime();
-
-      setTimeout(() => {
-        const resetDbLimits = async () => {
-          try {
-            const { validateConnection, supabase } = require('./config/supabase');
-            const dbConnected = await validateConnection();
-            if (dbConnected) {
-              const { error } = await supabase
-                .from('users')
-                .update({
-                  daily_search_count: 0,
-                  daily_pnr_count: 0,
-                  daily_live_count: 0,
-                  ads_watched_today: 0
-                })
-                .or('daily_search_count.gt.0,daily_pnr_count.gt.0,daily_live_count.gt.0,ads_watched_today.gt.0');
-
-              if (error) {
-                winstonLogger.error(`[CRON_DATABASE_RESET_ERROR] Failed to reset daily database quotas: ${error.message}`);
-              } else {
-                winstonLogger.info('[CRON] Automated daily limits reset executed successfully on database');
-                try {
-                  const { userCache } = require('./cache/userCache');
-                  await userCache.clear();
-                  winstonLogger.info('[CRON] User cache successfully cleared and PubSub broadcasted post-reset');
-                } catch (cacheErr: any) {
-                  winstonLogger.error(`[CRON_CACHE_RESET_ERROR] Failed to clear user cache: ${cacheErr.message}`);
-                }
-              }
-            }
-          } catch (err: any) {
-            winstonLogger.error(`[CRON_EXCEPTION] Database reset task failed: ${err.message}`);
-          }
-        };
-
-        resetDbLimits();
-        scheduleMidnightReset(); // schedule next iteration
-      }, msUntilMidnight);
-    };
-    scheduleMidnightReset();
-
-    // P0 (PHASE_4C814): Pre-resolve IRCTC SDK initialization before accepting traffic.
-    // irctcService._init() started in its constructor but may not have resolved yet.
-    // Awaiting warmup() here blocks listen() until irctc-connect is fully loaded and
-    // configured. The first user rescue request will NEVER block on ensureInit().
-    // On subsequent calls warmup() returns in ~0ms (initPromise already resolved).
-    const irctcInitStart = Date.now();
-    winstonLogger.info('[STARTUP] Awaiting IRCTC SDK initialization before accepting traffic...');
-    const { irctcService } = require('./services/irctcService');
-    await irctcService.warmup();
-    const irctcInitMs = Date.now() - irctcInitStart;
-    winstonLogger.info(`[STARTUP] IRCTC SDK ready. INIT_MS=${irctcInitMs} initialized=${irctcService.getStatus().initialized}`);
-
     httpServer.listen(PORT, () => {
-      winstonLogger.info(`✅ Trayago Backend is running on http://localhost:${PORT}`);
-      winstonLogger.info(`📊 Health check: http://localhost:${PORT}/health`);
-
-      // Asynchronous Startup Notification Webhook
-      const triggerStartupWebhook = async () => {
-        try {
-          const webhookUrl = process.env.ADMIN_WEBHOOK_URL;
-          if (!webhookUrl) {
-            winstonLogger.info('[STARTUP_ALERT] No ADMIN_WEBHOOK_URL set. Webhook push skipped.');
-            return;
-          }
-
-          const mem = process.memoryUsage();
-          const payload = {
-            event: "SERVER_BOOT",
-            timestamp: new Date().toISOString(),
+      winstonLogger.info(`âœ… Trayago Backend running on http://localhost:${PORT}`);
+      winstonLogger.info(`ðŸ“Š Health check: http://localhost:${PORT}/health`);
+      // Non-blocking startup webhook
+      const webhookUrl = process.env.ADMIN_WEBHOOK_URL;
+      if (webhookUrl) {
+        const mem = process.memoryUsage();
+        fetch(webhookUrl, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event: 'SERVER_BOOT', timestamp: new Date().toISOString(),
             environment: process.env.NODE_ENV || 'development',
-            node_version: process.version,
-            process_id: process.pid,
+            node_version: process.version, process_id: process.pid,
             uptime: process.uptime(),
-            memory: {
-              rss_mb: Math.round(mem.rss / 1024 / 1024),
-              heap_used_mb: Math.round(mem.heapUsed / 1024 / 1024)
-            }
-          };
-
-          // Native fetch (non-blocking async)
-          fetch(webhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          }).then(res => {
-            winstonLogger.info(`[STARTUP_ALERT_SUCCESS] Webhook status: ${res.status}`);
-          }).catch(err => {
-            winstonLogger.warn(`[STARTUP_ALERT_FAIL] Failed to fire webhook: ${err.message}`);
-          });
-
-        } catch (webhookErr: any) {
-          winstonLogger.warn(`[STARTUP_ALERT_EXCEPTION] ${webhookErr.message}`);
-        }
-      };
-
-      triggerStartupWebhook();
+            memory: { rss_mb: Math.round(mem.rss/1024/1024), heap_used_mb: Math.round(mem.heapUsed/1024/1024) }
+          })
+        }).catch((e: any) => winstonLogger.warn(`[STARTUP_ALERT_FAIL] ${e.message}`));
+      }
     });
 
+    // â”€â”€ All async init runs AFTER port is already bound â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    setImmediate(async () => {
+      try {
+        // Validate Supabase connection
+        const dbConnected = await validateConnection();
+        if (!dbConnected) {
+          winstonLogger.warn('âš ï¸ Supabase connection warning - some features may be degraded');
+          global.SYSTEM_MODE = 'MODE_A';
+        } else {
+          winstonLogger.info('âœ… Supabase connection successful');
+          global.SYSTEM_MODE = 'MODE_C';
+        }
+
+        winstonLogger.info('[STARTUP] Provider init in progress. DB fallback: ACTIVE');
+        winstonLogger.info(`[STARTUP] RapidAPI key: ${process.env.RAPIDAPI_KEY ? 'LOADED' : 'MISSING â€” live fallback disabled'}`);
+        if (!process.env.RAPIDAPI_KEY) {
+          winstonLogger.warn('[STARTUP] RAPIDAPI_KEY not set. RapidAPI fallback will be skipped.');
+        }
+
+        if (process.env.USE_DB_PROVIDERS === 'true') {
+          winstonLogger.info('[STARTUP] Preloading ProviderConfigService cache...');
+          const { providerConfigService } = require('./services/providerConfigService');
+          await Promise.all([
+            providerConfigService.getKeysFor('IRCTC'),
+            providerConfigService.getKeysFor('RAPIDAPI'),
+            providerConfigService.getKeysFor('RAILRADAR')
+          ]);
+        }
+
+        // Start background services
+        pnrWorker.start();
+        metricsService.startSnapshotScheduler();
+        alarmWorker.start();
+        startEventQueueWorker();
+
+        const { alertDispatcher } = require('./workers/alertDispatcher');
+        alertDispatcher.start();
+
+        const { dailyHealthReportJob } = require('./jobs/dailyHealthReport');
+        dailyHealthReportJob.start();
+
+        // PHASE_4C750: News refresh job
+        const { newsRefreshJob } = require('./jobs/newsRefreshJob');
+        await newsRefreshJob.start();
+
+        // PHASE_4C871: Knowledge hub catalog job (no-op when flags OFF)
+        const { hubCatalogRefreshJob } = require('./jobs/hubCatalogRefreshJob');
+        await hubCatalogRefreshJob.start();
+
+        // â”€â”€â”€ Alarm Lifecycle Crons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        const scheduleAlarmExpiryCron = () => {
+          const MS_1_HOUR = 60 * 60 * 1000;
+          setTimeout(async () => {
+            try {
+              const { supabase: sb } = require('./config/supabase');
+              const { error } = await sb
+                .from('user_station_alarms')
+                .update({ enabled: false, updated_at: new Date().toISOString() })
+                .eq('enabled', true)
+                .lt('expires_at', new Date().toISOString());
+              if (error && error.code !== '42P01') {
+                winstonLogger.warn(`[ALARM_CRON_EXPIRY] Failed to disable expired alarms: ${error.message}`);
+              } else if (!error) {
+                winstonLogger.info('[ALARM_CRON_EXPIRY] Expired alarm cleanup completed');
+              }
+            } catch (err: any) {
+              winstonLogger.warn(`[ALARM_CRON_EXPIRY] Exception during expiry cron: ${err.message}`);
+            } finally {
+              scheduleAlarmExpiryCron();
+            }
+          }, MS_1_HOUR);
+        };
+        scheduleAlarmExpiryCron();
+
+        const scheduleAlarmHardDelete = () => {
+          const MS_24_HOURS = 24 * 60 * 60 * 1000;
+          setTimeout(async () => {
+            try {
+              const { supabase: sb } = require('./config/supabase');
+              const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+              const { error } = await sb
+                .from('user_station_alarms')
+                .delete()
+                .lt('created_at', sevenDaysAgo);
+              if (error && error.code !== '42P01') {
+                winstonLogger.warn(`[ALARM_CRON_PURGE] Failed to purge old alarm records: ${error.message}`);
+              } else if (!error) {
+                winstonLogger.info('[ALARM_CRON_PURGE] Old alarm record purge completed (>7 days)');
+              }
+            } catch (err: any) {
+              winstonLogger.warn(`[ALARM_CRON_PURGE] Exception during hard delete cron: ${err.message}`);
+            } finally {
+              scheduleAlarmHardDelete();
+            }
+          }, MS_24_HOURS);
+        };
+        scheduleAlarmHardDelete();
+
+        // Native daily limits reset scheduler (runs daily at midnight)
+        const scheduleMidnightReset = () => {
+          const now = new Date();
+          const nextMidnight = new Date();
+          nextMidnight.setHours(24, 0, 0, 0);
+          const msUntilMidnight = nextMidnight.getTime() - now.getTime();
+          setTimeout(() => {
+            const resetDbLimits = async () => {
+              try {
+                const { validateConnection: vc2, supabase } = require('./config/supabase');
+                const conn = await vc2();
+                if (conn) {
+                  const { error } = await supabase
+                    .from('users')
+                    .update({ daily_search_count: 0, daily_pnr_count: 0, daily_live_count: 0, ads_watched_today: 0 })
+                    .or('daily_search_count.gt.0,daily_pnr_count.gt.0,daily_live_count.gt.0,ads_watched_today.gt.0');
+                  if (error) {
+                    winstonLogger.error(`[CRON_DATABASE_RESET_ERROR] Failed to reset daily database quotas: ${error.message}`);
+                  } else {
+                    winstonLogger.info('[CRON] Automated daily limits reset executed successfully on database');
+                    try {
+                      const { userCache } = require('./cache/userCache');
+                      await userCache.clear();
+                      winstonLogger.info('[CRON] User cache successfully cleared and PubSub broadcasted post-reset');
+                    } catch (cacheErr: any) {
+                      winstonLogger.error(`[CRON_CACHE_RESET_ERROR] Failed to clear user cache: ${cacheErr.message}`);
+                    }
+                  }
+                }
+              } catch (err: any) {
+                winstonLogger.error(`[CRON_EXCEPTION] Database reset task failed: ${err.message}`);
+              }
+            };
+            resetDbLimits();
+            scheduleMidnightReset();
+          }, msUntilMidnight);
+        };
+        scheduleMidnightReset();
+
+        // PHASE_4C814 (now runs in background, no longer blocks listen())
+        const irctcInitStart = Date.now();
+        winstonLogger.info('[STARTUP] IRCTC SDK warmup starting in background...');
+        const { irctcService } = require('./services/irctcService');
+        await irctcService.warmup();
+        const irctcInitMs = Date.now() - irctcInitStart;
+        winstonLogger.info(`[STARTUP] IRCTC SDK ready. INIT_MS=${irctcInitMs} initialized=${irctcService.getStatus().initialized}`);
+
+      } catch (bgErr: any) {
+        winstonLogger.error(`âŒ Background startup init failed: ${bgErr.message}`);
+      }
+    }); // end setImmediate
+
   } catch (err: any) {
-    winstonLogger.error(`❌ Failed to start server: ${err.message}`);
+    winstonLogger.error(`âŒ Failed to start server: ${err.message}`);
     process.exit(1);
   }
 };
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-  winstonLogger.info('🛑 SIGTERM received. Shutting down gracefully...');
+  winstonLogger.info('ðŸ›‘ SIGTERM received. Shutting down gracefully...');
   pnrWorker.stop?.(); // if you added stop method
   alarmWorker.stop();
   stopEventQueueWorker(); // PHASE_4C823
@@ -407,7 +391,7 @@ process.on('SIGTERM', () => {
 });
 
 process.on('SIGINT', () => {
-  winstonLogger.info('🛑 SIGINT received. Shutting down...');
+  winstonLogger.info('ðŸ›‘ SIGINT received. Shutting down...');
   pnrWorker.stop?.();
   alarmWorker.stop();
   stopEventQueueWorker(); // PHASE_4C823

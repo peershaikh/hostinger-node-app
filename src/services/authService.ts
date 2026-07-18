@@ -93,7 +93,8 @@ export class AuthService {
   constructor() {
     this.loadUsers();
     this.loadGuests();
-    this.ensureAdmin();
+    // ensureAdmin is now async (persists to DB); fire-and-forget from constructor
+    this.ensureAdmin().catch(e => console.warn('[AuthService] ensureAdmin error:', e));
     this.syncWithSupabase();
   }
 
@@ -680,49 +681,60 @@ export class AuthService {
     }
   }
 
-  private ensureAdmin() {
-    const adminEmail = (process.env.ADMIN_EMAIL || '').trim();
+  private async ensureAdmin() {
     const adminPassword = (process.env.ADMIN_PASSWORD || '').trim();
-    if (!adminEmail || !adminPassword) {
-      return;
-    }
+    if (!adminPassword) return;
 
-    const existingAdmin = this.users.find(u => u.email === adminEmail);
-    if (existingAdmin) {
-      existingAdmin.isAdmin = true;
-      existingAdmin.planType = 'admin';
-      return;
-    }
+    // Support multiple admins: ADMIN_EMAILS=a@b.com,c@d.com
+    // Falls back to legacy ADMIN_EMAIL for single-email setups
+    const rawEmails = process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || '';
+    const adminEmails = rawEmails.split(',').map((e: string) => e.trim()).filter(Boolean);
+    if (adminEmails.length === 0) return;
 
-    const today = new Date().toISOString().split('T')[0];
-    const adminUser: User = {
-      id: crypto.randomUUID(),
-      email: adminEmail,
-      password: bcrypt.hashSync(adminPassword, 10),
-      referralCode: '',
-      deviceId: undefined,
-      createdAt: new Date().toISOString(),
-      dailySearchCount: 0,
-      dailyPnrCount: 0,
-      dailyLiveCount: 0,
-      lastUsageReset: today,
-      splitAccessUntil: null,
-      planType: 'admin',
-      planExpiry: null,
-      isAdmin: true,
-      credits: 0,
-      aiSplitSearches: 0,
-      adsWatchedToday: 0,
-      lastAdWatchTime: 0,
-      tokenVersion: 1,
-      sessionEpoch: 1,
-      fullName: 'Admin',
-      mobileNumber: '',
-      dob: ''
-    };
-    adminUser.referralCode = generateReferralCodeSync(adminUser.id);
-    this.users.push(adminUser);
-    this.saveUsers();
+    for (const adminEmail of adminEmails) {
+      const existingAdmin = this.users.find(u => u.email === adminEmail);
+      if (existingAdmin) {
+        existingAdmin.isAdmin = true;
+        existingAdmin.planType = 'admin';
+        if (isSupabaseConfigured()) {
+          try {
+            await userRepository.update(existingAdmin.id, { isAdmin: true, planType: 'admin' });
+          } catch (e) {
+            winstonLogger.warn(`[ensureAdmin] Failed to persist admin flag for ${adminEmail}:`, e);
+          }
+        }
+      } else {
+        const today = new Date().toISOString().split('T')[0];
+        const adminUser: User = {
+          id: crypto.randomUUID(),
+          email: adminEmail,
+          password: bcrypt.hashSync(adminPassword, 10),
+          referralCode: '',
+          deviceId: undefined,
+          createdAt: new Date().toISOString(),
+          dailySearchCount: 0,
+          dailyPnrCount: 0,
+          dailyLiveCount: 0,
+          lastUsageReset: today,
+          splitAccessUntil: null,
+          planType: 'admin',
+          planExpiry: null,
+          isAdmin: true,
+          credits: 0,
+          aiSplitSearches: 0,
+          adsWatchedToday: 0,
+          lastAdWatchTime: 0,
+          tokenVersion: 1,
+          sessionEpoch: 1,
+          fullName: 'Admin',
+          mobileNumber: '',
+          dob: ''
+        };
+        adminUser.referralCode = generateReferralCodeSync(adminUser.id);
+        this.users.push(adminUser);
+        this.saveUsers();
+      }
+    }
   }
 
   private resetDailyUsage(entity: User | GuestUsage) {
@@ -1018,6 +1030,142 @@ export class AuthService {
     };
   }
 
+  public async googleLogin(email: string, fullName: string, avatarUrl: string, deviceId?: string, referralCode?: string) {
+    let user = await this.getUserByEmail(email);
+    let referralMeta: { applied: boolean; message?: string; referredBy?: string } | undefined;
+
+    if (!user) {
+      // Register new user automatically
+      const newUserId = crypto.randomUUID();
+      const secureRandomPassword = crypto.randomBytes(32).toString('hex');
+      const hashedPassword = await bcrypt.hash(secureRandomPassword, 10);
+      const newReferralCode = generateReferralCodeSync(newUserId);
+      const now = new Date().toISOString();
+
+      user = {
+        id: newUserId,
+        email: email,
+        password: hashedPassword,
+        referralCode: newReferralCode,
+        deviceId: deviceId,
+        createdAt: now,
+        
+        // Limits
+        dailySearchCount: 0,
+        dailyPnrCount: 0,
+        dailyLiveCount: 0,
+        lastUsageReset: now,
+
+        // Monetization
+        splitAccessUntil: null,
+        planType: 'free',
+        planExpiry: null,
+        credits: 0,
+        aiSplitSearches: 0,
+
+        // Ads
+        adsWatchedToday: 0,
+        lastAdWatchTime: 0,
+
+        isAdmin: false,
+        isBlocked: false,
+        tokenVersion: 1,
+
+        fullName: fullName || '',
+        avatarUrl: avatarUrl || '',
+        mobileVerified: false
+      };
+
+      // Referral logic
+      const normalizedReferralCode = (referralCode || '').trim().toUpperCase();
+      if (normalizedReferralCode) {
+        const referralResult = await applyReferralCode(newUserId, normalizedReferralCode, deviceId);
+        if (referralResult.success) {
+          const thirtyMinutesFromNow = new Date(Date.now() + 30 * 60000).toISOString();
+          user.splitAccessUntil = thirtyMinutesFromNow;
+          user.referredBy = referralResult.data?.referredBy;
+
+          const referrer = await this.getUserById(referralResult.data?.referredBy as string);
+          if (referrer) {
+            referrer.splitAccessUntil = thirtyMinutesFromNow;
+            this.updateLocalUser(referrer);
+          }
+          referralMeta = { applied: true, referredBy: referralResult.data?.referredBy };
+        } else {
+          referralMeta = { applied: false, message: referralResult.message };
+        }
+      }
+
+      this.users.push(user);
+      this.saveUsers();
+
+      if (isSupabaseConfigured()) {
+        try {
+          await userRepository.create(user);
+          await userCache.setUser(user);
+        } catch (err: any) {
+          winstonLogger.error(`[AUTH_SUPABASE] Failed to create Google user in Supabase: ${err.message}`);
+        }
+      }
+    } else {
+      if (user.isBlocked) throw new Error('Account has been blocked');
+      
+      let updated = false;
+      if (!user.fullName && fullName) {
+        user.fullName = fullName;
+        updated = true;
+      }
+      if (!user.avatarUrl && avatarUrl) {
+        user.avatarUrl = avatarUrl;
+        updated = true;
+      }
+      if (deviceId && user.deviceId !== deviceId) {
+        user.deviceId = deviceId;
+        updated = true;
+      }
+      
+      if (updated) {
+        this.updateLocalUser(user);
+        this.saveUsers();
+        if (isSupabaseConfigured()) {
+          userRepository.update(user.id, {
+            fullName: user.fullName,
+            avatarUrl: user.avatarUrl,
+            deviceId: user.deviceId
+          }).catch(err => winstonLogger.error(`[AUTH_SUPABASE] Failed to update Google user info: ${err.message}`));
+          await userCache.invalidate(user.id);
+        }
+      }
+    }
+
+    this.resetDailyUsage(user);
+
+    if (!user.tokenVersion) {
+      user.tokenVersion = 1;
+      if (isSupabaseConfigured()) {
+        userRepository.updateTokenVersion(user.id, 1).catch(err => 
+          winstonLogger.error(`[AUTH_PHASE1] Failed to sync tokenVersion to Supabase: ${err.message}`)
+        );
+        await userCache.invalidate(user.id);
+      }
+      this.updateLocalUser(user);
+      this.saveUsers();
+    }
+
+    if (deviceId && isSupabaseConfigured()) {
+      this.migrateGuestAlarms(user.id, deviceId).catch(err =>
+        winstonLogger.warn(`[AUTH_MIGRATION] Guest alarm migration failed for ${user.id}: ${err.message}`)
+      );
+    }
+
+    const sanitizedUser = this.sanitizeUser(user);
+    return {
+      user: sanitizedUser,
+      tokens: this.generateTokens(user),
+      ...(referralMeta ? { referralMeta } : {})
+    };
+  }
+
   // ─── Guest Alarm Migration ───────────────────────────────────────────────
   // Called non-blocking after every successful login/signup.
   // Moves device-scoped alarms (user_id IS NULL) to the authenticated user_id.
@@ -1087,8 +1235,13 @@ export class AuthService {
     // PHASE_4C965 Stage 1: emit sessionEpoch (E) in ACCESS tokens only.
     // Refresh token payload is unchanged (rotation still keyed on tokenVersion/R).
     const accessPayload = { ...payload, sessionEpoch: user.sessionEpoch || 1 };
-    const accessToken = jwt.sign(accessPayload, jwtSecret, { expiresIn: '15m' });
-    const refreshToken = jwt.sign(payload, refreshSecret, { expiresIn: '7d' });
+    // PHASE_4C970 LOGOUT FIX: Access token: 24h (was 2h — still caused silent refresh failures
+    // on cross-domain when cookie was missing, leading to 10-15 min logout UX).
+    // Refresh token: 30d (unchanged).
+    // With refreshToken stored in localStorage (fallback for .com/.online), the interceptor
+    // can always recover the session silently without triggering OTP re-login.
+    const accessToken = jwt.sign(accessPayload, jwtSecret, { expiresIn: '24h' });
+    const refreshToken = jwt.sign(payload, refreshSecret, { expiresIn: '30d' });
     return { accessToken, refreshToken };
   }
 
