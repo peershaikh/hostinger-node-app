@@ -21,7 +21,7 @@ function copyDirSync(src, dest) {
 }
 
 const srcDir = path.join(__dirname, '../src/data');
-const destDir = path.join(__dirname, '../dist/data');
+const destDir = path.join(__dirname, '../build_new/data');
 
 try {
   console.log(`[BUILD] Copying static JSON assets from ${srcDir} to ${destDir}...`);

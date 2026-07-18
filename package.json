@@ -4,7 +4,7 @@
   "description": "Production-ready backend for RailAI travel assistant",
   "main": "dist/index.js",
   "scripts": {
-    "start": "node dist/index.js",
+    "start": "node build_new/index.js",
     "dev": "ts-node-dev --transpile-only src/index.ts",
     "build": "tsc && node scripts/copy-assets.js",
     "postinstall": "npm run build",
