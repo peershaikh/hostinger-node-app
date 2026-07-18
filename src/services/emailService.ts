@@ -61,7 +61,7 @@ export class EmailService {
 
     try {
       const { error } = await resend.emails.send({
-        from: \`Trayago <\${SENDER_EMAIL}>\`,
+        from: `Trayago <${SENDER_EMAIL}>`,
         to: toEmail,
         subject,
         html: htmlContent,
@@ -71,22 +71,22 @@ export class EmailService {
         throw new Error(error.message);
       }
 
-      winstonLogger.info(\`[EMAIL_SUCCESS] OTP sent to \${toEmail} via Resend\`);
+      winstonLogger.info(`[EMAIL_SUCCESS] OTP sent to ${toEmail} via Resend`);
       return true;
     } catch (err: any) {
-      winstonLogger.warn(\`[EMAIL_WARN] Resend failed for \${toEmail}: \${err.message}. Falling back to Brevo SMTP...\`);
+      winstonLogger.warn(`[EMAIL_WARN] Resend failed for ${toEmail}: ${err.message}. Falling back to Brevo SMTP...`);
       
       try {
         await brevoTransporter.sendMail({
-          from: \`"Trayago" <\${SENDER_EMAIL}>\`,
+          from: `"Trayago" <${SENDER_EMAIL}>`,
           to: toEmail,
           subject,
           html: htmlContent,
         });
-        winstonLogger.info(\`[EMAIL_SUCCESS] OTP sent to \${toEmail} via Brevo SMTP (Fallback)\`);
+        winstonLogger.info(`[EMAIL_SUCCESS] OTP sent to ${toEmail} via Brevo SMTP (Fallback)`);
         return true;
       } catch (brevoErr: any) {
-        winstonLogger.error(\`[EMAIL_ERROR] Both Resend and Brevo failed to send OTP to \${toEmail}\`, brevoErr);
+        winstonLogger.error(`[EMAIL_ERROR] Both Resend and Brevo failed to send OTP to ${toEmail}`, brevoErr);
         throw new Error('All email providers failed to send OTP.');
       }
     }
@@ -126,7 +126,7 @@ export class EmailService {
 
     try {
       const { error } = await resend.emails.send({
-        from: \`Trayago <\${SENDER_EMAIL}>\`,
+        from: `Trayago <${SENDER_EMAIL}>`,
         to: toEmail,
         subject,
         html: htmlContent,
@@ -136,22 +136,22 @@ export class EmailService {
         throw new Error(error.message);
       }
 
-      winstonLogger.info(\`[EMAIL_SUCCESS] Password reset OTP sent to \${toEmail} via Resend\`);
+      winstonLogger.info(`[EMAIL_SUCCESS] Password reset OTP sent to ${toEmail} via Resend`);
       return true;
     } catch (err: any) {
-      winstonLogger.warn(\`[EMAIL_WARN] Resend failed for \${toEmail}: \${err.message}. Falling back to Brevo SMTP...\`);
+      winstonLogger.warn(`[EMAIL_WARN] Resend failed for ${toEmail}: ${err.message}. Falling back to Brevo SMTP...`);
       
       try {
         await brevoTransporter.sendMail({
-          from: \`"Trayago" <\${SENDER_EMAIL}>\`,
+          from: `"Trayago" <${SENDER_EMAIL}>`,
           to: toEmail,
           subject,
           html: htmlContent,
         });
-        winstonLogger.info(\`[EMAIL_SUCCESS] Password reset OTP sent to \${toEmail} via Brevo SMTP (Fallback)\`);
+        winstonLogger.info(`[EMAIL_SUCCESS] Password reset OTP sent to ${toEmail} via Brevo SMTP (Fallback)`);
         return true;
       } catch (brevoErr: any) {
-        winstonLogger.error(\`[EMAIL_ERROR] Both Resend and Brevo failed to send password reset OTP to \${toEmail}\`, brevoErr);
+        winstonLogger.error(`[EMAIL_ERROR] Both Resend and Brevo failed to send password reset OTP to ${toEmail}`, brevoErr);
         throw new Error('All email providers failed to send password reset email.');
       }
     }
@@ -160,26 +160,26 @@ export class EmailService {
   async sendAlertEmail(toEmail: string, alertTitle: string, alertMessage: string): Promise<boolean> {
     try {
       const { error } = await resend.emails.send({
-        from: \`Trayago Alerts <\${SENDER_EMAIL}>\`,
+        from: `Trayago Alerts <${SENDER_EMAIL}>`,
         to: toEmail,
         subject: alertTitle,
-        html: \`
+        html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
             <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-              <h2 style="color: #ef4444; margin-top: 0;">\${alertTitle}</h2>
+              <h2 style="color: #ef4444; margin-top: 0;">${alertTitle}</h2>
               <p style="color: #555; font-size: 16px; line-height: 1.5;">
-                \${alertMessage}
+                ${alertMessage}
               </p>
             </div>
           </div>
-        \`,
+        `,
       });
       if (error) {
         throw new Error(error.message);
       }
       return true;
     } catch (err: any) {
-      winstonLogger.error(\`[EMAIL_EXCEPTION] Exception while sending alert to \${toEmail}\`, err);
+      winstonLogger.error(`[EMAIL_EXCEPTION] Exception while sending alert to ${toEmail}`, err);
       throw new Error(err.message || 'Failed to send alert email');
     }
   }
@@ -187,7 +187,7 @@ export class EmailService {
   async sendHealthReportEmail(toEmail: string, subject: string, htmlContent: string): Promise<boolean> {
     try {
       const { error } = await resend.emails.send({
-        from: \`Trayago Monitor <\${SENDER_EMAIL}>\`,
+        from: `Trayago Monitor <${SENDER_EMAIL}>`,
         to: toEmail,
         subject: subject,
         html: htmlContent,
@@ -197,7 +197,7 @@ export class EmailService {
       }
       return true;
     } catch (err: any) {
-      winstonLogger.error(\`[EMAIL_EXCEPTION] Exception while sending health report to \${toEmail}\`, err);
+      winstonLogger.error(`[EMAIL_EXCEPTION] Exception while sending health report to ${toEmail}`, err);
       throw new Error(err.message || 'Failed to send health report email');
     }
   }
