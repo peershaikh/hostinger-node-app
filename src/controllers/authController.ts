@@ -10,6 +10,8 @@ import {
 import { supabase, isSupabaseConfigured } from '../config/supabase';
 import { userRepository } from '../repositories/userRepository';
 import { winstonLogger } from '../middleware/logger';
+import fs from 'fs';
+import path from 'path';
 import * as admin from 'firebase-admin';
 import jwt from 'jsonwebtoken';
 
