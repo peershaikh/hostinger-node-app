@@ -441,12 +441,7 @@ export class LiveTrackingService {
       winstonLogger.info(`[LIVE_TRACE] Priority fetch for ${trainNo}`);
 
       const liveData = await fetchWithPriority<any>({
-        primary: async () => {
-          const res = await confirmtktService.getTrainStatus(trainNo, date);
-          if (res) { usedApi = 'CONFIRMTKT'; return res; }
-          return null;
-        },
-        fallback1: async () => {
+        irctc: async () => {
           // getLiveStatus() uses trackTrain() — returns real-time delay data.
           // getTrainInfo() returns only static schedule (no delay) — do NOT use for live.
           const res = await irctcService.getLiveStatus(trainNo, date);
@@ -875,7 +870,18 @@ export class LiveTrackingService {
         currentIndex = detectedIndex;
       }
 
-      // If train has completed journey, ignore stale API tracking at source and force to destination
+      // ── API DATA SANITY CHECK ─────────────────────────────────────
+      // Sometimes IRCTC returns the previous day's run (stuck at destination) or hasn't updated for today (stuck at source)
+      const isApiSuspiciouslyStuckAtSource = currentIndex === 0 && timeBasedIdx > 3;
+      const isApiSuspiciouslyAtDestination = currentIndex >= schedule.length - 1 && timeBasedIdx < schedule.length - 3;
+      
+      if (usedApi !== 'DATABASE_SCHEDULE' && (isApiSuspiciouslyStuckAtSource || isApiSuspiciouslyAtDestination)) {
+        winstonLogger.warn(`[LIVE_TRACK] Rejecting bad API data (API index: ${currentIndex}, Time index: ${timeBasedIdx}). Falling back to Database Schedule.`);
+        currentIndex = timeBasedIdx;
+        usedApi = 'DATABASE_SCHEDULE';
+      }
+
+      // If train has completed journey naturally
       if (isTimeCompleted && (currentIndex <= 0 || usedScheduleFallback || usedApi === 'DATABASE_SCHEDULE')) {
         currentIndex = timeBasedIdx;
       }
