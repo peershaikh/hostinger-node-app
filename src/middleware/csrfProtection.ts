@@ -120,5 +120,5 @@ export const conditionalCsrf = (req: Request, res: Response, next: NextFunction)
   }
 
   // Apply CSRF protection
-  csrfProtection(req, res, next);
+  csrfProtection(req as any, res as any, next);
 };
