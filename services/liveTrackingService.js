@@ -324,8 +324,8 @@ class LiveTrackingService {
                         parseDelayString(s.arrival?.delay) || 0;
                     return strDelay || delayMins || 0;
                 })(),
-                is_current: s.is_current || false,
-                is_departed: s.is_departed || false,
+                is_current: s.is_current === true || (s.status && s.status.toString().toUpperCase() === 'CURRENT') || false,
+                is_departed: s.is_departed === true || s.has_departed === true || (s.status && (s.status.toString().toUpperCase() === 'DEPARTED' || s.status.toString().toUpperCase() === 'PASSED')) || false,
                 status: s.status || (s.is_departed ? 'DEPARTED' : 'UPCOMING'),
                 station_type: classifyStation(code, name, idx, raw.length),
                 platform: s.platform || s.platform_number || s.platform_no || s.platformNumber || null
@@ -385,11 +385,6 @@ class LiveTrackingService {
                     }
                     return null;
                 },
-                // confirmtkt: async () => {
-                //   const res = await confirmtktService.getTrainStatus(trainNo, date);
-                //   if (res) { usedApi = 'CONFIRMTKT'; return res; }
-                //   return null;
-                // },
                 db: async () => {
                     if (scheduleWithDays.length > 0) {
                         usedApi = 'DATABASE_SCHEDULE';
@@ -764,14 +759,37 @@ class LiveTrackingService {
                 }
             }
             if (detectedIndex !== -1 && (currentIndex === -1 || currentCode === 'CSMT' || usedScheduleFallback)) {
-                currentIndex = detectedIndex;
+                let schedIdx = -1;
+                for (let j = detectedIndex; j >= 0; j--) {
+                    const cCode = liveTimeline[j].station_code?.toUpperCase().trim();
+                    if (cCode) {
+                        schedIdx = schedule.findIndex((s) => {
+                            const sCode = s.Station_Code || s.station_code;
+                            return sCode && sCode.toUpperCase() === cCode;
+                        });
+                        if (schedIdx !== -1)
+                            break;
+                    }
+                }
+                if (schedIdx !== -1) {
+                    currentIndex = schedIdx;
+                }
             }
-            // If train has completed journey, ignore stale API tracking at source and force to destination
+            // ── API DATA SANITY CHECK ─────────────────────────────────────
+            // Sometimes IRCTC returns the previous day's run (stuck at destination) or hasn't updated for today (stuck at source)
+            const isApiSuspiciouslyStuckAtSource = currentIndex === 0 && timeBasedIdx > 3;
+            const isApiSuspiciouslyAtDestination = currentIndex >= schedule.length - 1 && timeBasedIdx < schedule.length - 3;
+            if (usedApi !== 'DATABASE_SCHEDULE' && (isApiSuspiciouslyStuckAtSource || isApiSuspiciouslyAtDestination)) {
+                logger_1.winstonLogger.warn(`[LIVE_TRACK] Rejecting bad API data (API index: ${currentIndex}, Time index: ${timeBasedIdx}). Falling back to Database Schedule.`);
+                currentIndex = timeBasedIdx;
+                usedApi = 'DATABASE_SCHEDULE';
+            }
+            // If train has completed journey naturally
             if (isTimeCompleted && (currentIndex <= 0 || usedScheduleFallback || usedApi === 'DATABASE_SCHEDULE')) {
                 currentIndex = timeBasedIdx;
             }
             if (currentIndex === -1) {
-                currentIndex = 0;
+                currentIndex = timeBasedIdx > -1 ? timeBasedIdx : 0;
             }
             // ── Build FULL timeline (never slice) ────────────────────────────────
             // Use the full schedule so the user can see all departed + upcoming stops.

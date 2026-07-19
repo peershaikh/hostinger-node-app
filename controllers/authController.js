@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -12,8 +45,53 @@ const userRepository_1 = require("../repositories/userRepository");
 const logger_1 = require("../middleware/logger");
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
+const admin = __importStar(require("firebase-admin"));
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 class AuthController {
     constructor() {
+        this.googleLogin = async (req, res) => {
+            try {
+                const { idToken, deviceId, referralCode } = req.body;
+                if (!idToken) {
+                    return res.status(400).json({ success: false, error: 'Google ID Token is required' });
+                }
+                if (!admin.apps.length) {
+                    // Initialize Firebase Admin dynamically just for token verification
+                    const decodedUnverified = jsonwebtoken_1.default.decode(idToken);
+                    if (!decodedUnverified || !decodedUnverified.aud) {
+                        return res.status(400).json({ success: false, error: 'Invalid token structure' });
+                    }
+                    admin.initializeApp({ projectId: decodedUnverified.aud });
+                }
+                const decodedToken = await admin.auth().verifyIdToken(idToken);
+                const payload = {
+                    email: decodedToken.email,
+                    name: decodedToken.name,
+                    picture: decodedToken.picture
+                };
+                if (!payload || !payload.email) {
+                    return res.status(400).json({ success: false, error: 'Invalid Google token' });
+                }
+                const result = await authService_1.authService.googleLogin(payload.email, payload.name || '', payload.picture || '', deviceId, referralCode);
+                res.cookie('refreshToken', result.tokens.refreshToken, {
+                    httpOnly: true,
+                    secure: true,
+                    sameSite: 'none',
+                    maxAge: 30 * 24 * 60 * 60 * 1000
+                });
+                return res.json({
+                    success: true,
+                    data: result.user,
+                    accessToken: result.tokens.accessToken,
+                    refreshToken: result.tokens.refreshToken,
+                    ...(result.referralMeta ? { referralMeta: result.referralMeta } : {})
+                });
+            }
+            catch (err) {
+                logger_1.winstonLogger.error(`[AUTH_GOOGLE] Failed google login: ${err.message}`);
+                return res.status(400).json({ success: false, error: err.message });
+            }
+        };
         this.signup = async (req, res) => {
             try {
                 const { email, password, referralCode, deviceId, otp, fullName, mobileNumber, dob } = req.body;
