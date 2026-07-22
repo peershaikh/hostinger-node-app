@@ -1,14 +1,52 @@
 import rateLimit from 'express-rate-limit';
 import { winstonLogger } from './logger';
 
-// PHASE_4C971 FINAL FIX: Removed all custom keyGenerator (smartKey) and skip (skipLoopback)
-// functions. These caused express-rate-limit v8 ValidationError on startup because the custom
-// keyGenerator accessed req.ip directly. validate: { ip: false } did NOT suppress it.
-// Solution: Use default IP-based limiting (no custom keyGenerator = no ValidationError ever).
+// Helper to safely parse env numeric values with fallback defaults
+const parseEnvMs = (envVar: string | undefined, defaultMs: number): number => {
+    const parsed = parseInt(envVar || '', 10);
+    return !isNaN(parsed) && parsed > 0 ? parsed : defaultMs;
+};
 
+const parseEnvMax = (envVar: string | undefined, defaultMax: number): number => {
+    const parsed = parseInt(envVar || '', 10);
+    return !isNaN(parsed) && parsed > 0 ? parsed : defaultMax;
+};
+
+// --- AUTH LIMITER ---
+// Default: 20 requests / 15 minutes
+export const authLimiter = rateLimit({
+    windowMs: parseEnvMs(process.env.RATE_LIMIT_AUTH_WINDOW_MS, 15 * 60 * 1000),
+    max: parseEnvMax(process.env.RATE_LIMIT_AUTH_MAX, 20),
+    standardHeaders: true, legacyHeaders: false,
+    message: { success: false, error: 'Too many authentication attempts, please try again later.' },
+    handler: (req: any, res: any) => {
+        winstonLogger.warn(`[RATE_LIMIT] Auth limit exceeded for IP: ${req.ip}`);
+        res.status(429).json({ success: false, error: 'Too many authentication attempts, please try again later.' });
+    }
+}) as any;
+
+// --- PAYMENTS LIMITER ---
+// Default: 10 requests / 10 minutes (keyed per authenticated user ID or IP fallback)
+export const paymentLimiter = rateLimit({
+    windowMs: parseEnvMs(process.env.RATE_LIMIT_PAYMENT_WINDOW_MS, 10 * 60 * 1000),
+    max: parseEnvMax(process.env.RATE_LIMIT_PAYMENT_MAX, 10),
+    standardHeaders: true, legacyHeaders: false,
+    keyGenerator: (req: any) => {
+        const userId = req.headers['x-user-id'] || req.user?.id;
+        return userId ? `user_${userId}` : req.ip;
+    },
+    message: { success: false, error: 'Too many payment creation attempts, please wait a few minutes.' },
+    handler: (req: any, res: any) => {
+        winstonLogger.warn(`[RATE_LIMIT] Payment limit exceeded for user/IP: ${req.headers['x-user-id'] || req.ip}`);
+        res.status(429).json({ success: false, error: 'Too many payment creation attempts, please wait a few minutes.' });
+    }
+}) as any;
+
+// --- SEARCH LIMITERS ---
+// Default: 60 requests / 1 minute
 export const searchLimiter = rateLimit({
-    windowMs: 5 * 60 * 1000,
-    max: 300,
+    windowMs: parseEnvMs(process.env.RATE_LIMIT_SEARCH_WINDOW_MS, 1 * 60 * 1000),
+    max: parseEnvMax(process.env.RATE_LIMIT_SEARCH_MAX, 60),
     standardHeaders: true, legacyHeaders: false,
     message: { success: false, error: 'Too many search requests, please try again later.' },
     handler: (req: any, res: any) => {
@@ -18,8 +56,8 @@ export const searchLimiter = rateLimit({
 }) as any;
 
 export const advancedSearchLimiter = rateLimit({
-    windowMs: 1 * 60 * 1000,
-    max: 60,
+    windowMs: parseEnvMs(process.env.RATE_LIMIT_SEARCH_WINDOW_MS, 1 * 60 * 1000),
+    max: parseEnvMax(process.env.RATE_LIMIT_SEARCH_MAX, 60),
     standardHeaders: true, legacyHeaders: false,
     message: { success: false, error: 'Too many split search requests, please wait a moment.' },
     handler: (req: any, res: any) => {
@@ -29,8 +67,8 @@ export const advancedSearchLimiter = rateLimit({
 }) as any;
 
 export const availabilityLimiter = rateLimit({
-    windowMs: 1 * 60 * 1000,
-    max: 60,
+    windowMs: parseEnvMs(process.env.RATE_LIMIT_SEARCH_WINDOW_MS, 1 * 60 * 1000),
+    max: parseEnvMax(process.env.RATE_LIMIT_SEARCH_MAX, 60),
     standardHeaders: true, legacyHeaders: false,
     message: { success: false, error: 'Too many availability requests, please wait.' },
     handler: (req: any, res: any) => {
@@ -41,7 +79,7 @@ export const availabilityLimiter = rateLimit({
 
 export const sameTrainRescueLimiter = rateLimit({
     windowMs: 1 * 60 * 1000,
-    max: 10,
+    max: 15,
     standardHeaders: true, legacyHeaders: false,
     message: { success: false, error: 'Too many rescue scan requests, please wait.' },
     handler: (req: any, res: any) => {
@@ -50,9 +88,11 @@ export const sameTrainRescueLimiter = rateLimit({
     }
 }) as any;
 
+// --- PNR LIMITER ---
+// Default: 30 requests / 15 minutes
 export const pnrLimiter = rateLimit({
-    windowMs: 5 * 60 * 1000,
-    max: 20,
+    windowMs: parseEnvMs(process.env.RATE_LIMIT_PNR_WINDOW_MS, 15 * 60 * 1000),
+    max: parseEnvMax(process.env.RATE_LIMIT_PNR_MAX, 30),
     standardHeaders: true, legacyHeaders: false,
     message: { success: false, error: 'Too many PNR requests, please try again later.' },
     handler: (req: any, res: any) => {
@@ -61,9 +101,11 @@ export const pnrLimiter = rateLimit({
     }
 }) as any;
 
+// --- LIVE TRAIN LIMITER ---
+// Default: 60 requests / 1 minute
 export const liveLimiter = rateLimit({
-    windowMs: 5 * 60 * 1000,
-    max: 100,
+    windowMs: parseEnvMs(process.env.RATE_LIMIT_LIVE_WINDOW_MS, 1 * 60 * 1000),
+    max: parseEnvMax(process.env.RATE_LIMIT_LIVE_MAX, 60),
     standardHeaders: true, legacyHeaders: false,
     message: { success: false, error: 'Too many live train requests, please try again later.' },
     handler: (req: any, res: any) => {
@@ -83,17 +125,6 @@ export const complaintLimiter = rateLimit({
     }
 }) as any;
 
-export const authLimiter = rateLimit({
-    windowMs: 1 * 60 * 1000,
-    max: 10,
-    standardHeaders: true, legacyHeaders: false,
-    message: { success: false, error: 'Too many authentication attempts, please try again later.' },
-    handler: (req: any, res: any) => {
-        winstonLogger.warn(`[RATE_LIMIT] Auth limit exceeded for IP: ${req.ip}`);
-        res.status(429).json({ success: false, error: 'Too many authentication attempts, please try again later.' });
-    }
-}) as any;
-
 export const referralLimiter = rateLimit({
     windowMs: 5 * 60 * 1000,
     max: 15,
@@ -105,9 +136,11 @@ export const referralLimiter = rateLimit({
     }
 }) as any;
 
+// --- ADMIN LIMITER ---
+// Default: 50 requests / 15 minutes
 export const adminLimiter = rateLimit({
-    windowMs: 1 * 60 * 1000,
-    max: 30,
+    windowMs: parseEnvMs(process.env.RATE_LIMIT_ADMIN_WINDOW_MS, 15 * 60 * 1000),
+    max: parseEnvMax(process.env.RATE_LIMIT_ADMIN_MAX, 50),
     standardHeaders: true, legacyHeaders: false,
     message: { success: false, error: 'Too many admin requests, please try again later.' },
     handler: (req: any, res: any) => {
@@ -170,3 +203,4 @@ export const alarmLimiter = rateLimit({
         res.status(429).json({ success: false, error: 'Too many alarm configuration requests, please wait.' });
     }
 }) as any;
+

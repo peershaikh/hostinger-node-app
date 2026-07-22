@@ -53,11 +53,23 @@ const firebaseService_1 = require("./services/firebaseService");
 (0, firebaseService_1.initFirebaseAdmin)();
 dotenv_1.default.config();
 const app = (0, express_1.default)();
-app.set('trust proxy', true); // Trust all proxy hops (Hostinger/Cloudflare) to prevent global rate limits
+app.set('trust proxy', 1); // PHASE_8.2: Trust 1 hop (Hostinger Nginx ingress proxy) to preserve client IP & prevent spoofing
 const PORT = process.env.PORT || 5000;
 // ====================== MIDDLEWARE ======================
 app.use((0, helmet_1.default)({
-    crossOriginResourcePolicy: { policy: "cross-origin" }
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+    hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "https://sdk.cashfree.com", "https://www.gstatic.com"],
+            connectSrc: ["'self'", "https://api.trayago.in", "https://*.supabase.co", "https://*.cashfree.com"],
+            imgSrc: ["'self'", "data:", "https:", "http:"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            fontSrc: ["'self'", "https:", "data:"]
+        }
+    }
 })); // Security headers
 app.use((0, cors_1.default)({
     origin: corsOrigin_1.corsOriginValidator, // PHASE_4C849: strict per-request whitelist

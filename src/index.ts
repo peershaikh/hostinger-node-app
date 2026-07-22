@@ -56,13 +56,27 @@ initFirebaseAdmin();
 dotenv.config();
 
 const app = express();
-app.set('trust proxy', true); // Trust all proxy hops (Hostinger/Cloudflare) to prevent global rate limits
+app.set('trust proxy', 1); // PHASE_8.2: Trust 1 hop (Hostinger Nginx ingress proxy) to preserve client IP & prevent spoofing
 const PORT = process.env.PORT || 5000;
+
 
 // ====================== MIDDLEWARE ======================
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" }
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://sdk.cashfree.com", "https://www.gstatic.com"],
+      connectSrc: ["'self'", "https://api.trayago.in", "https://*.supabase.co", "https://*.cashfree.com"],
+      imgSrc: ["'self'", "data:", "https:", "http:"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      fontSrc: ["'self'", "https:", "data:"]
+    }
+  }
 }));                    // Security headers
+
 app.use(cors({
   origin: corsOriginValidator, // PHASE_4C849: strict per-request whitelist
   credentials: true
