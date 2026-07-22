@@ -10,8 +10,12 @@ import { rateService } from '../services/rateService';
 import { betaService } from '../services/betaService';
 import { selfLearningService } from '../services/selfLearningService';
 import { aiOperationsService } from '../services/aiOperationsService';
+import { incidentDetectionService } from '../services/incidentDetectionService';
+import { adminIntelligenceV2Service } from '../services/adminIntelligenceV2Service';
 
 export class AdminController {
+
+
 
   async getAdminAnalytics(req: Request, res: Response) {
     try {
@@ -1888,7 +1892,39 @@ export class AdminController {
       res.status(500).json({ success: false, error: 'Failed to generate Daily AI Operations report' });
     }
   }
+
+  async getIncidents(req: Request, res: Response) {
+    try {
+      const report = await incidentDetectionService.getIncidentReport();
+      res.json({ success: true, data: report });
+    } catch (err: any) {
+      winstonLogger.error(`[ADMIN_INCIDENTS] getIncidents error: ${err.message}`);
+      res.status(500).json({ success: false, error: 'Failed to fetch incident report' });
+    }
+  }
+
+  async getEngineeringTasks(req: Request, res: Response) {
+    try {
+      const tasks = await incidentDetectionService.getEngineeringTasks();
+      res.json({ success: true, data: tasks });
+    } catch (err: any) {
+      winstonLogger.error(`[ADMIN_TASKS] getEngineeringTasks error: ${err.message}`);
+      res.status(500).json({ success: false, error: 'Failed to fetch engineering tasks' });
+    }
+  }
+
+  async getIntelligenceV2(req: Request, res: Response) {
+    try {
+      const report = await adminIntelligenceV2Service.getIntelligenceReport();
+      res.json({ success: true, data: report });
+    } catch (err: any) {
+      winstonLogger.error(`[ADMIN_INTELLIGENCE_V2] getIntelligenceV2 error: ${err.message}`);
+      res.status(500).json({ success: false, error: 'Failed to fetch Intelligence V2 report' });
+    }
+  }
 }
+
+
 
 
 export const adminController = new AdminController();

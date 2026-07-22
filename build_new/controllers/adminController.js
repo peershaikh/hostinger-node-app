@@ -15,6 +15,8 @@ const rateService_1 = require("../services/rateService");
 const betaService_1 = require("../services/betaService");
 const selfLearningService_1 = require("../services/selfLearningService");
 const aiOperationsService_1 = require("../services/aiOperationsService");
+const incidentDetectionService_1 = require("../services/incidentDetectionService");
+const adminIntelligenceV2Service_1 = require("../services/adminIntelligenceV2Service");
 class AdminController {
     async getAdminAnalytics(req, res) {
         try {
@@ -1786,6 +1788,36 @@ class AdminController {
         catch (err) {
             logger_1.winstonLogger.error(`[ADMIN_AI_OPS] getDailyOperations error: ${err.message}`);
             res.status(500).json({ success: false, error: 'Failed to generate Daily AI Operations report' });
+        }
+    }
+    async getIncidents(req, res) {
+        try {
+            const report = await incidentDetectionService_1.incidentDetectionService.getIncidentReport();
+            res.json({ success: true, data: report });
+        }
+        catch (err) {
+            logger_1.winstonLogger.error(`[ADMIN_INCIDENTS] getIncidents error: ${err.message}`);
+            res.status(500).json({ success: false, error: 'Failed to fetch incident report' });
+        }
+    }
+    async getEngineeringTasks(req, res) {
+        try {
+            const tasks = await incidentDetectionService_1.incidentDetectionService.getEngineeringTasks();
+            res.json({ success: true, data: tasks });
+        }
+        catch (err) {
+            logger_1.winstonLogger.error(`[ADMIN_TASKS] getEngineeringTasks error: ${err.message}`);
+            res.status(500).json({ success: false, error: 'Failed to fetch engineering tasks' });
+        }
+    }
+    async getIntelligenceV2(req, res) {
+        try {
+            const report = await adminIntelligenceV2Service_1.adminIntelligenceV2Service.getIntelligenceReport();
+            res.json({ success: true, data: report });
+        }
+        catch (err) {
+            logger_1.winstonLogger.error(`[ADMIN_INTELLIGENCE_V2] getIntelligenceV2 error: ${err.message}`);
+            res.status(500).json({ success: false, error: 'Failed to fetch Intelligence V2 report' });
         }
     }
 }

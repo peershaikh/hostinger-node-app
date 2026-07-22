@@ -29,6 +29,11 @@ router.get('/analytics', adminLimiter as any, requireAdmin as any, adminControll
 router.get('/analytics/history', adminLimiter as any, requireAdmin as any, adminController.getAnalyticsHistory.bind(adminController));
 router.get('/analytics/export', adminLimiter as any, requireAdmin as any, adminController.exportAnalyticsLogs.bind(adminController));
 router.get('/daily-operations', adminLimiter as any, requireAdmin as any, adminController.getDailyOperations.bind(adminController));
+router.get('/incidents', adminLimiter as any, requireAdmin as any, adminController.getIncidents.bind(adminController));
+router.get('/engineering-tasks', adminLimiter as any, requireAdmin as any, adminController.getEngineeringTasks.bind(adminController));
+router.get('/intelligence-v2', adminLimiter as any, requireAdmin as any, adminController.getIntelligenceV2.bind(adminController));
+
+
 
 
 // Payment & Revenue API
