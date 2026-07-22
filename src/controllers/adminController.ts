@@ -245,9 +245,26 @@ export class AdminController {
       } catch (err: any) { winstonLogger.warn(`[INSIGHT_SPLITS_FAIL] ${err.message}`); }
 
       try {
-        const { data } = await supabase.from('live_learning').select('train_no, delay_mins').order('delay_mins', { ascending: false }).limit(5);
-        topDelayed = data || [];
+        const { data } = await supabase.from('live_learning').select('train_no, delay_mins').order('delay_mins', { ascending: false }).limit(50);
+        if (data) {
+          const map = new Map<string, number>();
+          for (const row of data) {
+            if (row.train_no && typeof row.delay_mins === 'number') {
+              const existing = map.get(row.train_no);
+              if (existing === undefined || row.delay_mins > existing) {
+                map.set(row.train_no, row.delay_mins);
+              }
+            }
+          }
+          topDelayed = Array.from(map.entries())
+            .map(([train_no, delay_mins]) => ({ train_no, delay_mins }))
+            .sort((a, b) => b.delay_mins - a.delay_mins)
+            .slice(0, 5);
+        } else {
+          topDelayed = [];
+        }
       } catch (err: any) { winstonLogger.warn(`[INSIGHT_DELAYED_FAIL] ${err.message}`); }
+
 
       try {
         const { data } = await supabase
