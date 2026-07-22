@@ -32,6 +32,8 @@ router.get('/daily-operations', adminLimiter as any, requireAdmin as any, adminC
 router.get('/incidents', adminLimiter as any, requireAdmin as any, adminController.getIncidents.bind(adminController));
 router.get('/engineering-tasks', adminLimiter as any, requireAdmin as any, adminController.getEngineeringTasks.bind(adminController));
 router.get('/intelligence-v2', adminLimiter as any, requireAdmin as any, adminController.getIntelligenceV2.bind(adminController));
+router.get('/production-incidents', adminLimiter as any, requireAdmin as any, adminController.getProductionIncidents.bind(adminController));
+
 
 
 

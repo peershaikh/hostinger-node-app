@@ -17,6 +17,7 @@ const selfLearningService_1 = require("../services/selfLearningService");
 const aiOperationsService_1 = require("../services/aiOperationsService");
 const incidentDetectionService_1 = require("../services/incidentDetectionService");
 const adminIntelligenceV2Service_1 = require("../services/adminIntelligenceV2Service");
+const productionIncidentService_1 = require("../services/productionIncidentService");
 class AdminController {
     async getAdminAnalytics(req, res) {
         try {
@@ -1818,6 +1819,16 @@ class AdminController {
         catch (err) {
             logger_1.winstonLogger.error(`[ADMIN_INTELLIGENCE_V2] getIntelligenceV2 error: ${err.message}`);
             res.status(500).json({ success: false, error: 'Failed to fetch Intelligence V2 report' });
+        }
+    }
+    async getProductionIncidents(req, res) {
+        try {
+            const report = await productionIncidentService_1.productionIncidentService.getProductionIncidentReport();
+            res.json({ success: true, data: report });
+        }
+        catch (err) {
+            logger_1.winstonLogger.error(`[ADMIN_PRODUCTION_INCIDENTS] getProductionIncidents error: ${err.message}`);
+            res.status(500).json({ success: false, error: 'Failed to fetch Production Incident report' });
         }
     }
 }

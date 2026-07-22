@@ -12,8 +12,10 @@ import { selfLearningService } from '../services/selfLearningService';
 import { aiOperationsService } from '../services/aiOperationsService';
 import { incidentDetectionService } from '../services/incidentDetectionService';
 import { adminIntelligenceV2Service } from '../services/adminIntelligenceV2Service';
+import { productionIncidentService } from '../services/productionIncidentService';
 
 export class AdminController {
+
 
 
 
@@ -1922,7 +1924,18 @@ export class AdminController {
       res.status(500).json({ success: false, error: 'Failed to fetch Intelligence V2 report' });
     }
   }
+
+  async getProductionIncidents(req: Request, res: Response) {
+    try {
+      const report = await productionIncidentService.getProductionIncidentReport();
+      res.json({ success: true, data: report });
+    } catch (err: any) {
+      winstonLogger.error(`[ADMIN_PRODUCTION_INCIDENTS] getProductionIncidents error: ${err.message}`);
+      res.status(500).json({ success: false, error: 'Failed to fetch Production Incident report' });
+    }
+  }
 }
+
 
 
 
