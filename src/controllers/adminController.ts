@@ -9,8 +9,10 @@ import { metricsService } from '../services/metricsService';
 import { rateService } from '../services/rateService';
 import { betaService } from '../services/betaService';
 import { selfLearningService } from '../services/selfLearningService';
+import { aiOperationsService } from '../services/aiOperationsService';
 
 export class AdminController {
+
   async getAdminAnalytics(req: Request, res: Response) {
     try {
       // 1. Fetch users and compute Subscription Analytics safely
@@ -1857,7 +1859,19 @@ export class AdminController {
       res.status(500).json({ success: false, error: 'Failed to reject self-learning record' });
     }
   }
+
+  async getDailyOperations(req: Request, res: Response) {
+    try {
+      const report = await aiOperationsService.generateDailyReport();
+      res.json({ success: true, data: report });
+    } catch (err: any) {
+      winstonLogger.error(`[ADMIN_AI_OPS] getDailyOperations error: ${err.message}`);
+      res.status(500).json({ success: false, error: 'Failed to generate Daily AI Operations report' });
+    }
+  }
 }
 
+
 export const adminController = new AdminController();
+
 

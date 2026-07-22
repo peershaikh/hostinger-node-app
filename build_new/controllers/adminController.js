@@ -14,6 +14,7 @@ const metricsService_1 = require("../services/metricsService");
 const rateService_1 = require("../services/rateService");
 const betaService_1 = require("../services/betaService");
 const selfLearningService_1 = require("../services/selfLearningService");
+const aiOperationsService_1 = require("../services/aiOperationsService");
 class AdminController {
     async getAdminAnalytics(req, res) {
         try {
@@ -1757,6 +1758,16 @@ class AdminController {
         catch (err) {
             logger_1.winstonLogger.error(`[ADMIN_SELF_LEARNING] rejectSelfLearning error: ${err.message}`);
             res.status(500).json({ success: false, error: 'Failed to reject self-learning record' });
+        }
+    }
+    async getDailyOperations(req, res) {
+        try {
+            const report = await aiOperationsService_1.aiOperationsService.generateDailyReport();
+            res.json({ success: true, data: report });
+        }
+        catch (err) {
+            logger_1.winstonLogger.error(`[ADMIN_AI_OPS] getDailyOperations error: ${err.message}`);
+            res.status(500).json({ success: false, error: 'Failed to generate Daily AI Operations report' });
         }
     }
 }
