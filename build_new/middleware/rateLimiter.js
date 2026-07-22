@@ -62,7 +62,7 @@ exports.pnrLimiter = (0, express_rate_limit_1.default)({
 });
 exports.liveLimiter = (0, express_rate_limit_1.default)({
     windowMs: 5 * 60 * 1000,
-    max: 20,
+    max: 100,
     standardHeaders: true, legacyHeaders: false,
     message: { success: false, error: 'Too many live train requests, please try again later.' },
     handler: (req, res) => {

@@ -6,6 +6,7 @@ import { authService } from './authService';
 import { attributePurchase } from './referralService';
 import Razorpay from 'razorpay';
 import { supabase, isSupabaseConfigured } from '../config/supabase';
+import { PaymentProviderFactory } from '../payments/providers/PaymentProviderFactory';
 
 const TXN_FILE = path.join(__dirname, '../../data/transactions.json');
 
@@ -233,157 +234,165 @@ class PaymentService {
         return { success: true };
     }
 
-    // --- RAZORPAY SERVICE LAYER ---
+    // --- LEGACY ALIASES (Do not break existing controllers) ---
 
     public async createRazorpayOrder(userId: string, plan: string, amount: number) {
-        if (!razorpayInstance) {
-            throw new Error("Razorpay is not configured");
-        }
+        return this.createProviderOrder(userId, plan, amount, 'razorpay');
+    }
 
-        const options = {
-            amount: amount, // amount in the smallest currency unit
-            currency: "INR",
-            receipt: `rcpt_${userId.substring(0, 10)}_${Date.now()}`
-        };
+    public verifyRazorpayPaymentSignature(orderId: string, paymentId: string, signature: string) {
+        return this.verifyProviderPaymentSignature(orderId, paymentId, signature, 'razorpay');
+    }
 
+    public verifyRazorpayWebhookSignature(payload: string, signature: string): boolean {
+        return this.verifyProviderWebhookSignature(payload, signature, undefined, 'razorpay');
+    }
+
+    public async processRazorpayWebhook(payloadHash: string, payload: any) {
+        return this.processProviderWebhook(payloadHash, payload, 'razorpay');
+    }
+
+    // --- GENERIC SERVICE LAYER (Provider Factory) ---
+
+    public async createProviderOrder(userId: string, plan: string, amount: number, providerName?: string) {
+        const provider = PaymentProviderFactory.getProvider(providerName);
+        
         try {
-            const order = await razorpayInstance.orders.create(options);
+            const orderResult = await provider.createOrder(userId, plan, amount);
             
             if (isSupabaseConfigured()) {
                 const { error } = await supabase.from('payment_transactions').insert([{
                     user_id: userId,
-                    provider: 'razorpay',
-                    order_id: order.id,
+                    provider: provider.providerName,
+                    order_id: orderResult.orderId,
                     amount: amount / 100, // store in rupees
                     currency: 'INR',
                     status: 'PENDING',
                     plan_id: plan
                 }]);
                 if (error) {
-                    winstonLogger.error(`[RAZORPAY] Failed to persist order to Supabase: ${error.message}`);
+                    winstonLogger.error(`[PAYMENT] Failed to persist order to Supabase: ${error.message}`);
                 }
             }
 
-            return {
-                success: true,
-                orderId: order.id,
-                order_id: order.id,
-                amount: order.amount,
-                currency: order.currency,
-                razorpayKey: process.env.RAZORPAY_KEY_ID
-            };
+            return orderResult;
         } catch (error: any) {
-            winstonLogger.error(`[RAZORPAY] Order creation failed: ${error.message}`);
+            winstonLogger.error(`[PAYMENT] Order creation failed: ${error.message}`);
             throw new Error("Payment gateway order creation failed");
         }
     }
 
-    public verifyRazorpayPaymentSignature(orderId: string, paymentId: string, signature: string) {
-        if (!process.env.RAZORPAY_KEY_SECRET) {
-            throw new Error("Razorpay secret not configured");
-        }
-
-        const generatedSignature = crypto
-            .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
-            .update(orderId + "|" + paymentId)
-            .digest('hex');
-            
-        return generatedSignature === signature;
+    public verifyProviderPaymentSignature(orderId: string, paymentId: string, signature: string, providerName?: string) {
+        const provider = PaymentProviderFactory.getProvider(providerName);
+        return provider.verifyPaymentSignature(orderId, paymentId, signature);
     }
 
-    public verifyRazorpayWebhookSignature(payload: string, signature: string): boolean {
-        const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-        if (!webhookSecret || !signature) {
-            return false;
-        }
-
-        const expectedSignature = crypto
-            .createHmac('sha256', webhookSecret)
-            .update(payload)
-            .digest('hex');
-
-        return this.safeCompareHex(expectedSignature, signature);
+    public verifyProviderWebhookSignature(payload: string, signature: string, headers?: any, providerName?: string): boolean {
+        const provider = PaymentProviderFactory.getProvider(providerName);
+        return provider.verifyWebhookSignature(payload, signature, headers);
     }
 
-    public async processRazorpayWebhook(payloadHash: string, payload: any) {
+    public async processProviderWebhook(payloadHash: string, payload: any, providerName?: string) {
         if (!isSupabaseConfigured()) {
             return { success: false, message: 'Database not configured' };
         }
 
-        const event = payload.event;
-        const paymentEntity = payload.payload?.payment?.entity;
-        const orderId = paymentEntity?.order_id;
-        
-        if (!event || !orderId) {
-            return { success: false, message: 'Invalid payload structure' };
+        const provider = PaymentProviderFactory.getProvider(providerName);
+        const parseResult = provider.parseWebhook(payload);
+
+        if (!parseResult.success) {
+            return parseResult;
         }
 
-        // 1. Idempotency Check
+        const { event, orderId, paymentId, amount } = parseResult;
+
+        // 1. Idempotency Check & Audit Trail
         const { error: insertError } = await supabase.from('payment_webhooks').insert([{
-            provider: 'razorpay',
+            provider: provider.providerName,
             event_type: event,
             payload_hash: payloadHash,
-            processed: true
+            status: 'PENDING',
+            order_id: orderId,
+            payload: payload
         }]);
 
         if (insertError) {
             if (insertError.code === '23505') {
                 winstonLogger.info(`[WEBHOOK] Duplicate webhook ignored for hash ${payloadHash}`);
-                return { success: true, message: 'Duplicate webhook', duplicate: true }; // Ack to provider
+                return { success: true, message: 'Duplicate webhook', duplicate: true }; 
             }
             winstonLogger.error(`[WEBHOOK] Failed to persist webhook: ${insertError.message}`);
             return { success: false, message: 'Database error' };
         }
 
-        // 2. Update Transaction
-        if (event === 'payment.captured') {
-            const { data: txnData, error: fetchError } = await supabase
-                .from('payment_transactions')
-                .select('user_id, plan_id, status')
-                .eq('order_id', orderId)
-                .single();
-                
-            if (fetchError || !txnData) {
-                winstonLogger.error(`[WEBHOOK] Failed to fetch transaction ${orderId}: ${fetchError?.message}`);
-                return { success: false, message: 'Transaction not found' };
-            }
-            
-            if (txnData.status !== 'SUCCESS') {
-                const { error: updateError } = await supabase
-                    .from('payment_transactions')
-                    .update({ status: 'SUCCESS', payment_id: paymentEntity.id, updated_at: new Date().toISOString() })
+        try {
+            // 2. Failure Handling & Cancellation Flow
+            if (event === 'payment.failed' || event === 'subscription.cancelled') {
+                winstonLogger.warn(`[WEBHOOK] Handling failure/cancellation for order ${orderId}`);
+                await supabase.from('payment_transactions')
+                    .update({ status: 'FAILED', updated_at: new Date().toISOString() })
                     .eq('order_id', orderId);
-
-                if (updateError) {
-                    winstonLogger.error(`[WEBHOOK] Failed to update transaction ${orderId}: ${updateError.message}`);
-                    return { success: false, message: 'Failed to update transaction' };
-                }
-
-                // 3. Activate Subscription
-                const PLAN_MAPPING: Record<string, number> = {
-                    safar_pro_30m: 30,
-                    safar_pro: 30 * 24 * 60,
-                    safar_pro_7d: 7 * 24 * 60,
-                    safar_pro_30d: 30 * 24 * 60,
-                    safar_pro_90d: 90 * 24 * 60
-                };
-                
-                const durationMinutes = PLAN_MAPPING[txnData.plan_id] || 30 * 24 * 60;
-                await authService.upgradeToPro(txnData.user_id, txnData.plan_id as any, durationMinutes, 'payment');
-
-                // Referral purchase attribution (non-blocking)
-                attributePurchase(
-                  txnData.user_id,
-                  orderId,
-                  txnData.plan_id,
-                  paymentEntity?.amount ? paymentEntity.amount / 100 : 0
-                ).catch((err: any) =>
-                  winstonLogger.error(`[WEBHOOK_RAZORPAY] attributePurchase failed: ${err.message}`)
-                );
+                await supabase.from('payment_webhooks').update({ status: 'PROCESSED' }).eq('payload_hash', payloadHash);
+                return { success: true };
             }
-        }
 
-        return { success: true, message: 'Webhook processed' };
+            // 3. Success Handling & Subscription Activation Flow
+            if (event === 'payment.captured') {
+                const { data: txnData, error: fetchError } = await supabase
+                    .from('payment_transactions')
+                    .select('user_id, plan_id, status')
+                    .eq('order_id', orderId)
+                    .single();
+                    
+                if (fetchError || !txnData) {
+                    throw new Error(`Transaction ${orderId} not found or fetch error`);
+                }
+                
+                if (txnData.status !== 'SUCCESS') {
+                    // Update Transaction State
+                    const { error: updateError } = await supabase
+                        .from('payment_transactions')
+                        .update({ status: 'SUCCESS', payment_id: paymentId, updated_at: new Date().toISOString() })
+                        .eq('order_id', orderId);
+
+                    if (updateError) {
+                        throw new Error(`Failed to update transaction ${orderId}`);
+                    }
+
+                    // Activate Subscription
+                    const PLAN_MAPPING: Record<string, number> = {
+                        safar_pro_30m: 30, safar_pro: 30 * 24 * 60, safar_pro_7d: 7 * 24 * 60,
+                        safar_pro_30d: 30 * 24 * 60, safar_pro_90d: 90 * 24 * 60
+                    };
+                    
+                    const durationMinutes = PLAN_MAPPING[txnData.plan_id] || 30 * 24 * 60;
+                    await authService.upgradeToPro(txnData.user_id, txnData.plan_id as any, durationMinutes, 'payment');
+
+                    // Referral purchase attribution
+                    attributePurchase(
+                      txnData.user_id,
+                      orderId as string,
+                      txnData.plan_id,
+                      amount ? amount / 100 : 0
+                    ).catch((err: any) =>
+                      winstonLogger.error(`[WEBHOOK_${provider.providerName.toUpperCase()}] attributePurchase failed: ${err.message}`)
+                    );
+                }
+            }
+
+            // Mark webhook as successfully processed
+            await supabase.from('payment_webhooks').update({ status: 'PROCESSED' }).eq('payload_hash', payloadHash);
+            return { success: true, message: 'Webhook processed' };
+
+        } catch (error: any) {
+            // 4. Retry Strategy
+            winstonLogger.error(`[WEBHOOK] Processing failed, routing to DLQ: ${error.message}`);
+            await supabase.from('payment_webhooks')
+                .update({ status: 'FAILED', error_log: error.message })
+                .eq('payload_hash', payloadHash);
+            
+            return { success: false, message: 'Internal processing error, please retry' };
+        }
     }
 }
 

@@ -7,6 +7,8 @@ import { pushService } from '../services/pushService';
 import * as firebaseService from '../services/firebaseService';
 import { decryptToken } from '../controllers/notificationController';
 
+const MEMORY_RETRY_QUEUE = new Map<string, { alert: any, retries: number, nextRetryAt: number }>();
+
 export class AlertDispatcher {
   private isProcessing = false;
 
@@ -51,6 +53,12 @@ export class AlertDispatcher {
     winstonLogger.info(`[ALERT_DISPATCHER] Processing ${alerts.length} pending alerts.`);
 
     for (const alert of alerts) {
+      // Check retry backoff
+      const retryData = MEMORY_RETRY_QUEUE.get(alert.id);
+      if (retryData && Date.now() < retryData.nextRetryAt) {
+        continue; // Skip until backoff expires
+      }
+
       try {
         let userEmail: string | null = null;
         
@@ -216,23 +224,45 @@ export class AlertDispatcher {
         }
 
         // 7. Update status
-        const newStatus = delivered ? 'DELIVERED' : 'FAILED';
-        await supabase
-          .from('smart_alerts')
-          .update({ 
-            status: newStatus,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', alert.id);
-
-        winstonLogger.debug(`[ALERT_DISPATCHER] Alert ${alert.id} marked as ${newStatus}.`);
+        if (delivered) {
+          await supabase
+            .from('smart_alerts')
+            .update({ status: 'DELIVERED', updated_at: new Date().toISOString() })
+            .eq('id', alert.id);
+          MEMORY_RETRY_QUEUE.delete(alert.id);
+          winstonLogger.debug(`[ALERT_DISPATCHER] Alert ${alert.id} marked as DELIVERED.`);
+        } else {
+          // Retry logic (Exponential Backoff, Max 3)
+          const currentRetry = MEMORY_RETRY_QUEUE.get(alert.id) || { retries: 0 };
+          if (currentRetry.retries < 3) {
+            const nextRetryAt = Date.now() + Math.pow(2, currentRetry.retries) * 60000;
+            MEMORY_RETRY_QUEUE.set(alert.id, { alert, retries: currentRetry.retries + 1, nextRetryAt });
+            winstonLogger.debug(`[ALERT_DISPATCHER] Alert ${alert.id} failed. Queued for retry ${currentRetry.retries + 1}/3.`);
+          } else {
+            await supabase
+              .from('smart_alerts')
+              .update({ status: 'FAILED', updated_at: new Date().toISOString() })
+              .eq('id', alert.id);
+            MEMORY_RETRY_QUEUE.delete(alert.id);
+            winstonLogger.debug(`[ALERT_DISPATCHER] Alert ${alert.id} marked as FAILED after 3 retries.`);
+          }
+        }
 
       } catch (err: any) {
         winstonLogger.error(`[ALERT_DISPATCHER] Failed to process alert ${alert.id}: ${err.message}`);
-        await supabase.from('smart_alerts').update({ status: 'FAILED' }).eq('id', alert.id);
+        
+        const currentRetry = MEMORY_RETRY_QUEUE.get(alert.id) || { retries: 0 };
+        if (currentRetry.retries < 3) {
+          const nextRetryAt = Date.now() + Math.pow(2, currentRetry.retries) * 60000;
+          MEMORY_RETRY_QUEUE.set(alert.id, { alert, retries: currentRetry.retries + 1, nextRetryAt });
+        } else {
+          await supabase.from('smart_alerts').update({ status: 'FAILED' }).eq('id', alert.id);
+          MEMORY_RETRY_QUEUE.delete(alert.id);
+        }
       }
     }
   }
 }
+
 
 export const alertDispatcher = new AlertDispatcher();

@@ -63,7 +63,7 @@ export const pnrLimiter = rateLimit({
 
 export const liveLimiter = rateLimit({
     windowMs: 5 * 60 * 1000,
-    max: 20,
+    max: 100,
     standardHeaders: true, legacyHeaders: false,
     message: { success: false, error: 'Too many live train requests, please try again later.' },
     handler: (req: any, res: any) => {

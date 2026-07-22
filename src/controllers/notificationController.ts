@@ -521,3 +521,74 @@ export const markAllNotificationsRead = async (req: Request, res: Response) => {
         });
     }
 };
+
+/**
+ * Endpoint to safely delete a device's push token.
+ */
+export const deleteDeviceToken = async (req: Request, res: Response) => {
+    const userId = (req.headers['x-user-id'] as string) || null;
+    const { device_id } = req.body;
+    
+    if (!device_id) {
+        return res.status(400).json({ success: false, error: 'device_id required' });
+    }
+
+    try {
+        let query = supabase.from('user_push_tokens').delete().eq('device_id', device_id);
+        
+        if (userId) {
+            query = query.eq('user_id', userId);
+        }
+
+        const { error } = await query;
+        if (error) throw error;
+
+        MEMORY_PUSH_TOKENS.delete(device_id);
+        
+        return res.status(200).json({ success: true });
+    } catch (err: any) {
+        winstonLogger.info(`[NOTIFICATION_CONTROLLER] DB token delete failed. Cascading to memory: ${err.message}`);
+        MEMORY_PUSH_TOKENS.delete(device_id);
+        return res.status(200).json({ success: true });
+    }
+};
+
+/**
+ * Endpoint to clear notification history for a user/device
+ */
+export const clearNotificationHistory = async (req: Request, res: Response) => {
+    const userId = (req.headers['x-user-id'] as string) || null;
+    const deviceId = (req.headers['x-device-id'] as string) || null;
+
+    if (!userId && !deviceId) {
+        return res.status(400).json({ success: false, error: 'Authentication required' });
+    }
+
+    try {
+        let query = supabase.from('user_notification_history').delete();
+        
+        if (userId) {
+            query = query.eq('user_id', userId);
+        } else {
+            query = query.eq('device_id', deviceId);
+        }
+        
+        const { error } = await query;
+        if (error) throw error;
+        
+        return res.status(200).json({ success: true });
+    } catch (err: any) {
+        winstonLogger.info(`[NOTIFICATION_CONTROLLER] DB history clear failed. Cascading to memory: ${err.message}`);
+        
+        // Remove from memory array
+        for (let i = MEMORY_NOTIFICATION_HISTORY.length - 1; i >= 0; i--) {
+            const n = MEMORY_NOTIFICATION_HISTORY[i];
+            const matchesUser = userId ? n.user_id === userId : n.device_id === deviceId;
+            if (matchesUser) {
+                MEMORY_NOTIFICATION_HISTORY.splice(i, 1);
+            }
+        }
+        
+        return res.status(200).json({ success: true });
+    }
+};

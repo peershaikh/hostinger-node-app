@@ -24,8 +24,8 @@ export class PaymentController {
             }
 
             const PLAN_MAPPING: Record<string, { amount: number; duration_days: number }> = {
-                safar_pro_30m: { amount: 900, duration_days: 0.0208 }, // 9 INR in paise, 30 minutes
-                safar_pro: { amount: 14900, duration_days: 30 },       // 149 INR in paise, 30 days
+                safar_pro_30m: { amount: 900, duration_days: 0.0208 }, 
+                safar_pro: { amount: 14900, duration_days: 30 },       
                 safar_pro_7d: { amount: 4900, duration_days: 7 },
                 safar_pro_30d: { amount: 14900, duration_days: 30 },
                 safar_pro_90d: { amount: 39900, duration_days: 90 }
@@ -36,28 +36,32 @@ export class PaymentController {
                 return res.status(400).json({ success: false, message: 'Invalid planType' });
             }
 
-            // Check if Razorpay is configured
-            const isRazorpayConfigured = !!process.env.RAZORPAY_KEY_ID && !!process.env.RAZORPAY_KEY_SECRET;
+            const providerName = process.env.PAYMENT_PROVIDER || 'razorpay';
+            const isProviderConfigured = providerName === 'cashfree' 
+                ? !!process.env.CASHFREE_CLIENT_ID
+                : !!process.env.RAZORPAY_KEY_ID;
 
-            if (isRazorpayConfigured) {
+            if (isProviderConfigured) {
                 try {
-                    const result = await paymentService.createRazorpayOrder(userId, planType, planInfo.amount);
-                    return res.json(result);
+                    const result = await paymentService.createProviderOrder(userId, planType, planInfo.amount, providerName);
+                    return res.json({
+                        ...result,
+                        provider: providerName,
+                        paymentSessionId: result.payment_session_id 
+                    });
                 } catch (error: any) {
-                    winstonLogger.error(`[PAYMENT] Razorpay order creation failed: ${error.message}`);
+                    winstonLogger.error(`[PAYMENT] Order creation failed: ${error.message}`);
                     return res.status(503).json({ success: false, message: 'Payment service unavailable' });
                 }
             }
 
             if (process.env.NODE_ENV === 'production') {
-                winstonLogger.error('[PAYMENT] Razorpay not configured in production');
+                winstonLogger.error('[PAYMENT] Gateway not configured in production');
                 return res.status(503).json({ success: false, message: 'Payment gateway not configured' });
             }
 
-            // Dev-only mock order flow
-            winstonLogger.info(`[PAYMENT] Using mock payment flow for user ${userId}, plan ${planType}`);
-            const result = paymentService.createOrder(userId, planType, planInfo.amount);
-            return res.json(result);
+            winstonLogger.error('[PAYMENT] Gateway not configured. Mock flow disabled.');
+            return res.status(501).json({ success: false, message: 'Payment gateway not configured' });
         } catch (error: any) {
             res.status(500).json({ success: false, message: error.message });
         }
@@ -77,11 +81,6 @@ export class PaymentController {
         }
     };
 
-    /**
-     * POST /api/payments/verify-signature
-     * Called by the client after Razorpay checkout completes.
-     * Verifies HMAC signature, marks transaction SUCCESS, activates subscription.
-     */
     verifySignature = async (req: Request, res: Response) => {
         try {
             const userId = req.headers['x-user-id'] as string;
@@ -89,58 +88,50 @@ export class PaymentController {
                 return res.status(401).json({ success: false, message: 'Unauthorized' });
             }
 
-            const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+            const { razorpay_order_id, razorpay_payment_id, razorpay_signature, cf_order_id } = req.body;
+            const orderId = razorpay_order_id || cf_order_id;
 
-            if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-                return res.status(400).json({ success: false, message: 'razorpay_order_id, razorpay_payment_id, and razorpay_signature are required' });
+            if (!orderId) {
+                return res.status(400).json({ success: false, message: 'order_id is required' });
             }
 
-            // 1. Verify HMAC signature — premium cannot activate without verified payment
-            const isValid = paymentService.verifyRazorpayPaymentSignature(razorpay_order_id, razorpay_payment_id, razorpay_signature);
-            if (!isValid) {
-                winstonLogger.warn(`[PAYMENT] Invalid Razorpay signature for order ${razorpay_order_id}, user ${userId}`);
-                return res.status(400).json({ success: false, message: 'Payment signature verification failed' });
+            const providerName = razorpay_order_id ? 'razorpay' : 'cashfree';
+
+            if (providerName === 'razorpay') {
+                const isValid = paymentService.verifyProviderPaymentSignature(orderId, razorpay_payment_id, razorpay_signature, providerName);
+                if (!isValid) {
+                    winstonLogger.warn(`[PAYMENT] Invalid signature for order ${orderId}, user ${userId}`);
+                    return res.status(400).json({ success: false, message: 'Payment signature verification failed' });
+                }
             }
 
-            // 2. Verify payment ownership before any upgrade (P0-005)
-            const ownership = await paymentService.assertPaymentOwnership(razorpay_order_id, userId);
+            const ownership = await paymentService.assertPaymentOwnership(orderId, userId);
             if (!ownership.ok) {
                 return res.status(ownership.httpStatus || 403).json({ success: false, message: ownership.message });
             }
 
-            // 3. Idempotency: already activated (owner only — ownership checked above)
             if (ownership.status === 'SUCCESS') {
                 return res.json({ success: true, message: 'Already activated', alreadyActive: true });
             }
 
-            // 4. Activate subscription via the webhook processor (reuse existing logic)
-            const fakeWebhookPayload = {
-                event: 'payment.captured',
-                payload: {
-                    payment: {
-                        entity: {
-                            id: razorpay_payment_id,
-                            order_id: razorpay_order_id
-                        }
-                    }
-                }
-            };
-            const activationResult = await paymentService.processRazorpayWebhook(
-                `client_verify_${Date.now()}`,
-                fakeWebhookPayload
-            );
-
-            if (!activationResult.success) {
-                winstonLogger.error(
-                    `[PAYMENT] Activation failed for order ${razorpay_order_id}, user ${userId}: ${activationResult.message}`
+            if (providerName === 'razorpay') {
+                const fakeWebhookPayload = {
+                    event: 'payment.captured',
+                    payload: { payment: { entity: { id: razorpay_payment_id, order_id: orderId } } }
+                };
+                const activationResult = await paymentService.processProviderWebhook(
+                    `client_verify_${Date.now()}`,
+                    fakeWebhookPayload,
+                    providerName
                 );
-                return res.status(500).json({
-                    success: false,
-                    message: activationResult.message || 'Payment activation failed',
-                });
+
+                if (!activationResult.success) {
+                    winstonLogger.error(`[PAYMENT] Activation failed for order ${orderId}, user ${userId}: ${activationResult.message}`);
+                    return res.status(500).json({ success: false, message: activationResult.message || 'Payment activation failed' });
+                }
             }
 
-            winstonLogger.info(`[PAYMENT] Signature verified + subscription activated for order ${razorpay_order_id}, user ${userId}`);
+            winstonLogger.info(`[PAYMENT] Client verify success for order ${orderId}, user ${userId}`);
             return res.json({ success: true, message: 'Payment verified and plan activated', plan: ownership.plan });
         } catch (error: any) {
             winstonLogger.error(`[PAYMENT] verifySignature error: ${error.message}`);
@@ -150,42 +141,38 @@ export class PaymentController {
 
     webhook = async (req: Request, res: Response) => {
         try {
-            const rawPayload = JSON.stringify(req.body);
-            const razorpaySignature = req.headers['x-razorpay-signature'] as string | undefined;
-            const mockSignature = req.headers['x-payment-signature'] as string | undefined;
+            let rawPayload: string;
+            let jsonBody: any;
 
-            // Razorpay production webhook — signature required and verified
+            if (Buffer.isBuffer(req.body)) {
+                rawPayload = req.body.toString('utf8');
+                jsonBody = JSON.parse(rawPayload);
+            } else {
+                rawPayload = (req as any).rawBody || JSON.stringify(req.body);
+                jsonBody = req.body;
+            }
+            
+            const razorpaySignature = req.headers['x-razorpay-signature'] as string | undefined;
+            const cashfreeSignature = req.headers['x-webhook-signature'] as string | undefined;
+
+            if (cashfreeSignature) {
+                if (!paymentService.verifyProviderWebhookSignature(rawPayload, cashfreeSignature, req.headers, 'cashfree')) {
+                    winstonLogger.warn('[PAYMENT] Cashfree webhook rejected: invalid signature');
+                    return res.status(401).json({ success: false, message: 'Invalid signature' });
+                }
+                const payloadHash = crypto.createHash('sha256').update(rawPayload).digest('hex');
+                const result = await paymentService.processProviderWebhook(payloadHash, jsonBody, 'cashfree');
+                return result.success ? res.status(200).send('OK') : res.status(500).json(result);
+            }
+
             if (razorpaySignature) {
-                if (!paymentService.verifyRazorpayWebhookSignature(rawPayload, razorpaySignature)) {
+                if (!paymentService.verifyProviderWebhookSignature(rawPayload, razorpaySignature, req.headers, 'razorpay')) {
                     winstonLogger.warn('[PAYMENT] Razorpay webhook rejected: invalid signature');
                     return res.status(401).json({ success: false, message: 'Invalid signature' });
                 }
-
                 const payloadHash = crypto.createHash('sha256').update(rawPayload).digest('hex');
-                const result = await paymentService.processRazorpayWebhook(payloadHash, req.body);
-
-                if (result.success) {
-                    return res.status(200).send('OK');
-                }
-                return res.status(500).json(result);
-            }
-
-            // Dev-only signed mock webhook (never enabled in production by default)
-            const mockWebhookEnabled =
-                process.env.ALLOW_MOCK_PAYMENT_WEBHOOK === 'true' &&
-                !!process.env.PAYMENT_MOCK_WEBHOOK_SECRET;
-
-            if (mockWebhookEnabled && mockSignature) {
-                if (!paymentService.verifyMockWebhookSignature(rawPayload, mockSignature)) {
-                    winstonLogger.warn('[PAYMENT] Mock webhook rejected: invalid signature');
-                    return res.status(401).json({ success: false, message: 'Invalid signature' });
-                }
-
-                const result = paymentService.processWebhook(req.body);
-                if (result.success) {
-                    return res.status(200).send('OK');
-                }
-                return res.status(400).json(result);
+                const result = await paymentService.processProviderWebhook(payloadHash, jsonBody, 'razorpay');
+                return result.success ? res.status(200).send('OK') : res.status(500).json(result);
             }
 
             winstonLogger.warn('[PAYMENT] Webhook rejected: missing or invalid signature');

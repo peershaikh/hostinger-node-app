@@ -29,36 +29,25 @@ const MAX_TOTAL_ARTICLES = 40;
 // PIB feed removed due to persistent HTTP 403 errors (PHASE_4C756 diagnostic)
 
 const NEWS_SOURCES = [
-  // ── Dedicated railway feeds (highest priority) ─────────────────────────────
   {
-    name: 'NDTV (Railway)',
-    url: 'https://feeds.feedburner.com/ndtvnews-india-news',
-    category: 'Railway Updates',
-    strictFilter: true,  // must pass railway relevance check
+    name: 'Ministry of Railways (PIB)',
+    url: 'https://news.google.com/rss/search?q=%22Ministry+of+Railways%22+site:pib.gov.in&hl=en-IN&gl=IN&ceid=IN:en',
+    category: 'Official',
   },
   {
-    name: 'Indian Express',
-    url: 'https://indianexpress.com/section/india/feed/',
-    category: 'Railway Updates',
-    strictFilter: true,
+    name: 'Indian Railways',
+    url: 'https://news.google.com/rss/search?q=%22Indian+Railways%22+site:indianrailways.gov.in&hl=en-IN&gl=IN&ceid=IN:en',
+    category: 'Official',
   },
   {
-    name: 'Hindustan Times',
-    url: 'https://www.hindustantimes.com/feeds/rss/india-news/rssfeed.xml',
-    category: 'Railway Updates',
-    strictFilter: true,
+    name: 'Railway Board',
+    url: 'https://news.google.com/rss/search?q=%22Railway+Board%22&hl=en-IN&gl=IN&ceid=IN:en',
+    category: 'Official',
   },
   {
-    name: 'Times of India',
-    url: 'https://timesofindia.indiatimes.com/rssfeeds/1898055.cms',
-    category: 'Railway Updates',
-    strictFilter: true,
-  },
-  {
-    name: 'The Hindu',
-    url: 'https://www.thehindu.com/news/national/feeder/default.rss',
-    category: 'Railway Updates',
-    strictFilter: true,
+    name: 'IRCTC',
+    url: 'https://news.google.com/rss/search?q=%22IRCTC%22&hl=en-IN&gl=IN&ceid=IN:en',
+    category: 'Official',
   },
 ];
 

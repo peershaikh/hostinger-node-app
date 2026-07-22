@@ -53,7 +53,7 @@ const firebaseService_1 = require("./services/firebaseService");
 (0, firebaseService_1.initFirebaseAdmin)();
 dotenv_1.default.config();
 const app = (0, express_1.default)();
-app.set('trust proxy', 1); // Trust the first proxy hop (e.g., Render/AWS Load Balancer)
+app.set('trust proxy', true); // Trust all proxy hops (Hostinger/Cloudflare) to prevent global rate limits
 const PORT = process.env.PORT || 5000;
 // ====================== MIDDLEWARE ======================
 app.use((0, helmet_1.default)({
@@ -63,6 +63,8 @@ app.use((0, cors_1.default)({
     origin: corsOrigin_1.corsOriginValidator, // PHASE_4C849: strict per-request whitelist
     credentials: true
 }));
+// Cashfree Webhook needs exact raw string for HMAC signature verification
+app.use('/api/payments/webhook', express_1.default.raw({ type: 'application/json' }));
 app.use(express_1.default.json({ limit: '10mb' }));
 app.use(express_1.default.urlencoded({ extended: true }));
 app.use((0, cookie_parser_1.default)());

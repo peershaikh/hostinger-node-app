@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.markAllNotificationsRead = exports.markNotificationsRead = exports.getNotifications = exports.updateNotificationPreferences = exports.registerDeviceToken = exports.MEMORY_NOTIFICATION_HISTORY = exports.MEMORY_PREFERENCES = exports.MEMORY_PUSH_TOKENS = void 0;
+exports.clearNotificationHistory = exports.deleteDeviceToken = exports.markAllNotificationsRead = exports.markNotificationsRead = exports.getNotifications = exports.updateNotificationPreferences = exports.registerDeviceToken = exports.MEMORY_NOTIFICATION_HISTORY = exports.MEMORY_PREFERENCES = exports.MEMORY_PUSH_TOKENS = void 0;
 exports.encryptToken = encryptToken;
 exports.decryptToken = decryptToken;
 const crypto_1 = __importDefault(require("crypto"));
@@ -475,3 +475,66 @@ const markAllNotificationsRead = async (req, res) => {
     }
 };
 exports.markAllNotificationsRead = markAllNotificationsRead;
+/**
+ * Endpoint to safely delete a device's push token.
+ */
+const deleteDeviceToken = async (req, res) => {
+    const userId = req.headers['x-user-id'] || null;
+    const { device_id } = req.body;
+    if (!device_id) {
+        return res.status(400).json({ success: false, error: 'device_id required' });
+    }
+    try {
+        let query = supabase_1.supabase.from('user_push_tokens').delete().eq('device_id', device_id);
+        if (userId) {
+            query = query.eq('user_id', userId);
+        }
+        const { error } = await query;
+        if (error)
+            throw error;
+        exports.MEMORY_PUSH_TOKENS.delete(device_id);
+        return res.status(200).json({ success: true });
+    }
+    catch (err) {
+        logger_1.winstonLogger.info(`[NOTIFICATION_CONTROLLER] DB token delete failed. Cascading to memory: ${err.message}`);
+        exports.MEMORY_PUSH_TOKENS.delete(device_id);
+        return res.status(200).json({ success: true });
+    }
+};
+exports.deleteDeviceToken = deleteDeviceToken;
+/**
+ * Endpoint to clear notification history for a user/device
+ */
+const clearNotificationHistory = async (req, res) => {
+    const userId = req.headers['x-user-id'] || null;
+    const deviceId = req.headers['x-device-id'] || null;
+    if (!userId && !deviceId) {
+        return res.status(400).json({ success: false, error: 'Authentication required' });
+    }
+    try {
+        let query = supabase_1.supabase.from('user_notification_history').delete();
+        if (userId) {
+            query = query.eq('user_id', userId);
+        }
+        else {
+            query = query.eq('device_id', deviceId);
+        }
+        const { error } = await query;
+        if (error)
+            throw error;
+        return res.status(200).json({ success: true });
+    }
+    catch (err) {
+        logger_1.winstonLogger.info(`[NOTIFICATION_CONTROLLER] DB history clear failed. Cascading to memory: ${err.message}`);
+        // Remove from memory array
+        for (let i = exports.MEMORY_NOTIFICATION_HISTORY.length - 1; i >= 0; i--) {
+            const n = exports.MEMORY_NOTIFICATION_HISTORY[i];
+            const matchesUser = userId ? n.user_id === userId : n.device_id === deviceId;
+            if (matchesUser) {
+                exports.MEMORY_NOTIFICATION_HISTORY.splice(i, 1);
+            }
+        }
+        return res.status(200).json({ success: true });
+    }
+};
+exports.clearNotificationHistory = clearNotificationHistory;
