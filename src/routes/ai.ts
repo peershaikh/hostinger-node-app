@@ -15,7 +15,9 @@ const aiLimiter = rateLimit({
   message: { success: false, error: 'Too many AI requests. Please wait a moment.' },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: false, // PHASE_8.8: Suppress express-rate-limit v8 validation warnings
 }) as any;
+
 
 // POST /api/ai/voice-parse
 // Proxies voice transcript → LLM → { source, dest }

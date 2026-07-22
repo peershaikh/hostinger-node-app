@@ -21,6 +21,7 @@ exports.authLimiter = (0, express_rate_limit_1.default)({
     windowMs: parseEnvMs(process.env.RATE_LIMIT_AUTH_WINDOW_MS, 15 * 60 * 1000),
     max: parseEnvMax(process.env.RATE_LIMIT_AUTH_MAX, 20),
     standardHeaders: true, legacyHeaders: false,
+    validate: false, // PHASE_8.8: Suppress express-rate-limit v8 validation warnings
     message: { success: false, error: 'Too many authentication attempts, please try again later.' },
     handler: (req, res) => {
         logger_1.winstonLogger.warn(`[RATE_LIMIT] Auth limit exceeded for IP: ${req.ip}`);
@@ -50,6 +51,7 @@ exports.searchLimiter = (0, express_rate_limit_1.default)({
     windowMs: parseEnvMs(process.env.RATE_LIMIT_SEARCH_WINDOW_MS, 1 * 60 * 1000),
     max: parseEnvMax(process.env.RATE_LIMIT_SEARCH_MAX, 60),
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many search requests, please try again later.' },
     handler: (req, res) => {
         logger_1.winstonLogger.warn(`[RATE_LIMIT] Search limit exceeded IP=${req.ip}`);
@@ -60,6 +62,7 @@ exports.advancedSearchLimiter = (0, express_rate_limit_1.default)({
     windowMs: parseEnvMs(process.env.RATE_LIMIT_SEARCH_WINDOW_MS, 1 * 60 * 1000),
     max: parseEnvMax(process.env.RATE_LIMIT_SEARCH_MAX, 60),
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many split search requests, please wait a moment.' },
     handler: (req, res) => {
         logger_1.winstonLogger.warn(`[RATE_LIMIT] Advanced search limit exceeded IP=${req.ip}`);
@@ -70,6 +73,7 @@ exports.availabilityLimiter = (0, express_rate_limit_1.default)({
     windowMs: parseEnvMs(process.env.RATE_LIMIT_SEARCH_WINDOW_MS, 1 * 60 * 1000),
     max: parseEnvMax(process.env.RATE_LIMIT_SEARCH_MAX, 60),
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many availability requests, please wait.' },
     handler: (req, res) => {
         logger_1.winstonLogger.warn(`[RATE_LIMIT] Availability limit exceeded IP=${req.ip}`);
@@ -80,6 +84,7 @@ exports.sameTrainRescueLimiter = (0, express_rate_limit_1.default)({
     windowMs: 1 * 60 * 1000,
     max: 15,
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many rescue scan requests, please wait.' },
     handler: (req, res) => {
         logger_1.winstonLogger.warn(`[RATE_LIMIT] Same Train Rescue limit exceeded for IP: ${req.ip}`);
@@ -92,6 +97,7 @@ exports.pnrLimiter = (0, express_rate_limit_1.default)({
     windowMs: parseEnvMs(process.env.RATE_LIMIT_PNR_WINDOW_MS, 15 * 60 * 1000),
     max: parseEnvMax(process.env.RATE_LIMIT_PNR_MAX, 30),
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many PNR requests, please try again later.' },
     handler: (req, res) => {
         logger_1.winstonLogger.warn(`[RATE_LIMIT] PNR limit exceeded for IP: ${req.ip}`);
@@ -104,6 +110,7 @@ exports.liveLimiter = (0, express_rate_limit_1.default)({
     windowMs: parseEnvMs(process.env.RATE_LIMIT_LIVE_WINDOW_MS, 1 * 60 * 1000),
     max: parseEnvMax(process.env.RATE_LIMIT_LIVE_MAX, 60),
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many live train requests, please try again later.' },
     handler: (req, res) => {
         logger_1.winstonLogger.warn(`[RATE_LIMIT] Live train limit exceeded for IP: ${req.ip}`);
@@ -114,6 +121,7 @@ exports.complaintLimiter = (0, express_rate_limit_1.default)({
     windowMs: 5 * 60 * 1000,
     max: 10,
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many complaint requests, please try again later.' },
     handler: (req, res) => {
         logger_1.winstonLogger.warn(`[RATE_LIMIT] Complaint limit exceeded for IP: ${req.ip}`);
@@ -124,6 +132,7 @@ exports.referralLimiter = (0, express_rate_limit_1.default)({
     windowMs: 5 * 60 * 1000,
     max: 15,
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many referral requests, please try again later.' },
     handler: (req, res) => {
         logger_1.winstonLogger.warn(`[RATE_LIMIT] Referral limit exceeded for IP: ${req.ip}`);
@@ -136,6 +145,7 @@ exports.adminLimiter = (0, express_rate_limit_1.default)({
     windowMs: parseEnvMs(process.env.RATE_LIMIT_ADMIN_WINDOW_MS, 15 * 60 * 1000),
     max: parseEnvMax(process.env.RATE_LIMIT_ADMIN_MAX, 50),
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many admin requests, please try again later.' },
     handler: (req, res) => {
         logger_1.winstonLogger.warn(`[RATE_LIMIT] Admin limit exceeded for IP: ${req.ip}`);
@@ -146,6 +156,7 @@ exports.diagnosticsLimiter = (0, express_rate_limit_1.default)({
     windowMs: 1 * 60 * 1000,
     max: 5,
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many diagnostics requests, please wait.' },
     handler: (req, res) => {
         logger_1.winstonLogger.warn(`[RATE_LIMIT] Diagnostics limit exceeded for IP: ${req.ip}`);
@@ -156,6 +167,7 @@ exports.cacheClearLimiter = (0, express_rate_limit_1.default)({
     windowMs: 1 * 60 * 1000,
     max: 3,
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many cache clear requests, please wait.' },
     handler: (req, res) => {
         logger_1.winstonLogger.warn(`[RATE_LIMIT] Cache clear limit exceeded for IP: ${req.ip}`);
@@ -166,6 +178,7 @@ exports.notificationRegisterLimiter = (0, express_rate_limit_1.default)({
     windowMs: 10 * 60 * 1000,
     max: 5,
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many token registration requests, please wait.' },
     handler: (req, res) => {
         logger_1.winstonLogger.warn({ message: `[RATE_LIMIT] Push token registration limit exceeded for IP: ${req.ip}`, component: 'NOTIFICATION_CONTROLLER', event: 'push_throttled' });
@@ -176,6 +189,7 @@ exports.notificationPrefsLimiter = (0, express_rate_limit_1.default)({
     windowMs: 10 * 60 * 1000,
     max: 10,
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many preferences requests, please wait.' },
     handler: (req, res) => {
         logger_1.winstonLogger.warn({ message: `[RATE_LIMIT] Push preferences update limit exceeded for IP: ${req.ip}`, component: 'NOTIFICATION_CONTROLLER', event: 'push_throttled' });
@@ -186,6 +200,7 @@ exports.alarmLimiter = (0, express_rate_limit_1.default)({
     windowMs: 1 * 60 * 1000,
     max: 10,
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many alarm configuration requests, please wait.' },
     handler: (req, res) => {
         logger_1.winstonLogger.warn(`[RATE_LIMIT] Alarm limit exceeded for IP: ${req.ip}`);

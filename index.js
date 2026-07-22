@@ -53,7 +53,7 @@ const firebaseService_1 = require("./services/firebaseService");
 (0, firebaseService_1.initFirebaseAdmin)();
 dotenv_1.default.config();
 const app = (0, express_1.default)();
-app.set('trust proxy', true); // Trust all proxy hops (Hostinger/Cloudflare) to prevent global rate limits
+app.set('trust proxy', 1); // PHASE_8.8: Trust 1 hop (Hostinger Nginx ingress proxy) to preserve client IP & prevent spoofing
 const PORT = process.env.PORT || 5000;
 // ====================== MIDDLEWARE ======================
 app.use((0, helmet_1.default)({

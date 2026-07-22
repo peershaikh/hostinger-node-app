@@ -18,12 +18,14 @@ export const authLimiter = rateLimit({
     windowMs: parseEnvMs(process.env.RATE_LIMIT_AUTH_WINDOW_MS, 15 * 60 * 1000),
     max: parseEnvMax(process.env.RATE_LIMIT_AUTH_MAX, 20),
     standardHeaders: true, legacyHeaders: false,
+    validate: false, // PHASE_8.8: Suppress express-rate-limit v8 validation warnings
     message: { success: false, error: 'Too many authentication attempts, please try again later.' },
     handler: (req: any, res: any) => {
         winstonLogger.warn(`[RATE_LIMIT] Auth limit exceeded for IP: ${req.ip}`);
         res.status(429).json({ success: false, error: 'Too many authentication attempts, please try again later.' });
     }
 }) as any;
+
 
 // --- PAYMENTS LIMITER ---
 // Default: 10 requests / 10 minutes (keyed per authenticated user ID or IP fallback)
@@ -50,6 +52,7 @@ export const searchLimiter = rateLimit({
     windowMs: parseEnvMs(process.env.RATE_LIMIT_SEARCH_WINDOW_MS, 1 * 60 * 1000),
     max: parseEnvMax(process.env.RATE_LIMIT_SEARCH_MAX, 60),
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many search requests, please try again later.' },
     handler: (req: any, res: any) => {
         winstonLogger.warn(`[RATE_LIMIT] Search limit exceeded IP=${req.ip}`);
@@ -61,6 +64,7 @@ export const advancedSearchLimiter = rateLimit({
     windowMs: parseEnvMs(process.env.RATE_LIMIT_SEARCH_WINDOW_MS, 1 * 60 * 1000),
     max: parseEnvMax(process.env.RATE_LIMIT_SEARCH_MAX, 60),
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many split search requests, please wait a moment.' },
     handler: (req: any, res: any) => {
         winstonLogger.warn(`[RATE_LIMIT] Advanced search limit exceeded IP=${req.ip}`);
@@ -72,6 +76,7 @@ export const availabilityLimiter = rateLimit({
     windowMs: parseEnvMs(process.env.RATE_LIMIT_SEARCH_WINDOW_MS, 1 * 60 * 1000),
     max: parseEnvMax(process.env.RATE_LIMIT_SEARCH_MAX, 60),
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many availability requests, please wait.' },
     handler: (req: any, res: any) => {
         winstonLogger.warn(`[RATE_LIMIT] Availability limit exceeded IP=${req.ip}`);
@@ -83,6 +88,7 @@ export const sameTrainRescueLimiter = rateLimit({
     windowMs: 1 * 60 * 1000,
     max: 15,
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many rescue scan requests, please wait.' },
     handler: (req: any, res: any) => {
         winstonLogger.warn(`[RATE_LIMIT] Same Train Rescue limit exceeded for IP: ${req.ip}`);
@@ -90,12 +96,14 @@ export const sameTrainRescueLimiter = rateLimit({
     }
 }) as any;
 
+
 // --- PNR LIMITER ---
 // Default: 30 requests / 15 minutes
 export const pnrLimiter = rateLimit({
     windowMs: parseEnvMs(process.env.RATE_LIMIT_PNR_WINDOW_MS, 15 * 60 * 1000),
     max: parseEnvMax(process.env.RATE_LIMIT_PNR_MAX, 30),
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many PNR requests, please try again later.' },
     handler: (req: any, res: any) => {
         winstonLogger.warn(`[RATE_LIMIT] PNR limit exceeded for IP: ${req.ip}`);
@@ -109,6 +117,7 @@ export const liveLimiter = rateLimit({
     windowMs: parseEnvMs(process.env.RATE_LIMIT_LIVE_WINDOW_MS, 1 * 60 * 1000),
     max: parseEnvMax(process.env.RATE_LIMIT_LIVE_MAX, 60),
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many live train requests, please try again later.' },
     handler: (req: any, res: any) => {
         winstonLogger.warn(`[RATE_LIMIT] Live train limit exceeded for IP: ${req.ip}`);
@@ -120,6 +129,7 @@ export const complaintLimiter = rateLimit({
     windowMs: 5 * 60 * 1000,
     max: 10,
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many complaint requests, please try again later.' },
     handler: (req: any, res: any) => {
         winstonLogger.warn(`[RATE_LIMIT] Complaint limit exceeded for IP: ${req.ip}`);
@@ -131,6 +141,7 @@ export const referralLimiter = rateLimit({
     windowMs: 5 * 60 * 1000,
     max: 15,
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many referral requests, please try again later.' },
     handler: (req: any, res: any) => {
         winstonLogger.warn(`[RATE_LIMIT] Referral limit exceeded for IP: ${req.ip}`);
@@ -144,6 +155,7 @@ export const adminLimiter = rateLimit({
     windowMs: parseEnvMs(process.env.RATE_LIMIT_ADMIN_WINDOW_MS, 15 * 60 * 1000),
     max: parseEnvMax(process.env.RATE_LIMIT_ADMIN_MAX, 50),
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many admin requests, please try again later.' },
     handler: (req: any, res: any) => {
         winstonLogger.warn(`[RATE_LIMIT] Admin limit exceeded for IP: ${req.ip}`);
@@ -155,6 +167,7 @@ export const diagnosticsLimiter = rateLimit({
     windowMs: 1 * 60 * 1000,
     max: 5,
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many diagnostics requests, please wait.' },
     handler: (req: any, res: any) => {
         winstonLogger.warn(`[RATE_LIMIT] Diagnostics limit exceeded for IP: ${req.ip}`);
@@ -166,6 +179,7 @@ export const cacheClearLimiter = rateLimit({
     windowMs: 1 * 60 * 1000,
     max: 3,
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many cache clear requests, please wait.' },
     handler: (req: any, res: any) => {
         winstonLogger.warn(`[RATE_LIMIT] Cache clear limit exceeded for IP: ${req.ip}`);
@@ -177,6 +191,7 @@ export const notificationRegisterLimiter = rateLimit({
     windowMs: 10 * 60 * 1000,
     max: 5,
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many token registration requests, please wait.' },
     handler: (req: any, res: any) => {
         winstonLogger.warn({ message: `[RATE_LIMIT] Push token registration limit exceeded for IP: ${req.ip}`, component: 'NOTIFICATION_CONTROLLER', event: 'push_throttled' });
@@ -188,6 +203,7 @@ export const notificationPrefsLimiter = rateLimit({
     windowMs: 10 * 60 * 1000,
     max: 10,
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many preferences requests, please wait.' },
     handler: (req: any, res: any) => {
         winstonLogger.warn({ message: `[RATE_LIMIT] Push preferences update limit exceeded for IP: ${req.ip}`, component: 'NOTIFICATION_CONTROLLER', event: 'push_throttled' });
@@ -199,10 +215,12 @@ export const alarmLimiter = rateLimit({
     windowMs: 1 * 60 * 1000,
     max: 10,
     standardHeaders: true, legacyHeaders: false,
+    validate: false,
     message: { success: false, error: 'Too many alarm configuration requests, please wait.' },
     handler: (req: any, res: any) => {
         winstonLogger.warn(`[RATE_LIMIT] Alarm limit exceeded for IP: ${req.ip}`);
         res.status(429).json({ success: false, error: 'Too many alarm configuration requests, please wait.' });
     }
 }) as any;
+
 
