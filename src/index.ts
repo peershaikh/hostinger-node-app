@@ -95,11 +95,12 @@ const globalLimiter = rateLimit({
   max: 300,
   standardHeaders: true,
   legacyHeaders: false,
-  validate: { ip: false }, // PHASE_4C971: suppress express-rate-limit v8 ValidationError
+  validate: false, // PHASE_8.5B: Suppress express-rate-limit v8 validation warnings for custom skip logic
   skip: (req: any) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip || ''),
   message: { success: false, error: 'Too many requests from this IP, please try again after 15 minutes' },
 });
 app.use('/api', globalLimiter);
+
 
 
 

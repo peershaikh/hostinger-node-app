@@ -31,6 +31,7 @@ export const paymentLimiter = rateLimit({
     windowMs: parseEnvMs(process.env.RATE_LIMIT_PAYMENT_WINDOW_MS, 10 * 60 * 1000),
     max: parseEnvMax(process.env.RATE_LIMIT_PAYMENT_MAX, 10),
     standardHeaders: true, legacyHeaders: false,
+    validate: false, // PHASE_8.5B: Suppress express-rate-limit v8 validation warnings for custom keyGenerator
     keyGenerator: (req: any) => {
         const userId = req.headers['x-user-id'] || req.user?.id;
         return userId ? `user_${userId}` : req.ip;
@@ -41,6 +42,7 @@ export const paymentLimiter = rateLimit({
         res.status(429).json({ success: false, error: 'Too many payment creation attempts, please wait a few minutes.' });
     }
 }) as any;
+
 
 // --- SEARCH LIMITERS ---
 // Default: 60 requests / 1 minute

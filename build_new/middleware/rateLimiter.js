@@ -33,6 +33,7 @@ exports.paymentLimiter = (0, express_rate_limit_1.default)({
     windowMs: parseEnvMs(process.env.RATE_LIMIT_PAYMENT_WINDOW_MS, 10 * 60 * 1000),
     max: parseEnvMax(process.env.RATE_LIMIT_PAYMENT_MAX, 10),
     standardHeaders: true, legacyHeaders: false,
+    validate: false, // PHASE_8.5B: Suppress express-rate-limit v8 validation warnings for custom keyGenerator
     keyGenerator: (req) => {
         const userId = req.headers['x-user-id'] || req.user?.id;
         return userId ? `user_${userId}` : req.ip;
