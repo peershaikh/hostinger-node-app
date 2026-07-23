@@ -12,7 +12,7 @@ const router = express.Router();
 // PHASE_5B P3: Strict Zod schema validation attached to reject unknown properties & amount tampering
 router.post('/create-order', requireAuth, paymentLimiter, validateBody(createOrderSchema), paymentController.createOrder);
 router.post('/webhook', paymentController.webhook);
-router.post('/verify-signature', requireAuth, paymentController.verifyPayment);
+router.post('/verify-signature', requireAuth, paymentController.verifySignature);
 router.get('/verify/:orderId', paymentController.verifyPayment);
 
 export default router;
