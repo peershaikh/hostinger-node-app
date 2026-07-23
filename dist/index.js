@@ -53,16 +53,30 @@ const firebaseService_1 = require("./services/firebaseService");
 (0, firebaseService_1.initFirebaseAdmin)();
 dotenv_1.default.config();
 const app = (0, express_1.default)();
-app.set('trust proxy', 1); // Trust the first proxy hop (e.g., Render/AWS Load Balancer)
+app.set('trust proxy', 1); // PHASE_8.2: Trust 1 hop (Hostinger Nginx ingress proxy) to preserve client IP & prevent spoofing
 const PORT = process.env.PORT || 5000;
 // ====================== MIDDLEWARE ======================
 app.use((0, helmet_1.default)({
-    crossOriginResourcePolicy: { policy: "cross-origin" }
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+    hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "https://sdk.cashfree.com", "https://www.gstatic.com"],
+            connectSrc: ["'self'", "https://api.trayago.in", "https://*.supabase.co", "https://*.cashfree.com"],
+            imgSrc: ["'self'", "data:", "https:", "http:"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            fontSrc: ["'self'", "https:", "data:"]
+        }
+    }
 })); // Security headers
 app.use((0, cors_1.default)({
     origin: corsOrigin_1.corsOriginValidator, // PHASE_4C849: strict per-request whitelist
     credentials: true
 }));
+// Cashfree Webhook needs exact raw string for HMAC signature verification
+app.use('/api/payments/webhook', express_1.default.raw({ type: 'application/json' }));
 app.use(express_1.default.json({ limit: '10mb' }));
 app.use(express_1.default.urlencoded({ extended: true }));
 app.use((0, cookie_parser_1.default)());
@@ -74,7 +88,7 @@ const globalLimiter = (0, express_rate_limit_1.default)({
     max: 300,
     standardHeaders: true,
     legacyHeaders: false,
-    validate: { ip: false }, // PHASE_4C971: suppress express-rate-limit v8 ValidationError
+    validate: false, // PHASE_8.5B: Suppress express-rate-limit v8 validation warnings for custom skip logic
     skip: (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip || ''),
     message: { success: false, error: 'Too many requests from this IP, please try again after 15 minutes' },
 });

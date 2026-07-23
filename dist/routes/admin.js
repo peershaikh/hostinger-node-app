@@ -29,6 +29,11 @@ router.use(authMiddleware_1.requireAuth);
 router.get('/analytics', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getAdminAnalytics.bind(adminController_1.adminController));
 router.get('/analytics/history', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getAnalyticsHistory.bind(adminController_1.adminController));
 router.get('/analytics/export', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.exportAnalyticsLogs.bind(adminController_1.adminController));
+router.get('/daily-operations', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getDailyOperations.bind(adminController_1.adminController));
+router.get('/incidents', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getIncidents.bind(adminController_1.adminController));
+router.get('/engineering-tasks', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getEngineeringTasks.bind(adminController_1.adminController));
+router.get('/intelligence-v2', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getIntelligenceV2.bind(adminController_1.adminController));
+router.get('/production-incidents', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getProductionIncidents.bind(adminController_1.adminController));
 // Payment & Revenue API
 router.get('/revenue', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getPaymentRevenue.bind(adminController_1.adminController));
 router.get('/subscriptions', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getPaymentSubscriptions.bind(adminController_1.adminController));

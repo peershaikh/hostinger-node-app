@@ -9,7 +9,7 @@ export interface GptSplitRoute {
 }
 
 export class LlmService {
-  private readonly GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY || ''; // Fallback for env testing
+  private readonly GEMINI_KEY = process.env.GEMINI_API_KEY || '';
   private readonly SUPABASE_URL = process.env.SUPABASE_URL || '';
   private readonly SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || '';
 
@@ -136,14 +136,9 @@ export class LlmService {
         advice: result.advice || 'Keep checking closer to departure.',
         disclaimer
       };
-    } catch (err) {
-      return {
-        probability: "50",
-        prediction: "Indeterminate",
-        explanation: "Unable to generate AI insight at this time. Please check again closer to your travel date.",
-        advice: "Monitor status as charting progresses.",
-        disclaimer
-      };
+    } catch (err: any) {
+      winstonLogger.warn(`[LLM] PNR prediction AI call failed: ${err.message}. Propagating for heuristic fallback.`);
+      throw err;
     }
   }
 

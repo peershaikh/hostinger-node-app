@@ -45,6 +45,7 @@ const emailService_1 = require("../services/emailService");
 const pushService_1 = require("../services/pushService");
 const firebaseService = __importStar(require("../services/firebaseService"));
 const notificationController_1 = require("../controllers/notificationController");
+const MEMORY_RETRY_QUEUE = new Map();
 class AlertDispatcher {
     constructor() {
         this.isProcessing = false;
@@ -87,6 +88,11 @@ class AlertDispatcher {
         }
         logger_1.winstonLogger.info(`[ALERT_DISPATCHER] Processing ${alerts.length} pending alerts.`);
         for (const alert of alerts) {
+            // Check retry backoff
+            const retryData = MEMORY_RETRY_QUEUE.get(alert.id);
+            if (retryData && Date.now() < retryData.nextRetryAt) {
+                continue; // Skip until backoff expires
+            }
             try {
                 let userEmail = null;
                 if (alert.user_id) {
@@ -238,19 +244,43 @@ class AlertDispatcher {
                     }
                 }
                 // 7. Update status
-                const newStatus = delivered ? 'DELIVERED' : 'FAILED';
-                await supabase_1.supabase
-                    .from('smart_alerts')
-                    .update({
-                    status: newStatus,
-                    updated_at: new Date().toISOString()
-                })
-                    .eq('id', alert.id);
-                logger_1.winstonLogger.debug(`[ALERT_DISPATCHER] Alert ${alert.id} marked as ${newStatus}.`);
+                if (delivered) {
+                    await supabase_1.supabase
+                        .from('smart_alerts')
+                        .update({ status: 'DELIVERED', updated_at: new Date().toISOString() })
+                        .eq('id', alert.id);
+                    MEMORY_RETRY_QUEUE.delete(alert.id);
+                    logger_1.winstonLogger.debug(`[ALERT_DISPATCHER] Alert ${alert.id} marked as DELIVERED.`);
+                }
+                else {
+                    // Retry logic (Exponential Backoff, Max 3)
+                    const currentRetry = MEMORY_RETRY_QUEUE.get(alert.id) || { retries: 0 };
+                    if (currentRetry.retries < 3) {
+                        const nextRetryAt = Date.now() + Math.pow(2, currentRetry.retries) * 60000;
+                        MEMORY_RETRY_QUEUE.set(alert.id, { alert, retries: currentRetry.retries + 1, nextRetryAt });
+                        logger_1.winstonLogger.debug(`[ALERT_DISPATCHER] Alert ${alert.id} failed. Queued for retry ${currentRetry.retries + 1}/3.`);
+                    }
+                    else {
+                        await supabase_1.supabase
+                            .from('smart_alerts')
+                            .update({ status: 'FAILED', updated_at: new Date().toISOString() })
+                            .eq('id', alert.id);
+                        MEMORY_RETRY_QUEUE.delete(alert.id);
+                        logger_1.winstonLogger.debug(`[ALERT_DISPATCHER] Alert ${alert.id} marked as FAILED after 3 retries.`);
+                    }
+                }
             }
             catch (err) {
                 logger_1.winstonLogger.error(`[ALERT_DISPATCHER] Failed to process alert ${alert.id}: ${err.message}`);
-                await supabase_1.supabase.from('smart_alerts').update({ status: 'FAILED' }).eq('id', alert.id);
+                const currentRetry = MEMORY_RETRY_QUEUE.get(alert.id) || { retries: 0 };
+                if (currentRetry.retries < 3) {
+                    const nextRetryAt = Date.now() + Math.pow(2, currentRetry.retries) * 60000;
+                    MEMORY_RETRY_QUEUE.set(alert.id, { alert, retries: currentRetry.retries + 1, nextRetryAt });
+                }
+                else {
+                    await supabase_1.supabase.from('smart_alerts').update({ status: 'FAILED' }).eq('id', alert.id);
+                    MEMORY_RETRY_QUEUE.delete(alert.id);
+                }
             }
         }
     }

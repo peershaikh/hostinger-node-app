@@ -69,10 +69,12 @@ class PnrHistoryService {
      */
     async getHistoricalDataForPrediction(source, destination, currentStatus) {
         try {
-            // Parse the current status to get the waitlist number
-            const wlMatch = currentStatus.match(/(WL|TQWL)[\/\-]?\s*(\d+)/i);
+            // Parse the current status to get the waitlist number & quota
+            const QUOTA_REGEX = /(GNWL|TQWL|RLWL|PQWL|CKWL|RSWL|WL)[\/\-]?\s*(\d+)/i;
+            const wlMatch = currentStatus.match(QUOTA_REGEX);
             if (!wlMatch)
                 return null;
+            const quotaType = wlMatch[1].toUpperCase();
             const wlPosition = parseInt(wlMatch[2]);
             if (isNaN(wlPosition))
                 return null;
@@ -82,7 +84,7 @@ class PnrHistoryService {
                 .select('current_status, final_status')
                 .eq('source', source)
                 .eq('destination', destination)
-                .ilike('current_status', `${wlMatch[1]}%`); // Match same WL type
+                .ilike('current_status', `%${quotaType}%`); // Match same WL quota type anywhere in string
             if (error) {
                 logger_1.winstonLogger.error(`[PNR_PREDICTION] Error fetching historical data: ${error.message}`);
                 return null;
@@ -91,7 +93,7 @@ class PnrHistoryService {
                 return null;
             // Filter records with similar WL positions (within 5 positions)
             const similarRecords = data.filter(record => {
-                const recordWlMatch = record.current_status.match(/(WL|TQWL)[\/\-]?\s*(\d+)/i);
+                const recordWlMatch = record.current_status.match(QUOTA_REGEX);
                 if (!recordWlMatch)
                     return false;
                 const recordWlPosition = parseInt(recordWlMatch[2]);

@@ -8,7 +8,7 @@ const axios_1 = __importDefault(require("axios"));
 const logger_1 = require("../middleware/logger");
 class LlmService {
     constructor() {
-        this.GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY || ''; // Fallback for env testing
+        this.GEMINI_KEY = process.env.GEMINI_API_KEY || '';
         this.SUPABASE_URL = process.env.SUPABASE_URL || '';
         this.SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || '';
     }
@@ -136,13 +136,8 @@ class LlmService {
             };
         }
         catch (err) {
-            return {
-                probability: "50",
-                prediction: "Indeterminate",
-                explanation: "Unable to generate AI insight at this time. Please check again closer to your travel date.",
-                advice: "Monitor status as charting progresses.",
-                disclaimer
-            };
+            logger_1.winstonLogger.warn(`[LLM] PNR prediction AI call failed: ${err.message}. Propagating for heuristic fallback.`);
+            throw err;
         }
     }
     /**

@@ -277,15 +277,19 @@ class PnrController {
                 }
                 else if (isPartiallyConfirmed || worstStatusType === 'WL' || worstStatusType === 'RAC') {
                     showPrediction = true;
-                    // Resolve travel details
-                    const travelClass = normalized.class || (cleanedPassengers[0]?.booking_status ? cleanedPassengers[0].booking_status.split('/')[0] : 'Unknown');
-                    // ── WL Type Extraction (4C301 fix) ─────────────────────────────────────
+                    // Resolve travel details using the passenger with worst waitlist status (P1 multi-passenger fix)
+                    const targetPassenger = cleanedPassengers.find(p => {
+                        const s = (p.current_status || p.booking_status || '').toUpperCase();
+                        return isWlStatus(s) || isRacStatus(s);
+                    }) || cleanedPassengers[0];
+                    const travelClass = normalized.class || (targetPassenger?.booking_status ? targetPassenger.booking_status.split('/')[0] : 'Unknown');
+                    // ── WL Type Extraction (4C301 / P1 fix) ─────────────────────────────────
                     // IRCTC may return booking_status as raw "WAITLIST" (no subtype prefix).
                     // We therefore search BOTH current_status and booking_status for a typed
                     // WL prefix, covering all Indian Railways quota types.
                     const WL_TYPE_REGEX = /\b(GNWL|TQWL|RLWL|PQWL|CKWL|RSWL)\b/i;
-                    const bookingStr = (cleanedPassengers[0]?.booking_status || '').toUpperCase();
-                    const currentStr = (cleanedPassengers[0]?.current_status || '').toUpperCase();
+                    const bookingStr = (targetPassenger?.booking_status || '').toUpperCase();
+                    const currentStr = (targetPassenger?.current_status || '').toUpperCase();
                     // Search booking_status first, then current_status, then fallback by quota.
                     const wlTypeMatchBkg = bookingStr.match(WL_TYPE_REGEX);
                     const wlTypeMatchCur = currentStr.match(WL_TYPE_REGEX);
@@ -297,12 +301,12 @@ class PnrController {
                     // ─────────────────────────────────────────────────────────────────────────
                     const wlPosition = minWLPos === 999 ? 0 : minWLPos;
                     const quota = normalized.quota || (wlType === 'TQWL' ? 'TQ' : wlType === 'RLWL' ? 'RL' : wlType === 'PQWL' ? 'PQ' : 'GN');
-                    // Step 6: Fetch historical conversion pattern for the primary passenger
+                    // Step 6: Fetch historical conversion pattern for the waitlisted passenger
                     let historicalRate = null;
                     try {
                         // Phase 3: Use WL range-matching (±5 positions) instead of exact WL string match
                         const { pnrHistoryService: pnrHist } = require('../services/pnrHistoryService');
-                        const historicalData = await pnrHist.getHistoricalDataForPrediction(normalized.source_code || normalized.source_name || '', normalized.destination_code || normalized.destination_name || '', cleanedPassengers[0]?.booking_status || '');
+                        const historicalData = await pnrHist.getHistoricalDataForPrediction(normalized.source_code || normalized.source_name || '', normalized.destination_code || normalized.destination_name || '', targetPassenger?.current_status || targetPassenger?.booking_status || '');
                         historicalRate = (historicalData && historicalData.totalCount >= 3) ? historicalData.successRate : null;
                     }
                     catch (e) { }
@@ -364,9 +368,9 @@ class PnrController {
                             predictionSource = "HISTORICAL_DB";
                         }
                         else {
-                            // ── Post-GPT Heuristic Ceiling Check (4C301) ────────────────────────
+                            // ── Post-Gemini Heuristic Ceiling Check ────────────────────────
                             // Compute the heuristic ceiling for this WL type+position.
-                            // If GPT exceeds it by more than 15 points, clamp to ceiling + 5
+                            // If Gemini exceeds it by more than 15 points, clamp to ceiling + 5
                             // to prevent over-confident outputs caused by contaminated context.
                             const heuristicCeiling = (type, pos) => {
                                 switch (type) {
@@ -377,37 +381,35 @@ class PnrController {
                                     default: return pos <= 15 ? 70 : pos <= 40 ? 45 : 20;
                                 }
                             };
-                            const rawGptProb = parseInt(String(aiPrediction.probability).replace('%', ''), 10) || 50;
+                            const rawGeminiProb = parseInt(String(aiPrediction.probability).replace('%', ''), 10) || 50;
                             const ceiling = worstStatusType === 'WL' ? heuristicCeiling(wlType, wlPosition) : 95;
-                            const CEILING_TOLERANCE = 15; // allow GPT up to 15 points above heuristic ceiling
-                            let finalProb = rawGptProb;
-                            if (rawGptProb > ceiling + CEILING_TOLERANCE) {
+                            const CEILING_TOLERANCE = 15; // allow Gemini up to 15 points above heuristic ceiling
+                            let finalProb = rawGeminiProb;
+                            if (rawGeminiProb > ceiling + CEILING_TOLERANCE) {
                                 finalProb = ceiling + 5; // soft clamp
-                                logger_1.winstonLogger.warn(`[PNR_PREDICTION_CAP] GPT gave ${rawGptProb}% for ${wlType}/${wlPosition} (ceiling=${ceiling}). Clamped to ${finalProb}%.`);
+                                logger_1.winstonLogger.warn(`[PNR_PREDICTION_CAP] Gemini gave ${rawGeminiProb}% for ${wlType}/${wlPosition} (ceiling=${ceiling}). Clamped to ${finalProb}%.`);
                             }
                             // ─────────────────────────────────────────────────────────────────────
                             probability = String(finalProb);
                             predictionText = aiPrediction.prediction;
                             advice = aiPrediction.advice;
-                            predictionSource = "gpt-4o-mini";
+                            predictionSource = "GEMINI_FLASH";
                         }
                         // Phase 2: Capture AI plain-English explanation
                         explanation = aiPrediction.explanation || '';
                     }
                     catch (err) {
-                        // ── WL-TYPE-AWARE HEURISTIC FALLBACK (Phase 4C08C / B1) ─────────────────
-                        // Returns distinct probabilities per WL quota type instead of a
-                        // single position-only table that was dangerously wrong for TQWL.
+                        // ── WL-TYPE-AWARE HEURISTIC FALLBACK (Phase 4C08C / P0 & P1 Fix) ───────
                         if (historicalRate !== null) {
                             probability = `${historicalRate}%`;
                             predictionText = historicalRate > 70 ? "Strong Chance (Historical)" : historicalRate > 40 ? "Medium Chance (Historical)" : "Low Chance (Historical)";
                             predictionSource = "HISTORICAL_DB";
                         }
                         else if (worstStatusType === 'WL') {
-                            // Detect WL type from the worst passenger's booking_status string
-                            const bookingStr = (cleanedPassengers[0]?.booking_status || '').toUpperCase();
-                            const wlTypeMatch = bookingStr.match(/^(GNWL|TQWL|RLWL|PQWL)/);
-                            const wlType = wlTypeMatch ? wlTypeMatch[1] : 'GNWL';
+                            // Detect WL type from the target passenger's status string (P1 fix)
+                            const targetBookingStr = (targetPassenger?.booking_status || targetPassenger?.current_status || '').toUpperCase();
+                            const wlTypeMatch = targetBookingStr.match(/\b(GNWL|TQWL|RLWL|PQWL|CKWL|RSWL)\b/);
+                            const fallbackWlType = wlTypeMatch ? wlTypeMatch[1] : wlType;
                             /**
                              * Calibrated heuristics per WL quota type:
                              *   GNWL  — General Waitlist: highest confirmation rate
@@ -459,13 +461,13 @@ class PnrController {
                                         return 20;
                                 }
                             };
-                            const pct = heuristicProb(wlType, minWLPos);
+                            const pct = heuristicProb(fallbackWlType, minWLPos);
                             probability = `${pct}%`;
                             predictionText = pct >= 70
-                                ? `Strong Chance (${wlType}/${minWLPos})`
+                                ? `Strong Chance (${fallbackWlType}/${minWLPos})`
                                 : pct >= 40
-                                    ? `Moderate Chance (${wlType}/${minWLPos})`
-                                    : `Low Chance (${wlType}/${minWLPos})`;
+                                    ? `Moderate Chance (${fallbackWlType}/${minWLPos})`
+                                    : `Low Chance (${fallbackWlType}/${minWLPos})`;
                             predictionSource = "HEURISTIC_FALLBACK";
                         }
                         else {
@@ -477,6 +479,13 @@ class PnrController {
                         advice = historicalRate !== null
                             ? `Based on our learning engine, this specific waitlist confirms ${historicalRate}% of the time.`
                             : "Keep monitoring — chart preparation updates status 4-6 hours before departure.";
+                        // Deterministic explanation for offline/fallback mode (P1 message fix)
+                        const routeStr = `${normalized.source_code || 'Origin'} to ${normalized.destination_code || 'Destination'}`;
+                        explanation = historicalRate !== null
+                            ? `Historical records on the ${routeStr} route indicate a ${historicalRate}% confirmation rate for ${wlType} tickets at position ${wlPosition}.`
+                            : worstStatusType === 'RAC'
+                                ? `RAC allocations automatically guarantee travel on the train, with a ${probability} likelihood of upgrading to a full berth during chart preparation.`
+                                : `${wlType} tickets at position ${minWLPos} on Train ${normalized.train_no} (${routeStr}) have a calibrated ${probability} confirmation probability under ${quota} quota rules. Charting updates final allocations 4-6 hours prior to departure.`;
                     }
                     if (!isChartPrepared && isPartiallyConfirmed) {
                         predictionText = "Partially Confirmed";

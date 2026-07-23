@@ -18,6 +18,7 @@ const aiLimiter = (0, express_rate_limit_1.default)({
     message: { success: false, error: 'Too many AI requests. Please wait a moment.' },
     standardHeaders: true,
     legacyHeaders: false,
+    validate: false, // PHASE_8.8: Suppress express-rate-limit v8 validation warnings
 });
 // POST /api/ai/voice-parse
 // Proxies voice transcript → LLM → { source, dest }
