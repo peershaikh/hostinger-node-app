@@ -1934,6 +1934,28 @@ export class AdminController {
       res.status(500).json({ success: false, error: 'Failed to fetch Production Incident report' });
     }
   }
+
+  // ── Phase 10.8.42 (T8) ────────────────────────────────────────────────────
+  async getLastDigest(_req: Request, res: Response) {
+    try {
+      const { data, error } = await supabase
+        .from('ops_daily_digest')
+        .select('report_date, status, system_health, error_rate_pct, heap_mb, cpu_load, email_to, sent_at, generated_at, failure_reason')
+        .order('report_date', { ascending: false })
+        .limit(1)
+        .single();
+
+      // PGRST116 = "no rows returned" from .single() — not an error, just no digest yet.
+      if (error && error.code !== 'PGRST116') {
+        throw new Error(error.message);
+      }
+
+      res.json({ success: true, data: data ?? null });
+    } catch (err: any) {
+      winstonLogger.error(`[ADMIN_LAST_DIGEST] getLastDigest error: ${err.message}`);
+      res.status(500).json({ success: false, error: 'Failed to fetch last digest' });
+    }
+  }
 }
 
 

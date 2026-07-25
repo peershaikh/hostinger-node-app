@@ -5,6 +5,10 @@ import { requireAdmin } from '../middleware/adminAuth';
 import { adminLimiter, diagnosticsLimiter, cacheClearLimiter } from '../middleware/rateLimiter';
 import providersRouter from './providers';
 import ratesRouter from './rates';
+// ── Phase 10.8.42 additions (T2/T3/T4) ──────────────────────────────────────
+import { eventMetrics } from '../services/eventMetrics';
+import { userCache } from '../cache/userCache';
+import { smartAvailabilityMetrics } from '../services/smartAvailabilityMetrics';
 
 const router = Router();
 
@@ -13,11 +17,46 @@ const router = Router();
 // by monitoring infrastructure without credentials. Placing this route above the
 // router.use(requireAuth) guard makes it publicly accessible.
 router.get('/health', (_req, res) => {
-  res.status(200).json({
-    success: true,
-    status: 'ok',
-    uptime: process.uptime(),
+  // T4 (PHASE 10.8.42 F1): use global.SYSTEM_MODE — set at boot, zero I/O cost.
+  // validateConnection() runs 5 sequential DB queries (500-2000ms); not suitable for polling.
+  const dbConnected = (global as any).SYSTEM_MODE !== 'MODE_A';
+
+  const eventStats = eventMetrics.snapshot();               // T2: event pipeline counters
+  const cacheStats = userCache.getStats();                  // T3: user L1/L2 cache counters
+  const availStats = smartAvailabilityMetrics.getSnapshot(); // T3: availability cache counters
+
+  res.status(dbConnected ? 200 : 503).json({
+    // Existing fields preserved (backward-compatible, additive only)
+    success:   true,
+    status:    dbConnected ? 'ok' : 'degraded',
+    uptime:    process.uptime(),
     timestamp: new Date().toISOString(),
+    // T4: database connectivity via SYSTEM_MODE
+    database: {
+      connected: dbConnected,
+    },
+    // T2: universal event pipeline metrics
+    event_pipeline: {
+      events_received: eventStats.events_received,
+      events_written:  eventStats.events_written,
+      events_failed:   eventStats.events_failed,
+      queue_depth:     eventStats.queue_depth,
+      retry_count:     eventStats.retry_count,
+    },
+    // T3: in-process cache counters (all 11 fields — zero I/O)
+    cache: {
+      user_l1_hits:            cacheStats.l1Hits,
+      user_l2_hits:            cacheStats.l2Hits,
+      user_misses:             cacheStats.misses,
+      user_invalidations:      cacheStats.invalidations,
+      user_pubsub_events:      cacheStats.pubSubEvents,
+      avail_l1_hits:           availStats.l1_hits,
+      avail_l2_hits:           availStats.l2_hits,
+      avail_provider_calls:    availStats.provider_calls,
+      avail_singleflight_hits: availStats.singleflight_hits,
+      avail_redis_failures:    availStats.redis_failures,
+      avail_latency_avg_ms:    availStats.cache_latency_avg_ms,
+    },
   });
 });
 
@@ -33,6 +72,8 @@ router.get('/incidents', adminLimiter as any, requireAdmin as any, adminControll
 router.get('/engineering-tasks', adminLimiter as any, requireAdmin as any, adminController.getEngineeringTasks.bind(adminController));
 router.get('/intelligence-v2', adminLimiter as any, requireAdmin as any, adminController.getIntelligenceV2.bind(adminController));
 router.get('/production-incidents', adminLimiter as any, requireAdmin as any, adminController.getProductionIncidents.bind(adminController));
+// Phase 10.8.42 (T8): morning ops digest summary
+router.get('/last-digest', adminLimiter as any, requireAdmin as any, adminController.getLastDigest.bind(adminController));
 
 
 

@@ -10,17 +10,54 @@ const adminAuth_1 = require("../middleware/adminAuth");
 const rateLimiter_1 = require("../middleware/rateLimiter");
 const providers_1 = __importDefault(require("./providers"));
 const rates_1 = __importDefault(require("./rates"));
+// ── Phase 10.8.42 additions (T2/T3/T4) ──────────────────────────────────────
+const eventMetrics_1 = require("../services/eventMetrics");
+const userCache_1 = require("../cache/userCache");
+const smartAvailabilityMetrics_1 = require("../services/smartAvailabilityMetrics");
 const router = (0, express_1.Router)();
 // ─── P1-2 (PHASE_4C885): /api/admin/health must be BEFORE requireAuth ──────────
 // All other admin routes require a verified JWT, but the health probe is called
 // by monitoring infrastructure without credentials. Placing this route above the
 // router.use(requireAuth) guard makes it publicly accessible.
 router.get('/health', (_req, res) => {
-    res.status(200).json({
+    // T4 (PHASE 10.8.42 F1): use global.SYSTEM_MODE — set at boot, zero I/O cost.
+    // validateConnection() runs 5 sequential DB queries (500-2000ms); not suitable for polling.
+    const dbConnected = global.SYSTEM_MODE !== 'MODE_A';
+    const eventStats = eventMetrics_1.eventMetrics.snapshot(); // T2: event pipeline counters
+    const cacheStats = userCache_1.userCache.getStats(); // T3: user L1/L2 cache counters
+    const availStats = smartAvailabilityMetrics_1.smartAvailabilityMetrics.getSnapshot(); // T3: availability cache counters
+    res.status(dbConnected ? 200 : 503).json({
+        // Existing fields preserved (backward-compatible, additive only)
         success: true,
-        status: 'ok',
+        status: dbConnected ? 'ok' : 'degraded',
         uptime: process.uptime(),
         timestamp: new Date().toISOString(),
+        // T4: database connectivity via SYSTEM_MODE
+        database: {
+            connected: dbConnected,
+        },
+        // T2: universal event pipeline metrics
+        event_pipeline: {
+            events_received: eventStats.events_received,
+            events_written: eventStats.events_written,
+            events_failed: eventStats.events_failed,
+            queue_depth: eventStats.queue_depth,
+            retry_count: eventStats.retry_count,
+        },
+        // T3: in-process cache counters (all 11 fields — zero I/O)
+        cache: {
+            user_l1_hits: cacheStats.l1Hits,
+            user_l2_hits: cacheStats.l2Hits,
+            user_misses: cacheStats.misses,
+            user_invalidations: cacheStats.invalidations,
+            user_pubsub_events: cacheStats.pubSubEvents,
+            avail_l1_hits: availStats.l1_hits,
+            avail_l2_hits: availStats.l2_hits,
+            avail_provider_calls: availStats.provider_calls,
+            avail_singleflight_hits: availStats.singleflight_hits,
+            avail_redis_failures: availStats.redis_failures,
+            avail_latency_avg_ms: availStats.cache_latency_avg_ms,
+        },
     });
 });
 // PHASE_4C837 P0-003: All /api/admin/* routes require verified JWT before role check
@@ -34,6 +71,8 @@ router.get('/incidents', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, a
 router.get('/engineering-tasks', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getEngineeringTasks.bind(adminController_1.adminController));
 router.get('/intelligence-v2', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getIntelligenceV2.bind(adminController_1.adminController));
 router.get('/production-incidents', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getProductionIncidents.bind(adminController_1.adminController));
+// Phase 10.8.42 (T8): morning ops digest summary
+router.get('/last-digest', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getLastDigest.bind(adminController_1.adminController));
 // Payment & Revenue API
 router.get('/revenue', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getPaymentRevenue.bind(adminController_1.adminController));
 router.get('/subscriptions', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getPaymentSubscriptions.bind(adminController_1.adminController));

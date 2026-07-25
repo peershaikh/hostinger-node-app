@@ -324,8 +324,8 @@ class LiveTrackingService {
                         parseDelayString(s.arrival?.delay) || 0;
                     return strDelay || delayMins || 0;
                 })(),
-                is_current: s.is_current || false,
-                is_departed: s.is_departed || false,
+                is_current: s.is_current === true || (s.status && s.status.toString().toUpperCase() === 'CURRENT') || false,
+                is_departed: s.is_departed === true || s.has_departed === true || (s.status && (s.status.toString().toUpperCase() === 'DEPARTED' || s.status.toString().toUpperCase() === 'PASSED')) || false,
                 status: s.status || (s.is_departed ? 'DEPARTED' : 'UPCOMING'),
                 station_type: classifyStation(code, name, idx, raw.length),
                 platform: s.platform || s.platform_number || s.platform_no || s.platformNumber || null
@@ -759,7 +759,21 @@ class LiveTrackingService {
                 }
             }
             if (detectedIndex !== -1 && (currentIndex === -1 || currentCode === 'CSMT' || usedScheduleFallback)) {
-                currentIndex = detectedIndex;
+                let schedIdx = -1;
+                for (let j = detectedIndex; j >= 0; j--) {
+                    const cCode = liveTimeline[j].station_code?.toUpperCase().trim();
+                    if (cCode) {
+                        schedIdx = schedule.findIndex((s) => {
+                            const sCode = s.Station_Code || s.station_code;
+                            return sCode && sCode.toUpperCase() === cCode;
+                        });
+                        if (schedIdx !== -1)
+                            break;
+                    }
+                }
+                if (schedIdx !== -1) {
+                    currentIndex = schedIdx;
+                }
             }
             // ── API DATA SANITY CHECK ─────────────────────────────────────
             // Sometimes IRCTC returns the previous day's run (stuck at destination) or hasn't updated for today (stuck at source)
@@ -775,7 +789,7 @@ class LiveTrackingService {
                 currentIndex = timeBasedIdx;
             }
             if (currentIndex === -1) {
-                currentIndex = 0;
+                currentIndex = timeBasedIdx > -1 ? timeBasedIdx : 0;
             }
             // ── Build FULL timeline (never slice) ────────────────────────────────
             // Use the full schedule so the user can see all departed + upcoming stops.
