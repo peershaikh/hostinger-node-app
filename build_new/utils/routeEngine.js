@@ -42,6 +42,7 @@ exports.STATIONS = {
     BSB: { code: 'BSB', lat: 25.3176, lng: 82.9739 },
     PRYJ: { code: 'PRYJ', lat: 25.4358, lng: 81.8463 }, // Prayagraj Jn (A-tier) — same city as ALD, distinct code
     DDU: { code: 'DDU', lat: 25.4295, lng: 83.0225 }, // Pt. Deen Dayal Upadhyaya Jn (Mughalsarai)
+    AGC: { code: 'AGC', lat: 27.1591, lng: 78.0581 }, // Agra Cantt — NCR hub
     PNBE: { code: 'PNBE', lat: 25.5941, lng: 85.1376 },
     // East / East-coast
     HWH: { code: 'HWH', lat: 22.5839, lng: 88.3424 },
@@ -57,6 +58,7 @@ exports.STATIONS = {
     PURI: { code: 'PURI', lat: 19.8133, lng: 85.8315 },
     // Phase 2 Payload Injections
     UBL: { code: 'UBL', lat: 15.3647, lng: 75.1240 },
+    BGK: { code: 'BGK', lat: 16.1858, lng: 75.6966 }, // Bagalkot — North Karnataka origin
     GDG: { code: 'GDG', lat: 15.4297, lng: 75.6297 }, // Gadag — North Karnataka hub
     DWR: { code: 'DWR', lat: 15.4589, lng: 75.0070 }, // Dharwad — Karnataka (between SUR and UBL)
     SUR: { code: 'SUR', lat: 17.6869, lng: 75.9064 },
