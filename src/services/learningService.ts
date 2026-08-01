@@ -291,7 +291,7 @@ export class LearningService {
         .from('live_learning')
         .select('delay_mins')
         .eq('train_no', trainNo)
-        .gte('actual_arrival', since.toISOString())
+        .gte('created_at', since.toISOString())
         .not('delay_mins', 'is', null);
 
       if (error || !data || data.length < MIN_SAMPLE_SIZE) return null;
