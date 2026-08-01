@@ -19,9 +19,16 @@ export const authLimiter = rateLimit({
     max: parseEnvMax(process.env.RATE_LIMIT_AUTH_MAX, 20),
     standardHeaders: true, legacyHeaders: false,
     validate: false, // PHASE_8.8: Suppress express-rate-limit v8 validation warnings
+    keyGenerator: (req: any) => {
+        return (req.headers['cf-connecting-ip'] as string) ||
+               (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
+               req.ip ||
+               '127.0.0.1';
+    },
     message: { success: false, error: 'Too many authentication attempts, please try again later.' },
     handler: (req: any, res: any) => {
-        winstonLogger.warn(`[RATE_LIMIT] Auth limit exceeded for IP: ${req.ip}`);
+        const clientIp = (req.headers['cf-connecting-ip'] as string) || (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip;
+        winstonLogger.warn(`[RATE_LIMIT] Auth limit exceeded for IP: ${clientIp}`);
         res.status(429).json({ success: false, error: 'Too many authentication attempts, please try again later.' });
     }
 }) as any;
