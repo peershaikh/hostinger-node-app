@@ -184,7 +184,7 @@ export class EmailService {
     }
   }
 
-  async sendHealthReportEmail(toEmail: string | string[], subject: string, htmlContent: string): Promise<boolean> {
+  async sendHealthReportEmail(toEmail: string, subject: string, htmlContent: string): Promise<boolean> {
     try {
       const { error } = await resend.emails.send({
         from: `Trayago Monitor <${SENDER_EMAIL}>`,

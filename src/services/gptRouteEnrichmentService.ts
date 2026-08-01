@@ -8,7 +8,7 @@ const DATA_DIR = path.join(__dirname, '../../data');
 const MISSING_QUERIES_FILE = path.join(DATA_DIR, 'missing_queries.json');
 
 export class GptRouteEnrichmentService {
-  private readonly GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY || '';
+  private readonly GEMINI_KEY = process.env.GEMINI_API_KEY || '';
 
   public async enrichMissingQuery(queryId: string, source: string, destination: string): Promise<void> {
     if (!this.GEMINI_KEY) {

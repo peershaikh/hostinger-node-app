@@ -1011,6 +1011,20 @@ export class LiveTrackingService {
 
       cacheService.set(cacheKey, result, 60);
       winstonLogger.info(`[LIVE_SUCCESS] ${trainNo} "${trainName}" @ ${finalCurrentStation} | Delay:${delayMins}m | TL:${finalTimeline.length} stops | API:${usedApi}`);
+
+      // ── DELAY INTELLIGENCE: Fire-and-forget delay log ──────────────────────
+      // Silently log delay data to live_learning for historical analysis.
+      // Non-blocking — never affects response time or main flow.
+      if (usedApi !== 'DATABASE_SCHEDULE' && delayMins >= 0) {
+        const logStation = finalCurrentStation || finalTimeline[actualCurrentIndex]?.station_code || trainNo;
+        const logActualArr  = finalTimeline[actualCurrentIndex]?.arrival_time || '';
+        const logActualDep  = finalTimeline[actualCurrentIndex]?.departure_time || '';
+        try {
+          const { learningService } = require('./learningService');
+          learningService.logLiveTrain(trainNo, logStation, delayMins, 0, logActualArr, logActualDep, usedApi).catch(() => {});
+        } catch { /* silent */ }
+      }
+
       return result;
 
     } catch (err: any) {

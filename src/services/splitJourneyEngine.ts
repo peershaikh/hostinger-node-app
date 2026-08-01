@@ -1349,7 +1349,9 @@ export class SplitJourneyEngine {
             
             if (binaryArray) {
               // Use the train's specific date if available, otherwise fallback to the primary journey date
-              const trainDate = t.travelDate || t.departureDate || date;
+              // IMPORTANT: leg2 travelDate is correctly set to date+1 (or date+2) for overnight/long-haul
+              // trains — always use the leg-specific date, not the journey start date.
+              const trainDate = t.journeyDate || t.travelDate || t.departureDate || date;
               if (!isDayActive(binaryArray, trainDate)) {
                 winstonLogger.debug(`[TRAIN_REJECTED_NOT_RUNNING] ${num} does not run on ${trainDate}`);
                 return false;
@@ -1358,12 +1360,10 @@ export class SplitJourneyEngine {
               // Metadata missing — ALLOW train (safe default)
               winstonLogger.debug(`[TRAIN_ALLOWED_METADATA_MISSING] ${num} — no running day data, allowing by default`);
             }
-
-            // If departure date mismatch exists in object explicitly
-            if (t.travelDate && t.travelDate !== date && t.departureDate && t.departureDate !== date) {
-              winstonLogger.debug(`[TRAIN_REJECTED_DATE_MISMATCH] Date mismatch ${num}`);
-              return false;
-            }
+            // NOTE: Removed the old travelDate !== date rejection guard.
+            // That check incorrectly blocked all leg2 trains for overnight splits where
+            // leg2.travelDate = date+1 (correct behaviour). isDayActive above already
+            // validates the running schedule against the correct leg-specific date.
           } else {
             winstonLogger.debug(`[SAFE_VALIDATION_MODE] ${num} — relaxed mode, skipping running-day check`);
           }
@@ -2534,6 +2534,9 @@ export class SplitJourneyEngine {
     // —— PHASE 2: Parallel-fetch leg2 for all viable hubs across ALL dest station codes ——
     const leg2Cache = new Map<string, any[]>();
     const nextDate = this.incrementDate(date, 1);
+    // DATE+2 FIX: Long-haul trains (e.g. Mumbai→Kolkata 36h+) can arrive at the hub
+    // on day+2. Without fetching date+2 leg2 trains, these splits are never generated.
+    const nextDate2 = this.incrementDate(date, 2);
 
     // Build all leg2 fetch tasks
     const leg2KeysToFetch: Array<{ hCode: string; dC: string; dt: string; key: string }> = [];
@@ -2541,6 +2544,7 @@ export class SplitJourneyEngine {
       for (const dC of dCodes) { // Fetch for all resolved destination codes
         const sameDayKey = `${hCode}|${dC}|${date}`;
         const nextDayKey = `${hCode}|${dC}|${nextDate}`;
+        const nextDate2Key = `${hCode}|${dC}|${nextDate2}`;
 
         if (!leg2Cache.has(sameDayKey)) {
           leg2Cache.set(sameDayKey, []); // placeholder to prevent duplicates
@@ -2550,6 +2554,11 @@ export class SplitJourneyEngine {
         if (!leg2Cache.has(nextDayKey)) {
           leg2Cache.set(nextDayKey, []); // placeholder
           leg2KeysToFetch.push({ hCode, dC, dt: nextDate, key: nextDayKey });
+        }
+
+        if (!leg2Cache.has(nextDate2Key)) {
+          leg2Cache.set(nextDate2Key, []); // placeholder for long-haul routes
+          leg2KeysToFetch.push({ hCode, dC, dt: nextDate2, key: nextDate2Key });
         }
       }
     }
@@ -2666,10 +2675,12 @@ export class SplitJourneyEngine {
 
         const sameDayLegs = leg2Cache.get(`${hCode}|${dC}|${date}`) || [];
         const nextDayLegs = leg2Cache.get(`${hCode}|${dC}|${this.incrementDate(date, 1)}`) || [];
-        totalLeg2 += sameDayLegs.length + nextDayLegs.length;
+        const nextDay2Legs = leg2Cache.get(`${hCode}|${dC}|${this.incrementDate(date, 2)}`) || [];
+        totalLeg2 += sameDayLegs.length + nextDayLegs.length + nextDay2Legs.length;
         
         validLeg2Pools.push({ leg2Raw: sameDayLegs, leg2Date: date, dC });
         validLeg2Pools.push({ leg2Raw: nextDayLegs, leg2Date: this.incrementDate(date, 1), dC });
+        validLeg2Pools.push({ leg2Raw: nextDay2Legs, leg2Date: this.incrementDate(date, 2), dC });
       }
       
 
@@ -2972,8 +2983,36 @@ export class SplitJourneyEngine {
       }
     }
 
+    // —— DELAY INTELLIGENCE: Pre-fetch delay stats for unique leg1 trains ———————
+    // Parallel async fetch — same pattern as hubModifiers above.
+    // Returns null if < 5 historical observations (falls back to scheduled buffer).
+    const leg1DelayStats = new Map<string, { avgDelayMins: number; onTimePct: number } | null>();
+    for (const combo of filteredCombinations) {
+      const trainNo = String(combo.leg1?.trainNo || '');
+      if (trainNo && !leg1DelayStats.has(trainNo)) {
+        const stats = await learningService.getTrainDelayStats(trainNo).catch(() => null);
+        leg1DelayStats.set(trainNo, stats);
+      }
+    }
+
     const withScore = filteredCombinations.map(c => {
       const modifier = hubModifiers.get((c as any).hub || '') || 0;
+
+      // Delay-aware effective buffer: if leg1 is historically late, real buffer is smaller
+      const leg1TrainNo = String(c.leg1?.trainNo || '');
+      const delayStats = leg1DelayStats.get(leg1TrainNo) || null;
+      const avgLeg1Delay = delayStats?.avgDelayMins ?? 0;
+      const effectiveBuffer = Math.max(0, (c.bufferMinutes ?? 0) - avgLeg1Delay);
+      // Inject onto combo so rankingService.calculateScore can use it
+      (c as any).effectiveBufferMins = effectiveBuffer;
+      if (delayStats) {
+        (c as any).punctualityScore = delayStats.onTimePct;
+        if (delayStats.onTimePct >= 80) (c as any).delayRisk = 'Low';
+        else if (delayStats.onTimePct >= 50) (c as any).delayRisk = 'Medium';
+        else (c as any).delayRisk = 'High';
+        winstonLogger.debug(`[DELAY_INTEL] ${leg1TrainNo}: avgDelay=${avgLeg1Delay}m scheduled=${c.bufferMinutes}m effective=${effectiveBuffer}m`);
+      }
+
       let waitPenalty = ((c.bufferMinutes ?? 0) / 60) * 4;
       if ((c.bufferMinutes ?? 0) > 480) { // Penalty for > 8h wait
         waitPenalty += (((c.bufferMinutes ?? 0) - 480) / 60) * 10;
@@ -3106,7 +3145,12 @@ export class SplitJourneyEngine {
            
            const leg2From = (c as any).leg2.fromCode || (c as any).leg2.fromStationCode || (c as any).leg2.from || (c as any).hub;
            const leg2To = (c as any).leg2.toCode || (c as any).leg2.toStationCode || (c as any).leg2.to || dCode;
-           const leg2Date = (c as any).leg2Date || (c as any).leg2.travelDate || date;
+           // Use the pre-computed date on the leg object (set during pairing from adjustedDep2Ms)
+           // Leg2 for overnight splits will have journeyDate/travelDate = date+1 or date+2 — use it.
+           const leg2Date = (c as any).leg2?.journeyDate
+             || (c as any).leg2?.travelDate
+             || (c as any).leg2Date
+             || date;
 
            const [l1Live, l2Live] = await Promise.all([
                getLiveTrains(leg1From, leg1To, leg1Date),
