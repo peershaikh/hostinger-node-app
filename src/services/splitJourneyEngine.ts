@@ -2841,11 +2841,23 @@ export class SplitJourneyEngine {
             const riskLabel = risk_level === 'LOW' ? 'Safe' : risk_level === 'MEDIUM' ? 'Moderate' : 'Long';
             const ai_reason = this.buildAiExplanation(l1, l2, sName, hName, dName, waitHours, riskLabel);
 
-            const clonedL1 = { ...l1, journeyDate: date, travelDate: date };
+            const leg1ArrDateStr = new Date(leg1ArrivalMs).toISOString().split('T')[0];
+            const leg2DepDateStr = new Date(adjustedDep2Ms).toISOString().split('T')[0];
+            const leg2ArrDateStr = new Date(adjustedDep2Ms + leg2Duration * 60000).toISOString().split('T')[0];
+
+            const clonedL1 = {
+              ...l1,
+              journeyDate: date,
+              travelDate: date,
+              departureDate: date,
+              arrivalDate: leg1ArrDateStr
+            };
             const clonedL2 = {
               ...l2,
-              journeyDate: new Date(adjustedDep2Ms).toISOString().split('T')[0],
-              travelDate: new Date(adjustedDep2Ms).toISOString().split('T')[0]
+              journeyDate: leg2DepDateStr,
+              travelDate: leg2DepDateStr,
+              departureDate: leg2DepDateStr,
+              arrivalDate: leg2ArrDateStr
             };
 
             const combo: SplitJourney = {
@@ -3459,12 +3471,35 @@ export class SplitJourneyEngine {
       validatedResults.push({ split, leg1, leg2 });
     }
 
-    const allNormalizedRaw = validatedResults.map(r => ({
-      ...r.split,
-      legs: [r.leg1, r.leg2],
-      leg1: r.leg1,
-      leg2: r.leg2
-    }));
+    const allNormalizedRaw = validatedResults.map(r => {
+      const l1Date = r.leg1?.travelDate || r.leg1?.journeyDate || r.leg1?.departureDate || r.split?.leg1?.travelDate || date;
+      const l2Date = r.leg2?.travelDate || r.leg2?.journeyDate || r.leg2?.departureDate || r.split?.leg2?.travelDate || date;
+
+      const leg1 = {
+        ...r.leg1,
+        travelDate: l1Date,
+        journeyDate: l1Date,
+        departureDate: l1Date,
+        arrivalDate: r.leg1?.arrivalDate || r.split?.leg1?.arrivalDate || l1Date
+      };
+      const leg2 = {
+        ...r.leg2,
+        travelDate: l2Date,
+        journeyDate: l2Date,
+        departureDate: l2Date,
+        arrivalDate: r.leg2?.arrivalDate || r.split?.leg2?.arrivalDate || l2Date
+      };
+
+      return {
+        ...r.split,
+        leg1,
+        leg2,
+        legs: [leg1, leg2],
+        travelDate: date,
+        leg1Date: l1Date,
+        leg2Date: l2Date
+      };
+    });
 
     let validIndex = 0;
     const normalizedSplits = allNormalizedRaw
@@ -4458,13 +4493,17 @@ export class SplitJourneyEngine {
       const leg1 = s.leg1 ? {
         ...s.leg1,
         travelDate: shiftDate(s.leg1.travelDate),
-        journeyDate: shiftDate(s.leg1.journeyDate)
+        journeyDate: shiftDate(s.leg1.journeyDate || s.leg1.travelDate),
+        departureDate: shiftDate(s.leg1.departureDate || s.leg1.travelDate),
+        arrivalDate: shiftDate(s.leg1.arrivalDate || s.leg1.travelDate)
       } : s.leg1;
 
       const leg2 = s.leg2 ? {
         ...s.leg2,
         travelDate: shiftDate(s.leg2.travelDate),
-        journeyDate: shiftDate(s.leg2.journeyDate)
+        journeyDate: shiftDate(s.leg2.journeyDate || s.leg2.travelDate),
+        departureDate: shiftDate(s.leg2.departureDate || s.leg2.travelDate),
+        arrivalDate: shiftDate(s.leg2.arrivalDate || s.leg2.travelDate)
       } : s.leg2;
 
       const legs = s.legs ? s.legs.map((l: any, idx: number) => idx === 0 ? leg1 : leg2) : undefined;
@@ -4472,8 +4511,8 @@ export class SplitJourneyEngine {
       return {
         ...s,
         travelDate: shiftDate(s.travelDate),
-        leg1Date: shiftDate(s.leg1Date),
-        leg2Date: shiftDate(s.leg2Date),
+        leg1Date: shiftDate(s.leg1Date || leg1?.travelDate),
+        leg2Date: shiftDate(s.leg2Date || leg2?.travelDate),
         leg1,
         leg2,
         legs
@@ -4680,11 +4719,23 @@ export class SplitJourneyEngine {
           const riskLabel = waitMins >= 120 ? 'Safe' : 'Moderate';
           const ai_reason = this.buildAiExplanation(l1, l2, sourceName, hubName, destName, waitHours, riskLabel);
 
-          const clonedL1 = { ...l1, travelDate: date, journeyDate: date };
+          const leg1ArrDateStr = new Date(leg1ArrivalMs).toISOString().split('T')[0];
+          const leg2DepDateStr = new Date(adjustedDep2Ms).toISOString().split('T')[0];
+          const leg2ArrDateStr = new Date(adjustedDep2Ms + leg2Duration * 60000).toISOString().split('T')[0];
+
+          const clonedL1 = {
+            ...l1,
+            travelDate: date,
+            journeyDate: date,
+            departureDate: date,
+            arrivalDate: leg1ArrDateStr
+          };
           const clonedL2 = {
             ...l2,
-            travelDate: new Date(adjustedDep2Ms).toISOString().split('T')[0],
-            journeyDate: new Date(adjustedDep2Ms).toISOString().split('T')[0]
+            travelDate: leg2DepDateStr,
+            journeyDate: leg2DepDateStr,
+            departureDate: leg2DepDateStr,
+            arrivalDate: leg2ArrDateStr
           };
 
           const combo: SplitJourney = {
