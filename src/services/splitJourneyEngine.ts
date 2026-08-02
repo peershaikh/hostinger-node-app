@@ -1451,18 +1451,23 @@ export class SplitJourneyEngine {
       const regularSplits = finalSanitized.filter((s: any) => !s.isSameTrain && s.rescueType !== 'SAME_TRAIN_SEGMENT');
       const sameTrainSplits = finalSanitized.filter((s: any) => s.isSameTrain || s.rescueType === 'SAME_TRAIN_SEGMENT');
 
-      // ── DEDUP regular splits: same leg2 train → keep only best wait_time
-      const leg2BestMap = new Map<string, any>();
+      // ── DEDUP regular splits: multi-field combo key (hub + leg1 + leg2 + dep)
+      const regularBestMap = new Map<string, any>();
       for (const s of regularSplits) {
-        const leg2No = s.legs?.[1]?.trainNo;
-        if (!leg2No) { leg2BestMap.set(`no_leg2_${s.hub}`, s); continue; }
-        const existing = leg2BestMap.get(leg2No);
+        const l1No = s.leg1?.trainNo || s.legs?.[0]?.trainNo || '';
+        const l2No = s.leg2?.trainNo || s.legs?.[1]?.trainNo || '';
+        const l1Dep = s.leg1?.departure || s.legs?.[0]?.departure || '';
+        const l2Dep = s.leg2?.departure || s.legs?.[1]?.departure || '';
+        const hub = s.hub || (s as any).via || '';
+        const comboKey = `${hub}_${l1No}_${l1Dep}_${l2No}_${l2Dep}`;
+
+        const existing = regularBestMap.get(comboKey);
         const sWait = s.wait_time != null ? s.wait_time : (s.bufferMinutes != null ? s.bufferMinutes : 9999);
         const eWait = existing ? (existing.wait_time != null ? existing.wait_time : (existing.bufferMinutes != null ? existing.bufferMinutes : 9999)) : Infinity;
-        if (!existing || sWait < eWait) leg2BestMap.set(leg2No, s);
+        if (!existing || sWait < eWait) regularBestMap.set(comboKey, s);
       }
-      const dedupedRegular = [...leg2BestMap.values()];
-      winstonLogger.info(`[DEDUP_LEG2] regular: ${regularSplits.length}→${dedupedRegular.length}`);
+      const dedupedRegular = [...regularBestMap.values()];
+      winstonLogger.info(`[DEDUP_REGULAR] regular: ${regularSplits.length}→${dedupedRegular.length}`);
 
       // ── DEDUP same-train splits: same (leg1+leg2) trainNo combo → keep best hub
       // Fixes Delhi→GHY showing 12424 Rajdhani twice via NJP and CNB
@@ -1481,9 +1486,16 @@ export class SplitJourneyEngine {
 
       // Return up to 6 regular + 2 same-train so frontend pagination has real variety
       const excludeVias: string[] = (options as any)?.excludeVia || [];
-      const filteredRegular = excludeVias.length > 0
+      let filteredRegular = excludeVias.length > 0
         ? dedupedRegular.filter((s: any) => !excludeVias.includes(s.hub))
         : dedupedRegular;
+
+      // FAIL-SAFE: If excludeVias filtered out ALL available routes because no other hub exists for this corridor,
+      // relax the hub exclusion so users still get valid alternative split routes.
+      if (filteredRegular.length === 0 && dedupedRegular.length > 0) {
+        winstonLogger.info(`[HUB_FILTER_RELAXED] excludeVias (${excludeVias.join(',')}) removed all ${dedupedRegular.length} routes. Falling back to all regular routes.`);
+        filteredRegular = dedupedRegular;
+      }
 
       // ── PER-HUB CAP: max 2 results per hub for variety (e.g. KOTA showing 4x → cap to 2)
       // Sort by wait_time ascending first so best connection per hub is always included
@@ -1514,9 +1526,52 @@ export class SplitJourneyEngine {
       const classType = (options as any)?.classType || 'SL';
       const gatedSplits = applyPremiumGate(combinedSplits, isPremiumUser, classType, source, destination);
 
-      result.split = gatedSplits;
-      result.splits = gatedSplits;
-      result.smart_routes = gatedSplits;
+      // GUARANTEE: Ensure EVERY leg on EVERY split contains all 8 required fields:
+      // from, to, fromCode, toCode, travelDate, journeyDate, departureDate, arrivalDate
+      const fullySanitizedSplits = gatedSplits.map((s: any) => {
+        const hub = s.hub || s.via || '';
+        const rawLegs = s.legs || s.trains || s.segments || [];
+        const sanitizedLegs = rawLegs.map((leg: any, idx: number) => {
+          const defaultFrom = idx === 0 ? (s.source || source) : hub;
+          const defaultTo = idx === 0 ? hub : (s.destination || destination);
+          const defaultDate = idx === 0 ? (s.leg1?.travelDate || date) : (s.leg2?.travelDate || s.leg1?.travelDate || date);
+
+          const fromVal = leg.from || leg.fromCode || leg.source || defaultFrom;
+          const toVal = leg.to || leg.toCode || leg.destination || defaultTo;
+          const travelDateVal = leg.travelDate || leg.journeyDate || leg.departureDate || defaultDate;
+          const journeyDateVal = leg.journeyDate || leg.travelDate || leg.departureDate || defaultDate;
+          const departureDateVal = leg.departureDate || leg.travelDate || leg.journeyDate || defaultDate;
+          const arrivalDateVal = leg.arrivalDate || leg.travelDate || leg.journeyDate || defaultDate;
+
+          return {
+            ...leg,
+            from: fromVal,
+            to: toVal,
+            fromCode: fromVal,
+            toCode: toVal,
+            travelDate: travelDateVal,
+            journeyDate: journeyDateVal,
+            departureDate: departureDateVal,
+            arrivalDate: arrivalDateVal
+          };
+        });
+
+        const leg1Sanitized = sanitizedLegs[0] || s.leg1;
+        const leg2Sanitized = sanitizedLegs[1] || s.leg2 || leg1Sanitized;
+
+        return {
+          ...s,
+          leg1: leg1Sanitized,
+          leg2: leg2Sanitized,
+          legs: sanitizedLegs,
+          trains: sanitizedLegs,
+          segments: sanitizedLegs
+        };
+      });
+
+      result.split = fullySanitizedSplits;
+      result.splits = fullySanitizedSplits;
+      result.smart_routes = fullySanitizedSplits;
       (result as any).hasMoreSplits = regularSplits.length > 6 || sameTrainSplits.length > 2;
       (result as any).totalFound = totalFound;
 
