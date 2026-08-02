@@ -27,6 +27,10 @@ const PRODUCTION_ORIGINS: ReadonlySet<string> = new Set([
   // Secondary .online domain
   'https://trayago.online',
   'https://www.trayago.online',
+  // Mobile Android Capacitor WebView origins
+  'capacitor://localhost',
+  'http://localhost',
+  'https://localhost',
 ]);
 
 /**
