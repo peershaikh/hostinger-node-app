@@ -1536,8 +1536,8 @@ export class SplitJourneyEngine {
           const defaultTo = idx === 0 ? hub : (s.destination || destination);
           const defaultDate = idx === 0 ? (s.leg1?.travelDate || date) : (s.leg2?.travelDate || s.leg1?.travelDate || date);
 
-          const fromVal = leg.from || leg.fromCode || leg.source || defaultFrom;
-          const toVal = leg.to || leg.toCode || leg.destination || defaultTo;
+          const fromVal = leg.fromCode || leg.from || leg.source || defaultFrom;
+          const toVal = leg.toCode || leg.to || leg.destination || defaultTo;
           const travelDateVal = leg.travelDate || leg.journeyDate || leg.departureDate || defaultDate;
           const journeyDateVal = leg.journeyDate || leg.travelDate || leg.departureDate || defaultDate;
           const departureDateVal = leg.departureDate || leg.travelDate || leg.journeyDate || defaultDate;
