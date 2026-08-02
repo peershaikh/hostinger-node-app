@@ -3411,38 +3411,38 @@ class SplitJourneyEngine {
                     .eq('Train_No', num)
                     .order('SN', { ascending: true });
                 if (!dbErr && dbStops && dbStops.length > 0) {
-                    stops = dbStops;
-                    const { data: meta } = await supabase
-                        .from('trains')
-                        .select('running_days')
-                        .eq('number', num)
-                        .maybeSingle();
-                    if (meta?.running_days) {
-                        runningDaysPattern = meta.running_days;
+                    // Only trust DB stops if they actually contain a station from the boarding city cluster.
+                    // If not, the DB schedule is for a different segment of the train (incomplete data).
+                    const boardingInDb = cityCodes.some(c => dbStops.some((s) => (s.Station_Code || '').toUpperCase().trim() === c.toUpperCase().trim()));
+                    if (boardingInDb) {
+                        stops = dbStops;
+                        const { data: meta } = await supabase
+                            .from('trains')
+                            .select('running_days')
+                            .eq('number', num)
+                            .maybeSingle();
+                        if (meta?.running_days) {
+                            runningDaysPattern = meta.running_days;
+                        }
+                    }
+                    else {
+                        logger_1.winstonLogger.warn(`[SCHED_INCOMPLETE] Train ${num}: DB has ${dbStops.length} stops but boarding cluster not found — falling through to live API.`);
                     }
                 }
-                else {
+                if (stops.length === 0) {
                     // Live API check
                     logger_1.winstonLogger.info(`[getTrainInfo_LIVE] Fetching route schedule for train ${num}`);
                     const liveInfo = await irctcService_1.irctcService.getTrainInfo(num);
                     if (liveInfo) {
                         runningDaysPattern = liveInfo.trainInfo?.running_days || liveInfo.running_days || '1111111';
                         const route = liveInfo.route || liveInfo.station_list || liveInfo.stops || liveInfo.stations || liveInfo.trainRoute || liveInfo.stationList || [];
-                        // DIAG: log raw first stop object to find actual field names from API
-                        if (route.length > 0) {
-                            console.log(`[SCHED_DIAG] Train ${num} raw route[0] keys=${Object.keys(route[0]).join(',')} val=${JSON.stringify(route[0])}`);
-                        }
-                        else {
-                            console.log(`[SCHED_DIAG] Train ${num} liveInfo top-level keys=${Object.keys(liveInfo).join(',')}`);
-                        }
                         stops = route.map((s, idx) => ({
                             Station_Code: (s.stationCode || s.stnCode || s.station_code || s.Station_Code || s.code || '').toUpperCase().trim(),
                             SN: s.sn || s.SN || s.sequence || (idx + 1),
                             Station_Name: s.stationName || s.stnName || s.station_name || s.Station_Name || s.name || ''
                         }));
-                        console.log(`[SCHED_DIAG] Train ${num} stops extracted: count=${stops.length} first=${JSON.stringify(stops[0])} last=${JSON.stringify(stops[stops.length - 1])}`);
-                        // Save to DB so we don't hit the API again
-                        if (stops.length > 0) {
+                        // Only save to DB when we have valid station codes
+                        if (stops.length > 0 && stops.some(s => s.Station_Code.length > 0)) {
                             dbService_1.dbService.upsertTrainData({
                                 trainNo: num,
                                 name: liveInfo.trainInfo?.train_name || liveInfo.trainName || liveInfo.name,
@@ -3456,7 +3456,7 @@ class SplitJourneyEngine {
                             }).catch(() => { });
                         }
                     }
-                }
+                } // end if (stops.length === 0)
                 // Cache the resolved schedule if stops found
                 if (stops.length > 0) {
                     cacheService_1.cacheService.set(scheduleCacheKey, { stops, runningDaysPattern }, 7200);
