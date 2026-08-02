@@ -3497,6 +3497,12 @@ export class SplitJourneyEngine {
 
     const validatedResults: Array<{ split: any; leg1: any; leg2: any }> = [];
 
+    // Resolve full city station clusters for terminal correction
+    const rawExpandedSCodes = await this.resolveCityStations(sCode);
+    const rawExpandedDCodes = await this.resolveCityStations(dCode);
+    const expandedSCodes = Array.from(new Set([...(sCodes || []), ...(rawExpandedSCodes || [])]));
+    const expandedDCodes = Array.from(new Set([...(dCodes || []), ...(rawExpandedDCodes || [])]));
+
     for (const split of splitsToNormalize) {
       let leg1 = split.leg1 ? this.normalizeTrain(split.leg1) : split.leg1;
       let leg2 = split.leg2 ? this.normalizeTrain(split.leg2) : split.leg2;
@@ -3507,7 +3513,7 @@ export class SplitJourneyEngine {
         continue;
       }
 
-      const v1Res = await this.validateLegAndCorrectAsync(leg1, sCodes, 'leg1', date);
+      const v1Res = await this.validateLegAndCorrectAsync(leg1, expandedSCodes, 'leg1', date);
       if (!v1Res.isValid) {
         console.log(`[REAL_AUDIT] VALIDATE_REJECT_ASYNC_LEG1 | Hub: ${split.hub} | Train: ${leg1?.trainNo} | Reason: ${v1Res.reason}`);
         continue;
@@ -3515,7 +3521,7 @@ export class SplitJourneyEngine {
       leg1 = v1Res.correctedLeg;
 
       const leg2Date = leg2.travelDate || leg2.journeyDate || date;
-      const v2Res = await this.validateLegAndCorrectAsync(leg2, dCodes, 'leg2', leg2Date);
+      const v2Res = await this.validateLegAndCorrectAsync(leg2, expandedDCodes, 'leg2', leg2Date);
       if (!v2Res.isValid) {
         console.log(`[REAL_AUDIT] VALIDATE_REJECT_ASYNC_LEG2 | Hub: ${split.hub} | Train: ${leg2?.trainNo} | Reason: ${v2Res.reason}`);
         continue;
