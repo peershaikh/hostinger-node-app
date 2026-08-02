@@ -313,16 +313,28 @@ class LiveTrackingService {
                 station_code: code || '--',
                 arrival_time: this.extractTimeString(s.arrival_time || s.arrivalTime || s.arrival || s.Arrival_time),
                 departure_time: this.extractTimeString(s.departure_time || s.departureTime || s.departure || s.Departure_Time),
-                // Resolve delay — numeric fields first, then trackTrain() string sub-objects
+                // Resolve delay — Priority 1: Timestamps, Priority 2: Top-level GPS delay
                 delay_minutes: (() => {
-                    const numericDelay = s.delay_minutes ?? s.delay_in_mins ??
-                        (typeof s.delay === 'number' ? s.delay : undefined);
-                    if (numericDelay !== undefined && numericDelay !== null)
-                        return numericDelay;
-                    // trackTrain shape: s.departure.delay and s.arrival.delay are strings
-                    const strDelay = parseDelayString(s.departure?.delay) ||
-                        parseDelayString(s.arrival?.delay) || 0;
-                    return strDelay || delayMins || 0;
+                    const sched = this.extractTimeString(s.arrival_time || s.arrivalTime || s.arrival?.scheduled || s.departure?.scheduled);
+                    const act = this.extractTimeString(s.arrival?.actual || s.departure?.actual || s.actual_arrival || s.actual_departure);
+                    if (sched && act && sched !== '--:--' && act !== '--:--' && sched !== 'SRC' && act !== 'DSTN') {
+                        const parseHHMM = (t) => {
+                            const match = t.match(/(\d{1,2}):(\d{2})/);
+                            if (!match)
+                                return null;
+                            return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+                        };
+                        const sM = parseHHMM(sched);
+                        const aM = parseHHMM(act);
+                        if (sM !== null && aM !== null) {
+                            let diff = aM - sM;
+                            if (diff < -720)
+                                diff += 1440;
+                            return Math.max(0, diff);
+                        }
+                    }
+                    // Priority 2: Fallback to real-time top-level GPS delay
+                    return delayMins || 0;
                 })(),
                 is_current: s.is_current === true || (s.status && s.status.toString().toUpperCase() === 'CURRENT') || false,
                 is_departed: s.is_departed === true || s.has_departed === true || (s.status && (s.status.toString().toUpperCase() === 'DEPARTED' || s.status.toString().toUpperCase() === 'PASSED')) || false,
@@ -879,6 +891,19 @@ class LiveTrackingService {
             };
             cacheService_1.cacheService.set(cacheKey, result, 60);
             logger_1.winstonLogger.info(`[LIVE_SUCCESS] ${trainNo} "${trainName}" @ ${finalCurrentStation} | Delay:${delayMins}m | TL:${finalTimeline.length} stops | API:${usedApi}`);
+            // ── DELAY INTELLIGENCE: Fire-and-forget delay log ──────────────────────
+            // Silently log delay data to live_learning for historical analysis.
+            // Non-blocking — never affects response time or main flow.
+            if (usedApi !== 'DATABASE_SCHEDULE' && delayMins >= 0) {
+                const logStation = finalCurrentStation || finalTimeline[actualCurrentIndex]?.station_code || trainNo;
+                const logActualArr = finalTimeline[actualCurrentIndex]?.arrival_time || '';
+                const logActualDep = finalTimeline[actualCurrentIndex]?.departure_time || '';
+                try {
+                    const { learningService } = require('./learningService');
+                    learningService.logLiveTrain(trainNo, logStation, delayMins, 0, logActualArr, logActualDep, usedApi).catch(() => { });
+                }
+                catch { /* silent */ }
+            }
             return result;
         }
         catch (err) {

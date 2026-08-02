@@ -13,7 +13,7 @@ const DATA_DIR = path_1.default.join(__dirname, '../../data');
 const MISSING_QUERIES_FILE = path_1.default.join(DATA_DIR, 'missing_queries.json');
 class GptRouteEnrichmentService {
     constructor() {
-        this.GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY || '';
+        this.GEMINI_KEY = process.env.GEMINI_API_KEY || '';
     }
     async enrichMissingQuery(queryId, source, destination) {
         if (!this.GEMINI_KEY) {

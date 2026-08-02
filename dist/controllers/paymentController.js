@@ -27,8 +27,8 @@ class PaymentController {
                 const PLAN_MAPPING = {
                     safar_pro_30m: { amount: 900, duration_days: 0.0208 },
                     safar_pro: { amount: 14900, duration_days: 30 },
-                    safar_pro_7d: { amount: 1900, duration_days: 1 },
-                    safar_pro_30d: { amount: 4900, duration_days: 30 },
+                    safar_pro_7d: { amount: 4900, duration_days: 7 },
+                    safar_pro_30d: { amount: 14900, duration_days: 30 },
                     safar_pro_90d: { amount: 39900, duration_days: 90 }
                 };
                 const planInfo = PLAN_MAPPING[planType];

@@ -31,6 +31,10 @@ const PRODUCTION_ORIGINS = new Set([
     // Secondary .online domain
     'https://trayago.online',
     'https://www.trayago.online',
+    // Mobile Android Capacitor WebView origins
+    'capacitor://localhost',
+    'http://localhost',
+    'https://localhost',
 ]);
 /**
  * Returns true when the origin is on the production whitelist.

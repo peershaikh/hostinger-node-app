@@ -22,9 +22,16 @@ exports.authLimiter = (0, express_rate_limit_1.default)({
     max: parseEnvMax(process.env.RATE_LIMIT_AUTH_MAX, 20),
     standardHeaders: true, legacyHeaders: false,
     validate: false, // PHASE_8.8: Suppress express-rate-limit v8 validation warnings
+    keyGenerator: (req) => {
+        return req.headers['cf-connecting-ip'] ||
+            req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+            req.ip ||
+            '127.0.0.1';
+    },
     message: { success: false, error: 'Too many authentication attempts, please try again later.' },
     handler: (req, res) => {
-        logger_1.winstonLogger.warn(`[RATE_LIMIT] Auth limit exceeded for IP: ${req.ip}`);
+        const clientIp = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
+        logger_1.winstonLogger.warn(`[RATE_LIMIT] Auth limit exceeded for IP: ${clientIp}`);
         res.status(429).json({ success: false, error: 'Too many authentication attempts, please try again later.' });
     }
 });

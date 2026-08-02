@@ -1170,7 +1170,9 @@ class SplitJourneyEngine {
                     const binaryArray = (0, dayUtils_1.normalizeRunningDays)(rDays);
                     if (binaryArray) {
                         // Use the train's specific date if available, otherwise fallback to the primary journey date
-                        const trainDate = t.travelDate || t.departureDate || date;
+                        // IMPORTANT: leg2 travelDate is correctly set to date+1 (or date+2) for overnight/long-haul
+                        // trains — always use the leg-specific date, not the journey start date.
+                        const trainDate = t.journeyDate || t.travelDate || t.departureDate || date;
                         if (!(0, dayUtils_1.isDayActive)(binaryArray, trainDate)) {
                             logger_1.winstonLogger.debug(`[TRAIN_REJECTED_NOT_RUNNING] ${num} does not run on ${trainDate}`);
                             return false;
@@ -1180,11 +1182,10 @@ class SplitJourneyEngine {
                         // Metadata missing — ALLOW train (safe default)
                         logger_1.winstonLogger.debug(`[TRAIN_ALLOWED_METADATA_MISSING] ${num} — no running day data, allowing by default`);
                     }
-                    // If departure date mismatch exists in object explicitly
-                    if (t.travelDate && t.travelDate !== date && t.departureDate && t.departureDate !== date) {
-                        logger_1.winstonLogger.debug(`[TRAIN_REJECTED_DATE_MISMATCH] Date mismatch ${num}`);
-                        return false;
-                    }
+                    // NOTE: Removed the old travelDate !== date rejection guard.
+                    // That check incorrectly blocked all leg2 trains for overnight splits where
+                    // leg2.travelDate = date+1 (correct behaviour). isDayActive above already
+                    // validates the running schedule against the correct leg-specific date.
                 }
                 else {
                     logger_1.winstonLogger.debug(`[SAFE_VALIDATION_MODE] ${num} — relaxed mode, skipping running-day check`);
@@ -1262,22 +1263,23 @@ class SplitJourneyEngine {
             const totalFound = finalSanitized.length;
             const regularSplits = finalSanitized.filter((s) => !s.isSameTrain && s.rescueType !== 'SAME_TRAIN_SEGMENT');
             const sameTrainSplits = finalSanitized.filter((s) => s.isSameTrain || s.rescueType === 'SAME_TRAIN_SEGMENT');
-            // ── DEDUP regular splits: same leg2 train → keep only best wait_time
-            const leg2BestMap = new Map();
+            // ── DEDUP regular splits: multi-field combo key (hub + leg1 + leg2 + dep)
+            const regularBestMap = new Map();
             for (const s of regularSplits) {
-                const leg2No = s.legs?.[1]?.trainNo;
-                if (!leg2No) {
-                    leg2BestMap.set(`no_leg2_${s.hub}`, s);
-                    continue;
-                }
-                const existing = leg2BestMap.get(leg2No);
+                const l1No = s.leg1?.trainNo || s.legs?.[0]?.trainNo || '';
+                const l2No = s.leg2?.trainNo || s.legs?.[1]?.trainNo || '';
+                const l1Dep = s.leg1?.departure || s.legs?.[0]?.departure || '';
+                const l2Dep = s.leg2?.departure || s.legs?.[1]?.departure || '';
+                const hub = s.hub || s.via || '';
+                const comboKey = `${hub}_${l1No}_${l1Dep}_${l2No}_${l2Dep}`;
+                const existing = regularBestMap.get(comboKey);
                 const sWait = s.wait_time != null ? s.wait_time : (s.bufferMinutes != null ? s.bufferMinutes : 9999);
                 const eWait = existing ? (existing.wait_time != null ? existing.wait_time : (existing.bufferMinutes != null ? existing.bufferMinutes : 9999)) : Infinity;
                 if (!existing || sWait < eWait)
-                    leg2BestMap.set(leg2No, s);
+                    regularBestMap.set(comboKey, s);
             }
-            const dedupedRegular = [...leg2BestMap.values()];
-            logger_1.winstonLogger.info(`[DEDUP_LEG2] regular: ${regularSplits.length}→${dedupedRegular.length}`);
+            const dedupedRegular = [...regularBestMap.values()];
+            logger_1.winstonLogger.info(`[DEDUP_REGULAR] regular: ${regularSplits.length}→${dedupedRegular.length}`);
             // ── DEDUP same-train splits: same (leg1+leg2) trainNo combo → keep best hub
             // Fixes Delhi→GHY showing 12424 Rajdhani twice via NJP and CNB
             const sameTrainBestMap = new Map();
@@ -1295,9 +1297,15 @@ class SplitJourneyEngine {
             logger_1.winstonLogger.info(`[DEDUP_SAME_TRAIN] sameTrain: ${sameTrainSplits.length}→${dedupedSameTrain.length}`);
             // Return up to 6 regular + 2 same-train so frontend pagination has real variety
             const excludeVias = options?.excludeVia || [];
-            const filteredRegular = excludeVias.length > 0
+            let filteredRegular = excludeVias.length > 0
                 ? dedupedRegular.filter((s) => !excludeVias.includes(s.hub))
                 : dedupedRegular;
+            // FAIL-SAFE: If excludeVias filtered out ALL available routes because no other hub exists for this corridor,
+            // relax the hub exclusion so users still get valid alternative split routes.
+            if (filteredRegular.length === 0 && dedupedRegular.length > 0) {
+                logger_1.winstonLogger.info(`[HUB_FILTER_RELAXED] excludeVias (${excludeVias.join(',')}) removed all ${dedupedRegular.length} routes. Falling back to all regular routes.`);
+                filteredRegular = dedupedRegular;
+            }
             // ── PER-HUB CAP: max 2 results per hub for variety (e.g. KOTA showing 4x → cap to 2)
             // Sort by wait_time ascending first so best connection per hub is always included
             const sortedRegular = [...filteredRegular].sort((a, b) => {
@@ -1324,9 +1332,47 @@ class SplitJourneyEngine {
             const isPremiumUser = !!options?.isPremiumUser;
             const classType = options?.classType || 'SL';
             const gatedSplits = applyPremiumGate(combinedSplits, isPremiumUser, classType, source, destination);
-            result.split = gatedSplits;
-            result.splits = gatedSplits;
-            result.smart_routes = gatedSplits;
+            // GUARANTEE: Ensure EVERY leg on EVERY split contains all 8 required fields:
+            // from, to, fromCode, toCode, travelDate, journeyDate, departureDate, arrivalDate
+            const fullySanitizedSplits = gatedSplits.map((s) => {
+                const hub = s.hub || s.via || '';
+                const rawLegs = s.legs || s.trains || s.segments || [];
+                const sanitizedLegs = rawLegs.map((leg, idx) => {
+                    const defaultFrom = idx === 0 ? (s.source || source) : hub;
+                    const defaultTo = idx === 0 ? hub : (s.destination || destination);
+                    const defaultDate = idx === 0 ? (s.leg1?.travelDate || date) : (s.leg2?.travelDate || s.leg1?.travelDate || date);
+                    const fromVal = leg.fromCode || leg.from || leg.source || defaultFrom;
+                    const toVal = leg.toCode || leg.to || leg.destination || defaultTo;
+                    const travelDateVal = leg.travelDate || leg.journeyDate || leg.departureDate || defaultDate;
+                    const journeyDateVal = leg.journeyDate || leg.travelDate || leg.departureDate || defaultDate;
+                    const departureDateVal = leg.departureDate || leg.travelDate || leg.journeyDate || defaultDate;
+                    const arrivalDateVal = leg.arrivalDate || leg.travelDate || leg.journeyDate || defaultDate;
+                    return {
+                        ...leg,
+                        from: fromVal,
+                        to: toVal,
+                        fromCode: fromVal,
+                        toCode: toVal,
+                        travelDate: travelDateVal,
+                        journeyDate: journeyDateVal,
+                        departureDate: departureDateVal,
+                        arrivalDate: arrivalDateVal
+                    };
+                });
+                const leg1Sanitized = sanitizedLegs[0] || s.leg1;
+                const leg2Sanitized = sanitizedLegs[1] || s.leg2 || leg1Sanitized;
+                return {
+                    ...s,
+                    leg1: leg1Sanitized,
+                    leg2: leg2Sanitized,
+                    legs: sanitizedLegs,
+                    trains: sanitizedLegs,
+                    segments: sanitizedLegs
+                };
+            });
+            result.split = fullySanitizedSplits;
+            result.splits = fullySanitizedSplits;
+            result.smart_routes = fullySanitizedSplits;
             result.hasMoreSplits = regularSplits.length > 6 || sameTrainSplits.length > 2;
             result.totalFound = totalFound;
             if (combinedSplits.length > 0) {
@@ -2234,12 +2280,16 @@ class SplitJourneyEngine {
         // —— PHASE 2: Parallel-fetch leg2 for all viable hubs across ALL dest station codes ——
         const leg2Cache = new Map();
         const nextDate = this.incrementDate(date, 1);
+        // DATE+2 FIX: Long-haul trains (e.g. Mumbai→Kolkata 36h+) can arrive at the hub
+        // on day+2. Without fetching date+2 leg2 trains, these splits are never generated.
+        const nextDate2 = this.incrementDate(date, 2);
         // Build all leg2 fetch tasks
         const leg2KeysToFetch = [];
         for (const { hCode } of viableHubs) {
             for (const dC of dCodes) { // Fetch for all resolved destination codes
                 const sameDayKey = `${hCode}|${dC}|${date}`;
                 const nextDayKey = `${hCode}|${dC}|${nextDate}`;
+                const nextDate2Key = `${hCode}|${dC}|${nextDate2}`;
                 if (!leg2Cache.has(sameDayKey)) {
                     leg2Cache.set(sameDayKey, []); // placeholder to prevent duplicates
                     leg2KeysToFetch.push({ hCode, dC, dt: date, key: sameDayKey });
@@ -2247,6 +2297,10 @@ class SplitJourneyEngine {
                 if (!leg2Cache.has(nextDayKey)) {
                     leg2Cache.set(nextDayKey, []); // placeholder
                     leg2KeysToFetch.push({ hCode, dC, dt: nextDate, key: nextDayKey });
+                }
+                if (!leg2Cache.has(nextDate2Key)) {
+                    leg2Cache.set(nextDate2Key, []); // placeholder for long-haul routes
+                    leg2KeysToFetch.push({ hCode, dC, dt: nextDate2, key: nextDate2Key });
                 }
             }
         }
@@ -2348,9 +2402,11 @@ class SplitJourneyEngine {
                     continue;
                 const sameDayLegs = leg2Cache.get(`${hCode}|${dC}|${date}`) || [];
                 const nextDayLegs = leg2Cache.get(`${hCode}|${dC}|${this.incrementDate(date, 1)}`) || [];
-                totalLeg2 += sameDayLegs.length + nextDayLegs.length;
+                const nextDay2Legs = leg2Cache.get(`${hCode}|${dC}|${this.incrementDate(date, 2)}`) || [];
+                totalLeg2 += sameDayLegs.length + nextDayLegs.length + nextDay2Legs.length;
                 validLeg2Pools.push({ leg2Raw: sameDayLegs, leg2Date: date, dC });
                 validLeg2Pools.push({ leg2Raw: nextDayLegs, leg2Date: this.incrementDate(date, 1), dC });
+                validLeg2Pools.push({ leg2Raw: nextDay2Legs, leg2Date: this.incrementDate(date, 2), dC });
             }
             for (const t1 of leg1Raw) {
                 const actualSCode = t1._fromCode || sCode;
@@ -2488,11 +2544,22 @@ class SplitJourneyEngine {
                         const waitHours = Math.round(waitMins / 60 * 10) / 10;
                         const riskLabel = risk_level === 'LOW' ? 'Safe' : risk_level === 'MEDIUM' ? 'Moderate' : 'Long';
                         const ai_reason = this.buildAiExplanation(l1, l2, sName, hName, dName, waitHours, riskLabel);
-                        const clonedL1 = { ...l1, journeyDate: date, travelDate: date };
+                        const leg1ArrDateStr = new Date(leg1ArrivalMs).toISOString().split('T')[0];
+                        const leg2DepDateStr = new Date(adjustedDep2Ms).toISOString().split('T')[0];
+                        const leg2ArrDateStr = new Date(adjustedDep2Ms + leg2Duration * 60000).toISOString().split('T')[0];
+                        const clonedL1 = {
+                            ...l1,
+                            journeyDate: date,
+                            travelDate: date,
+                            departureDate: date,
+                            arrivalDate: leg1ArrDateStr
+                        };
                         const clonedL2 = {
                             ...l2,
-                            journeyDate: new Date(adjustedDep2Ms).toISOString().split('T')[0],
-                            travelDate: new Date(adjustedDep2Ms).toISOString().split('T')[0]
+                            journeyDate: leg2DepDateStr,
+                            travelDate: leg2DepDateStr,
+                            departureDate: leg2DepDateStr,
+                            arrivalDate: leg2ArrDateStr
                         };
                         const combo = {
                             hub: hName,
@@ -2615,8 +2682,36 @@ class SplitJourneyEngine {
                 hubModifiers.set(h, await learningService.getHubSuccessModifier(h));
             }
         }
+        // —— DELAY INTELLIGENCE: Pre-fetch delay stats for unique leg1 trains ———————
+        // Parallel async fetch — same pattern as hubModifiers above.
+        // Returns null if < 5 historical observations (falls back to scheduled buffer).
+        const leg1DelayStats = new Map();
+        for (const combo of filteredCombinations) {
+            const trainNo = String(combo.leg1?.trainNo || '');
+            if (trainNo && !leg1DelayStats.has(trainNo)) {
+                const stats = await learningService.getTrainDelayStats(trainNo).catch(() => null);
+                leg1DelayStats.set(trainNo, stats);
+            }
+        }
         const withScore = filteredCombinations.map(c => {
             const modifier = hubModifiers.get(c.hub || '') || 0;
+            // Delay-aware effective buffer: if leg1 is historically late, real buffer is smaller
+            const leg1TrainNo = String(c.leg1?.trainNo || '');
+            const delayStats = leg1DelayStats.get(leg1TrainNo) || null;
+            const avgLeg1Delay = delayStats?.avgDelayMins ?? 0;
+            const effectiveBuffer = Math.max(0, (c.bufferMinutes ?? 0) - avgLeg1Delay);
+            // Inject onto combo so rankingService.calculateScore can use it
+            c.effectiveBufferMins = effectiveBuffer;
+            if (delayStats) {
+                c.punctualityScore = delayStats.onTimePct;
+                if (delayStats.onTimePct >= 80)
+                    c.delayRisk = 'Low';
+                else if (delayStats.onTimePct >= 50)
+                    c.delayRisk = 'Medium';
+                else
+                    c.delayRisk = 'High';
+                logger_1.winstonLogger.debug(`[DELAY_INTEL] ${leg1TrainNo}: avgDelay=${avgLeg1Delay}m scheduled=${c.bufferMinutes}m effective=${effectiveBuffer}m`);
+            }
             let waitPenalty = ((c.bufferMinutes ?? 0) / 60) * 4;
             if ((c.bufferMinutes ?? 0) > 480) { // Penalty for > 8h wait
                 waitPenalty += (((c.bufferMinutes ?? 0) - 480) / 60) * 10;
@@ -2741,7 +2836,12 @@ class SplitJourneyEngine {
                 const leg1Date = c.leg1.travelDate || date;
                 const leg2From = c.leg2.fromCode || c.leg2.fromStationCode || c.leg2.from || c.hub;
                 const leg2To = c.leg2.toCode || c.leg2.toStationCode || c.leg2.to || dCode;
-                const leg2Date = c.leg2Date || c.leg2.travelDate || date;
+                // Use the pre-computed date on the leg object (set during pairing from adjustedDep2Ms)
+                // Leg2 for overnight splits will have journeyDate/travelDate = date+1 or date+2 — use it.
+                const leg2Date = c.leg2?.journeyDate
+                    || c.leg2?.travelDate
+                    || c.leg2Date
+                    || date;
                 const [l1Live, l2Live] = await Promise.all([
                     getLiveTrains(leg1From, leg1To, leg1Date),
                     getLiveTrains(leg2From, leg2To, leg2Date)
@@ -3031,6 +3131,11 @@ class SplitJourneyEngine {
             return true;
         };
         const validatedResults = [];
+        // Resolve full city station clusters for terminal correction
+        const rawExpandedSCodes = await this.resolveCityStations(sCode);
+        const rawExpandedDCodes = await this.resolveCityStations(dCode);
+        const expandedSCodes = Array.from(new Set([...(sCodes || []), ...(rawExpandedSCodes || [])]));
+        const expandedDCodes = Array.from(new Set([...(dCodes || []), ...(rawExpandedDCodes || [])]));
         for (const split of splitsToNormalize) {
             let leg1 = split.leg1 ? this.normalizeTrain(split.leg1) : split.leg1;
             let leg2 = split.leg2 ? this.normalizeTrain(split.leg2) : split.leg2;
@@ -3040,14 +3145,14 @@ class SplitJourneyEngine {
                     console.log(`[REAL_AUDIT] VALIDATE_REJECT_SYNC | Hub: ${split.hub} | Reason: ${ref.value}`);
                 continue;
             }
-            const v1Res = await this.validateLegAndCorrectAsync(leg1, sCodes, 'leg1', date);
+            const v1Res = await this.validateLegAndCorrectAsync(leg1, expandedSCodes, 'leg1', date);
             if (!v1Res.isValid) {
                 console.log(`[REAL_AUDIT] VALIDATE_REJECT_ASYNC_LEG1 | Hub: ${split.hub} | Train: ${leg1?.trainNo} | Reason: ${v1Res.reason}`);
                 continue;
             }
             leg1 = v1Res.correctedLeg;
             const leg2Date = leg2.travelDate || leg2.journeyDate || date;
-            const v2Res = await this.validateLegAndCorrectAsync(leg2, dCodes, 'leg2', leg2Date);
+            const v2Res = await this.validateLegAndCorrectAsync(leg2, expandedDCodes, 'leg2', leg2Date);
             if (!v2Res.isValid) {
                 console.log(`[REAL_AUDIT] VALIDATE_REJECT_ASYNC_LEG2 | Hub: ${split.hub} | Train: ${leg2?.trainNo} | Reason: ${v2Res.reason}`);
                 continue;
@@ -3057,12 +3162,33 @@ class SplitJourneyEngine {
                 console.log(`[REAL_AUDIT] VALIDATED_ACCEPTED | Hub: ${split.hub} | Leg1: ${leg1.trainNo} (${leg1.fromCode}->${leg1.toCode}) | Leg2: ${leg2.trainNo} (${leg2.fromCode}->${leg2.toCode})`);
             validatedResults.push({ split, leg1, leg2 });
         }
-        const allNormalizedRaw = validatedResults.map(r => ({
-            ...r.split,
-            legs: [r.leg1, r.leg2],
-            leg1: r.leg1,
-            leg2: r.leg2
-        }));
+        const allNormalizedRaw = validatedResults.map(r => {
+            const l1Date = r.leg1?.travelDate || r.leg1?.journeyDate || r.leg1?.departureDate || r.split?.leg1?.travelDate || date;
+            const l2Date = r.leg2?.travelDate || r.leg2?.journeyDate || r.leg2?.departureDate || r.split?.leg2?.travelDate || date;
+            const leg1 = {
+                ...r.leg1,
+                travelDate: l1Date,
+                journeyDate: l1Date,
+                departureDate: l1Date,
+                arrivalDate: r.leg1?.arrivalDate || r.split?.leg1?.arrivalDate || l1Date
+            };
+            const leg2 = {
+                ...r.leg2,
+                travelDate: l2Date,
+                journeyDate: l2Date,
+                departureDate: l2Date,
+                arrivalDate: r.leg2?.arrivalDate || r.split?.leg2?.arrivalDate || l2Date
+            };
+            return {
+                ...r.split,
+                leg1,
+                leg2,
+                legs: [leg1, leg2],
+                travelDate: date,
+                leg1Date: l1Date,
+                leg2Date: l2Date
+            };
+        });
         let validIndex = 0;
         const normalizedSplits = allNormalizedRaw
             .filter(Boolean)
@@ -3301,11 +3427,11 @@ class SplitJourneyEngine {
                     const liveInfo = await irctcService_1.irctcService.getTrainInfo(num);
                     if (liveInfo) {
                         runningDaysPattern = liveInfo.trainInfo?.running_days || liveInfo.running_days || '1111111';
-                        const route = liveInfo.route || liveInfo.station_list || [];
+                        const route = liveInfo.route || liveInfo.station_list || liveInfo.stops || liveInfo.stations || liveInfo.trainRoute || liveInfo.stationList || [];
                         stops = route.map((s, idx) => ({
-                            Station_Code: (s.stnCode || s.station_code || s.code || '').toUpperCase().trim(),
-                            SN: s.sn || s.sequence || (idx + 1),
-                            Station_Name: s.stnName || s.station_name || s.name || ''
+                            Station_Code: (s.stationCode || s.stnCode || s.station_code || s.Station_Code || s.code || '').toUpperCase().trim(),
+                            SN: s.sn || s.SN || s.sequence || (idx + 1),
+                            Station_Name: s.stationName || s.stnName || s.station_name || s.Station_Name || s.name || ''
                         }));
                         // Save to DB so we don't hit the API again
                         if (stops.length > 0) {
@@ -3664,7 +3790,7 @@ class SplitJourneyEngine {
     mapToRichLeg(raw, fromCode, toCode, fromName, toName) {
         // Fix: Use the train's actual station code rather than the cluster fallback if available.
         // This prevents availability lookup failures where a train like 12952 (MMCT) is wrongly tagged as CSMT.
-        const actualFromCode = raw.fromStationCode || raw.from_station_code || raw.fromCode || raw.from || fromCode;
+        const actualFromCode = raw._fromCode || raw.fromStationCode || raw.from_station_code || raw.fromCode || raw.from || fromCode;
         const actualToCode = raw.toStationCode || raw.to_station_code || raw.toCode || raw.to || toCode;
         const dep = raw.departure_time ||
             raw.departureTime ||
@@ -3967,19 +4093,23 @@ class SplitJourneyEngine {
             const leg1 = s.leg1 ? {
                 ...s.leg1,
                 travelDate: shiftDate(s.leg1.travelDate),
-                journeyDate: shiftDate(s.leg1.journeyDate)
+                journeyDate: shiftDate(s.leg1.journeyDate || s.leg1.travelDate),
+                departureDate: shiftDate(s.leg1.departureDate || s.leg1.travelDate),
+                arrivalDate: shiftDate(s.leg1.arrivalDate || s.leg1.travelDate)
             } : s.leg1;
             const leg2 = s.leg2 ? {
                 ...s.leg2,
                 travelDate: shiftDate(s.leg2.travelDate),
-                journeyDate: shiftDate(s.leg2.journeyDate)
+                journeyDate: shiftDate(s.leg2.journeyDate || s.leg2.travelDate),
+                departureDate: shiftDate(s.leg2.departureDate || s.leg2.travelDate),
+                arrivalDate: shiftDate(s.leg2.arrivalDate || s.leg2.travelDate)
             } : s.leg2;
             const legs = s.legs ? s.legs.map((l, idx) => idx === 0 ? leg1 : leg2) : undefined;
             return {
                 ...s,
                 travelDate: shiftDate(s.travelDate),
-                leg1Date: shiftDate(s.leg1Date),
-                leg2Date: shiftDate(s.leg2Date),
+                leg1Date: shiftDate(s.leg1Date || leg1?.travelDate),
+                leg2Date: shiftDate(s.leg2Date || leg2?.travelDate),
                 leg1,
                 leg2,
                 legs
@@ -4155,11 +4285,22 @@ class SplitJourneyEngine {
                         const waitHours = Math.round(waitMins / 60 * 10) / 10;
                         const riskLabel = waitMins >= 120 ? 'Safe' : 'Moderate';
                         const ai_reason = this.buildAiExplanation(l1, l2, sourceName, hubName, destName, waitHours, riskLabel);
-                        const clonedL1 = { ...l1, travelDate: date, journeyDate: date };
+                        const leg1ArrDateStr = new Date(leg1ArrivalMs).toISOString().split('T')[0];
+                        const leg2DepDateStr = new Date(adjustedDep2Ms).toISOString().split('T')[0];
+                        const leg2ArrDateStr = new Date(adjustedDep2Ms + leg2Duration * 60000).toISOString().split('T')[0];
+                        const clonedL1 = {
+                            ...l1,
+                            travelDate: date,
+                            journeyDate: date,
+                            departureDate: date,
+                            arrivalDate: leg1ArrDateStr
+                        };
                         const clonedL2 = {
                             ...l2,
-                            travelDate: new Date(adjustedDep2Ms).toISOString().split('T')[0],
-                            journeyDate: new Date(adjustedDep2Ms).toISOString().split('T')[0]
+                            travelDate: leg2DepDateStr,
+                            journeyDate: leg2DepDateStr,
+                            departureDate: leg2DepDateStr,
+                            arrivalDate: leg2ArrDateStr
                         };
                         const combo = {
                             hub: hubName,

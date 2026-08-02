@@ -56,9 +56,9 @@ function mapIrctcInfoToStops(info) {
     if (!Array.isArray(route))
         return [];
     return route.map((s, idx) => ({
-        Station_Code: (s.stnCode || s.station_code || s.Station_Code || s.code || '').toUpperCase().trim(),
+        Station_Code: (s.stationCode || s.stnCode || s.station_code || s.Station_Code || s.code || '').toUpperCase().trim(),
         SN: s.sn || s.SN || s.dayNum || idx + 1,
-        Station_Name: s.stnName || s.station_name || s.Station_Name || '',
+        Station_Name: s.stationName || s.stnName || s.station_name || s.Station_Name || '',
         Arrival_time: s.arrival || s.arrival_time || s.Arrival_time || '',
         Departure_Time: s.departure || s.departure_time || s.Departure_Time || '',
     })).filter((s) => s.Station_Code.length > 0);

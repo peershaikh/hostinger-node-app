@@ -270,6 +270,36 @@ class LearningService {
             return 0;
         }
     }
+    // ─── DELAY INTELLIGENCE: Historical delay stats per train ────────────────
+    /**
+     * Returns the average delay and on-time percentage for a given train,
+     * computed from historical live-tracking data collected in live_learning.
+     * Returns null if insufficient data (< MIN_SAMPLE_SIZE records).
+     */
+    async getTrainDelayStats(trainNo) {
+        try {
+            // Query last 30 days of live observations for this train
+            const since = new Date();
+            since.setDate(since.getDate() - 30);
+            const { data, error } = await supabase_1.supabase
+                .from('live_learning')
+                .select('delay_mins')
+                .eq('train_no', trainNo)
+                .gte('created_at', since.toISOString())
+                .not('delay_mins', 'is', null);
+            if (error || !data || data.length < MIN_SAMPLE_SIZE)
+                return null;
+            const totalMins = data.reduce((sum, r) => sum + (Number(r.delay_mins) || 0), 0);
+            const avgDelayMins = Math.round(totalMins / data.length);
+            const onTimePct = Math.round((data.filter((r) => (Number(r.delay_mins) || 0) <= 5).length / data.length) * 100);
+            logger_1.winstonLogger.debug(`[DELAY_INTEL] Train ${trainNo}: avg=${avgDelayMins}m onTime=${onTimePct}% n=${data.length}`);
+            return { avgDelayMins, onTimePct, sampleSize: data.length };
+        }
+        catch (err) {
+            logger_1.winstonLogger.debug(`[DELAY_INTEL] getTrainDelayStats failed for ${trainNo}: ${err.message}`);
+            return null;
+        }
+    }
     // ─── STEP 9: PNR Self-Improving Learning Loop ────────────────────────
     async logPrediction(pnr, trainNumber, route, quota, travelClass, wlType, wlPosition, probability, modelVersion) {
         if (global.SYSTEM_MODE === 'MODE_A')

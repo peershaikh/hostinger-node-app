@@ -96,10 +96,7 @@ class DailyHealthReportJob {
             priority_summary: aiReport?.priority_summary ?? null,
         };
         // ── Step 3: Render HTML from digestPayload ──────────────────────
-        const rawAdminEmail = process.env.ADMIN_EMAIL || 'admin@trayago.in';
-        const adminEmail = rawAdminEmail.includes(',')
-            ? rawAdminEmail.split(',').map((e) => e.trim())
-            : rawAdminEmail;
+        const adminEmail = process.env.ADMIN_EMAIL || 'admin@trayago.in';
         const healthColor = digestPayload.system.health === 'OPTIMAL' ? '#16a34a'
             : digestPayload.system.health === 'DEGRADED' ? '#d97706'
                 : '#dc2626';

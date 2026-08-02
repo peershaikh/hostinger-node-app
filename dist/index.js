@@ -89,7 +89,16 @@ const globalLimiter = (0, express_rate_limit_1.default)({
     standardHeaders: true,
     legacyHeaders: false,
     validate: false, // PHASE_8.5B: Suppress express-rate-limit v8 validation warnings for custom skip logic
-    skip: (req) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip || ''),
+    skip: (req) => {
+        if (['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip || ''))
+            return true;
+        const heartbeatPaths = [
+            '/api/auth/status', '/auth/status',
+            '/api/auth/quota-status', '/auth/quota-status',
+            '/api/health', '/health'
+        ];
+        return req.method === 'GET' && heartbeatPaths.includes(req.path);
+    },
     message: { success: false, error: 'Too many requests from this IP, please try again after 15 minutes' },
 });
 app.use('/api', globalLimiter);

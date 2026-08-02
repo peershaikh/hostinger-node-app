@@ -32,7 +32,7 @@ class RankingService {
             const avail1 = getAvailScore(split.leg1.availability);
             const avail2 = getAvailScore(split.leg2.availability);
             score += (avail1 + avail2) / 2;
-            // 2. Connection Safety (25%)
+            // 2. Connection Safety (25%) — delay-aware
             const isSameTrain = split.leg1.trainNo === split.leg2.trainNo;
             split.isSameTrain = isSameTrain;
             if (isSameTrain) {
@@ -44,16 +44,26 @@ class RankingService {
             }
             else {
                 const buffer = split.bufferMinutes;
-                if (buffer >= 30 && buffer <= 120)
+                // Use pre-computed effective buffer if delay stats were injected by the engine
+                // (effectiveBufferMins = scheduledBuffer - historicalAvgDelay of Leg1)
+                const effectiveBuf = split.effectiveBufferMins ?? buffer;
+                if (effectiveBuf >= 30 && effectiveBuf <= 120)
                     score += 25; // Optimal wait
-                else if (buffer > 120 && buffer <= 180)
+                else if (effectiveBuf > 120 && effectiveBuf <= 180)
                     score += 15; // Good wait
-                else if (buffer > 180 && buffer <= 240)
+                else if (effectiveBuf > 180 && effectiveBuf <= 240)
                     score += 5; // Acceptable
-                else if (buffer < 30)
+                else if (effectiveBuf < 30)
                     score -= 20; // Dangerous connection (penalty)
                 else
                     score -= 10; // >240 penalty
+                // Populate delayRisk from effective buffer (reflects real connection safety)
+                if (effectiveBuf < 20)
+                    split.delayRisk = 'High';
+                else if (effectiveBuf < 60)
+                    split.delayRisk = 'Medium';
+                else
+                    split.delayRisk = 'Low';
             }
             // 3. Confirmation Prediction (20%)
             const getPredPercentage = (avail) => {
