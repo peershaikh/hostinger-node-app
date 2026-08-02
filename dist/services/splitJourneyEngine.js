@@ -3428,11 +3428,19 @@ class SplitJourneyEngine {
                     if (liveInfo) {
                         runningDaysPattern = liveInfo.trainInfo?.running_days || liveInfo.running_days || '1111111';
                         const route = liveInfo.route || liveInfo.station_list || liveInfo.stops || liveInfo.stations || liveInfo.trainRoute || liveInfo.stationList || [];
+                        // DIAG: log raw first stop object to find actual field names from API
+                        if (route.length > 0) {
+                            console.log(`[SCHED_DIAG] Train ${num} raw route[0] keys=${Object.keys(route[0]).join(',')} val=${JSON.stringify(route[0])}`);
+                        }
+                        else {
+                            console.log(`[SCHED_DIAG] Train ${num} liveInfo top-level keys=${Object.keys(liveInfo).join(',')}`);
+                        }
                         stops = route.map((s, idx) => ({
                             Station_Code: (s.stationCode || s.stnCode || s.station_code || s.Station_Code || s.code || '').toUpperCase().trim(),
                             SN: s.sn || s.SN || s.sequence || (idx + 1),
                             Station_Name: s.stationName || s.stnName || s.station_name || s.Station_Name || s.name || ''
                         }));
+                        console.log(`[SCHED_DIAG] Train ${num} stops extracted: count=${stops.length} first=${JSON.stringify(stops[0])} last=${JSON.stringify(stops[stops.length - 1])}`);
                         // Save to DB so we don't hit the API again
                         if (stops.length > 0) {
                             dbService_1.dbService.upsertTrainData({
@@ -3492,6 +3500,7 @@ class SplitJourneyEngine {
             }
         }
         if (!fromStop) {
+            console.log(`[VALIDATE_DIAG] trainNo=${num} currentFrom=${currentFrom} cityCodes=${JSON.stringify(cityCodes)} stopsCount=${stops.length} stopCodes=${JSON.stringify(stops.map(s => s.Station_Code))}`);
             return { isValid: false, reason: `Source station ${currentFrom} not found in train ${num} schedule` };
         }
         if (!toStop) {
