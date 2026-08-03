@@ -103,7 +103,7 @@ function mapIrctcInfoToStops(info: any): ScheduleStop[] {
 
 async function loadTrainScheduleContext(trainNo: string, fromIn?: string, toIn?: string): Promise<TrainScheduleContext> {
   const tNo = padTrainNo(trainNo);
-  const cacheKey = `sched_ctx_${tNo}`;
+  const cacheKey = `sched_ctx_v2_${tNo}`;
   let cached = cacheService.get<TrainScheduleContext>(cacheKey);
 
   if (cached && cached.stops && cached.stops.length > 2) {

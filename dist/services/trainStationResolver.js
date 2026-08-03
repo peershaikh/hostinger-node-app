@@ -65,7 +65,7 @@ function mapIrctcInfoToStops(info) {
 }
 async function loadTrainScheduleContext(trainNo, fromIn, toIn) {
     const tNo = padTrainNo(trainNo);
-    const cacheKey = `sched_ctx_${tNo}`;
+    const cacheKey = `sched_ctx_v2_${tNo}`;
     let cached = cacheService_1.cacheService.get(cacheKey);
     if (cached && cached.stops && cached.stops.length > 2) {
         const hasFrom = fromIn ? !!(0, stationResolutionUtils_1.findStopOnSchedule)(cached.stops, fromIn) : true;
