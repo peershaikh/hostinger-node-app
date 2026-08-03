@@ -4,10 +4,14 @@
  */
 
 export const TERMINAL_ALIASES: Record<string, string[]> = {
-  'CSMT': ['CSTM', 'DR', 'DDR'],
-  'CSTM': ['CSMT', 'DR', 'DDR'],
-  'DR':   ['CSMT', 'CSTM', 'DDR'],
-  'DDR':  ['CSMT', 'CSTM', 'DR'],
+  'CSMT': ['CSTM', 'DR', 'DDR', 'BDTS', 'MMCT', 'BCT', 'LTT'],
+  'CSTM': ['CSMT', 'DR', 'DDR', 'BDTS', 'MMCT', 'BCT', 'LTT'],
+  'DR':   ['CSMT', 'CSTM', 'DDR', 'BDTS', 'MMCT', 'BCT', 'LTT'],
+  'DDR':  ['CSMT', 'CSTM', 'DR', 'BDTS', 'MMCT', 'BCT', 'LTT'],
+  'BDTS': ['CSMT', 'CSTM', 'DR', 'DDR', 'MMCT', 'BCT', 'LTT'],
+  'MMCT': ['CSMT', 'CSTM', 'DR', 'DDR', 'BDTS', 'BCT', 'LTT'],
+  'BCT':  ['CSMT', 'CSTM', 'DR', 'DDR', 'BDTS', 'MMCT', 'LTT'],
+  'LTT':  ['CSMT', 'CSTM', 'DR', 'DDR', 'BDTS', 'MMCT', 'BCT'],
   'MAS': ['MMC'],
   'MMC': ['MAS'],
   'SBC': ['KSR'],
