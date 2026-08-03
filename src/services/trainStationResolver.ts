@@ -101,27 +101,29 @@ function mapIrctcInfoToStops(info: any): ScheduleStop[] {
   })).filter((s: ScheduleStop) => s.Station_Code.length > 0);
 }
 
-async function loadTrainScheduleContext(trainNo: string): Promise<TrainScheduleContext> {
+async function loadTrainScheduleContext(trainNo: string, fromIn?: string, toIn?: string): Promise<TrainScheduleContext> {
   const tNo = padTrainNo(trainNo);
   const cacheKey = `sched_ctx_${tNo}`;
   const cached = cacheService.get<TrainScheduleContext>(cacheKey);
-  if (cached) return cached;
 
-  let stops = await loadScheduleFromDb(tNo);
-  let runningDays = await loadRunningDays(tNo);
+  let stops = cached?.stops || (await loadScheduleFromDb(tNo));
+  let runningDays = cached?.runningDays || (await loadRunningDays(tNo));
   let source: TrainScheduleContext['source'] = stops.length > 0 ? 'db' : 'none';
 
-  if (stops.length <= 2) {
+  const hasFrom = fromIn ? !!findStopOnSchedule(stops, fromIn) : true;
+  const hasTo   = toIn   ? !!findStopOnSchedule(stops, toIn)   : true;
+
+  if (stops.length <= 2 || !hasFrom || !hasTo) {
     try {
       const info = await irctcService.getTrainInfo(tNo);
       if (info) {
         const irctcStops = mapIrctcInfoToStops(info);
-        if (irctcStops.length > stops.length) {
+        if (irctcStops.length > 0) {
           stops = irctcStops;
           source = 'irctc';
         }
         if (!runningDays) {
-          runningDays = info.trainInfo?.running_days || info.running_days || null;
+          runningDays = info.trainInfo?.running_days || info.running_days || info.trainInfo?.runningDays || null;
         }
       }
     } catch (e: any) {
@@ -182,7 +184,7 @@ export async function resolveSegmentForAvailability(
     };
   }
 
-  const ctx = await loadTrainScheduleContext(tNo);
+  const ctx = await loadTrainScheduleContext(tNo, fromIn, toIn);
 
   // Restored: Check if train actually runs on this specific boarding date
   if (ctx.runningDays && date) {
