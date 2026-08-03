@@ -32,6 +32,9 @@ export class ProviderConfigService {
     };
 
     if (isCircuitBlocked(providerName) || isCircuitBlocked(nameUpper)) {
+      if (nameUpper === 'IRCTC') {
+        return { enabled: true, reason: 'ENV_FALLBACK' };
+      }
       return { enabled: false, reason: 'CIRCUIT_BREAKER_BLOCKED' };
     }
 

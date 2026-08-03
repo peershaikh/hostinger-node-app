@@ -33,6 +33,9 @@ class ProviderConfigService {
             return (this.consecutiveFailures[name] || 0) >= 3 && now < (this.circuitOpenUntil[name] || 0);
         };
         if (isCircuitBlocked(providerName) || isCircuitBlocked(nameUpper)) {
+            if (nameUpper === 'IRCTC') {
+                return { enabled: true, reason: 'ENV_FALLBACK' };
+            }
             return { enabled: false, reason: 'CIRCUIT_BREAKER_BLOCKED' };
         }
         // 2. P0.3 (PHASE_4C811): Short-TTL result cache — effectively per-request scope.
