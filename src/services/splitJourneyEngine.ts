@@ -2568,7 +2568,7 @@ export class SplitJourneyEngine {
               if (Array.isArray(raw)) {
                 raw.forEach((t: any) => {
                   const tNo = t.train_number || t.trainNo || t.number || Math.random();
-                  if (!trainMap.has(String(tNo))) trainMap.set(String(tNo), { ...t, _fromCode: sc });
+                  if (!trainMap.has(String(tNo))) trainMap.set(String(tNo), { ...t, _fromCode: t.fromStationCode || t.from_station_code || t.from_stn_code || sc });
                 });
               }
             }
@@ -3822,30 +3822,41 @@ export class SplitJourneyEngine {
           .order('SN', { ascending: true });
 
         if (!dbErr && dbStops && dbStops.length > 0) {
-          stops = dbStops;
-          const { data: meta } = await supabase
-            .from('trains')
-            .select('running_days')
-            .eq('number', num)
-            .maybeSingle();
-          if (meta?.running_days) {
-            runningDaysPattern = meta.running_days;
+          // Only trust DB stops if they actually contain a station from the boarding city cluster.
+          // If not, the DB schedule is for a different segment of the train (incomplete data).
+          const boardingInDb = cityCodes.some(c =>
+            (dbStops as any[]).some((s: any) => (s.Station_Code || '').toUpperCase().trim() === c.toUpperCase().trim())
+          );
+          if (boardingInDb) {
+            stops = dbStops as any[];
+            const { data: meta } = await supabase
+              .from('trains')
+              .select('running_days')
+              .eq('number', num)
+              .maybeSingle();
+            if (meta?.running_days) {
+              runningDaysPattern = meta.running_days;
+            }
+          } else {
+            winstonLogger.warn(`[SCHED_INCOMPLETE] Train ${num}: DB has ${(dbStops as any[]).length} stops but boarding cluster not found — falling through to live API.`);
           }
-        } else {
+        }
+
+        if (stops.length === 0) {
           // Live API check
           winstonLogger.info(`[getTrainInfo_LIVE] Fetching route schedule for train ${num}`);
           const liveInfo = await irctcService.getTrainInfo(num);
           if (liveInfo) {
             runningDaysPattern = liveInfo.trainInfo?.running_days || liveInfo.running_days || '1111111';
-            const route = liveInfo.route || liveInfo.station_list || [];
+            const route = liveInfo.route || liveInfo.station_list || liveInfo.stops || liveInfo.stations || liveInfo.trainRoute || liveInfo.stationList || [];
             stops = route.map((s: any, idx: number) => ({
-              Station_Code: (s.stnCode || s.station_code || s.code || '').toUpperCase().trim(),
-              SN: s.sn || s.sequence || (idx + 1),
-              Station_Name: s.stnName || s.station_name || s.name || ''
+              Station_Code: (s.stationCode || s.stnCode || s.station_code || s.Station_Code || s.code || '').toUpperCase().trim(),
+              SN: s.sn || s.SN || s.sequence || (idx + 1),
+              Station_Name: s.stationName || s.stnName || s.station_name || s.Station_Name || s.name || ''
             }));
 
-            // Save to DB so we don't hit the API again
-            if (stops.length > 0) {
+            // Only save to DB when we have valid station codes
+            if (stops.length > 0 && stops.some(s => s.Station_Code.length > 0)) {
               dbService.upsertTrainData({
                 trainNo: num,
                 name: liveInfo.trainInfo?.train_name || liveInfo.trainName || liveInfo.name,
@@ -3859,7 +3870,7 @@ export class SplitJourneyEngine {
               }).catch(() => {});
             }
           }
-        }
+        } // end if (stops.length === 0)
 
         // Cache the resolved schedule if stops found
         if (stops.length > 0) {
@@ -3910,6 +3921,7 @@ export class SplitJourneyEngine {
     }
 
     if (!fromStop) {
+      console.log(`[VALIDATE_DIAG] trainNo=${num} currentFrom=${currentFrom} cityCodes=${JSON.stringify(cityCodes)} stopsCount=${stops.length} stopCodes=${JSON.stringify(stops.map(s => s.Station_Code))}`);
       return { isValid: false, reason: `Source station ${currentFrom} not found in train ${num} schedule` };
     }
     if (!toStop) {
@@ -4227,7 +4239,7 @@ export class SplitJourneyEngine {
   ): RichLeg {
     // Fix: Use the train's actual station code rather than the cluster fallback if available.
     // This prevents availability lookup failures where a train like 12952 (MMCT) is wrongly tagged as CSMT.
-    const actualFromCode = raw.fromStationCode || raw.from_station_code || raw.fromCode || raw.from || fromCode;
+    const actualFromCode = raw._fromCode || raw.fromStationCode || raw.from_station_code || raw.fromCode || raw.from || fromCode;
     const actualToCode = raw.toStationCode || raw.to_station_code || raw.toCode || raw.to || toCode;
 
     const dep =
