@@ -200,7 +200,7 @@ class IrctcService {
             const infoPromise = irctc.getTrainInfo(trainNo.trim());
             let infoTimer;
             const infoTimeout = new Promise((_, reject) => {
-                infoTimer = setTimeout(() => reject(new Error('getTrainInfo timeout (8s)')), 8000);
+                infoTimer = setTimeout(() => reject(new Error('getTrainInfo timeout (18s)')), 18000);
             });
             const data = await Promise.race([infoPromise, infoTimeout]).finally(() => {
                 if (infoTimer)
@@ -363,7 +363,7 @@ class IrctcService {
             const irctcPromise = irctc.getAvailability(trainNo.trim(), fromNorm, toNorm, formattedDate, classType.toUpperCase(), quota.toUpperCase());
             let availTimer;
             const timeoutPromise = new Promise((_, reject) => {
-                availTimer = setTimeout(() => reject(new Error('API Timeout (8s)')), 8000);
+                availTimer = setTimeout(() => reject(new Error('API Timeout (18s)')), 18000);
             });
             const data = await Promise.race([irctcPromise, timeoutPromise]).finally(() => {
                 if (availTimer)

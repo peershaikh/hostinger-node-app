@@ -185,7 +185,7 @@ export class IrctcService {
       const infoPromise = irctc.getTrainInfo(trainNo.trim());
       let infoTimer: NodeJS.Timeout | undefined;
       const infoTimeout = new Promise((_, reject) => {
-        infoTimer = setTimeout(() => reject(new Error('getTrainInfo timeout (8s)')), 8000);
+        infoTimer = setTimeout(() => reject(new Error('getTrainInfo timeout (18s)')), 18000);
       });
       const data = await Promise.race([infoPromise, infoTimeout]).finally(() => {
         if (infoTimer) clearTimeout(infoTimer);
@@ -381,7 +381,7 @@ export class IrctcService {
 
       let availTimer: NodeJS.Timeout | undefined;
       const timeoutPromise = new Promise((_, reject) => {
-        availTimer = setTimeout(() => reject(new Error('API Timeout (8s)')), 8000);
+        availTimer = setTimeout(() => reject(new Error('API Timeout (18s)')), 18000);
       });
 
       const data = await Promise.race([irctcPromise, timeoutPromise]).finally(() => {
