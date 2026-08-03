@@ -30,6 +30,7 @@ export interface ResolvedSegment {
   scheduleTo: string;
   apiFrom: string;
   apiTo: string;
+  originDepartureDate?: string;
 }
 
 export interface SegmentValidationFailure {
@@ -91,9 +92,10 @@ function mapIrctcInfoToStops(info: any): ScheduleStop[] {
   const route = info?.route || info?.station_list || info?.stops || [];
   if (!Array.isArray(route)) return [];
   return route.map((s: any, idx: number) => ({
-    Station_Code: (s.stnCode || s.station_code || s.Station_Code || s.code || '').toUpperCase().trim(),
+    Station_Code: (s.stationCode || s.stnCode || s.station_code || s.Station_Code || s.code || '').toUpperCase().trim(),
     SN: s.sn || s.SN || s.dayNum || idx + 1,
-    Station_Name: s.stnName || s.station_name || s.Station_Name || '',
+    Station_Name: s.stationName || s.stnName || s.station_name || s.Station_Name || '',
+
     Arrival_time: s.arrival || s.arrival_time || s.Arrival_time || '',
     Departure_Time: s.departure || s.departure_time || s.Departure_Time || '',
   })).filter((s: ScheduleStop) => s.Station_Code.length > 0);
@@ -134,6 +136,31 @@ async function loadTrainScheduleContext(trainNo: string): Promise<TrainScheduleC
   return ctx;
 }
 
+function getDayOffsetForStop(stops: ScheduleStop[], stop: ScheduleStopLike): number {
+  if ((stop as any).Day || (stop as any).day) {
+    return Math.max(0, ((stop as any).Day || (stop as any).day) - 1);
+  }
+  let currentDay = 1;
+  let prevTimeMinutes = -1;
+  for (const s of stops) {
+    const timeStr = (s as any).Departure_Time && (s as any).Departure_Time !== '--' ? (s as any).Departure_Time : (s as any).Arrival_time;
+    if (timeStr && timeStr !== '--') {
+      const parts = timeStr.split(':');
+      if (parts.length === 2) {
+        const mins = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+        if (prevTimeMinutes >= 0 && mins < prevTimeMinutes) {
+          currentDay++;
+        }
+        prevTimeMinutes = mins;
+      }
+    }
+    if (s.Station_Code === stop.Station_Code || s.SN === stop.SN) {
+      return Math.max(0, currentDay - 1);
+    }
+  }
+  return 0;
+}
+
 /**
  * Validate and resolve from/to for a train segment before calling IRCTC availability.
  */
@@ -164,7 +191,7 @@ export async function resolveSegmentForAvailability(
     const fromStop = findStopOnSchedule(ctx.stops, fromIn);
     
     if (fromStop && binary) {
-      const dayOffset = ((fromStop as any).Day || (fromStop as any).day || 1) - 1;
+      const dayOffset = getDayOffsetForStop(ctx.stops, fromStop);
       if (!isDayActiveForBoarding(binary, date, dayOffset)) {
         winstonLogger.info(`[STATION_RESOLVER] TRAIN_NOT_RUNNING train=${tNo} boarding=${fromIn} date=${date}`);
         return {
@@ -237,6 +264,14 @@ export async function resolveSegmentForAvailability(
     // knowledge layer optional
   }
 
-  return { success: true, scheduleFrom, scheduleTo, apiFrom, apiTo };
+  const dayOffset = fromStop ? getDayOffsetForStop(ctx.stops, fromStop) : 0;
+  let originDepartureDate = date;
+  if (date && dayOffset > 0) {
+    const d = new Date(date);
+    d.setDate(d.getDate() - dayOffset);
+    originDepartureDate = d.toISOString().split('T')[0];
+  }
+
+  return { success: true, scheduleFrom, scheduleTo, apiFrom, apiTo, originDepartureDate };
 }
 

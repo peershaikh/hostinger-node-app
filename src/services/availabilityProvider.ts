@@ -77,9 +77,10 @@ export class AvailabilityProvider {
       try {
         const { irctcService } = require('./irctcService');
         
+        const dateToPass = resolution.originDepartureDate || params.date;
         irctcData = await irctcService.getAvailability(
           params.trainNo,
-          params.date,
+          dateToPass,
           fromNorm,
           toNorm,
           params.classType,
