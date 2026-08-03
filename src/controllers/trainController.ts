@@ -900,7 +900,7 @@ export class TrainController {
       }
 
       const rawData = providerResult.data;
-      const source = 'RAPIDAPI';
+      const source = (providerResult as any).providerName || 'IRCTC';
 
       if (!rawData) {
         return res.json({ success: true, availability: null });

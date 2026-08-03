@@ -3,20 +3,30 @@
  * Train-aware resolution lives in trainStationResolver.ts (does NOT blindly map DR→CSMT).
  */
 
-export const TERMINAL_ALIASES: Record<string, string[]> = {
-  'CSMT': ['CSTM', 'DR', 'DDR', 'BDTS', 'MMCT', 'BCT', 'LTT'],
-  'CSTM': ['CSMT', 'DR', 'DDR', 'BDTS', 'MMCT', 'BCT', 'LTT'],
-  'DR':   ['CSMT', 'CSTM', 'DDR', 'BDTS', 'MMCT', 'BCT', 'LTT'],
-  'DDR':  ['CSMT', 'CSTM', 'DR', 'BDTS', 'MMCT', 'BCT', 'LTT'],
-  'BDTS': ['CSMT', 'CSTM', 'DR', 'DDR', 'MMCT', 'BCT', 'LTT'],
-  'MMCT': ['CSMT', 'CSTM', 'DR', 'DDR', 'BDTS', 'BCT', 'LTT'],
-  'BCT':  ['CSMT', 'CSTM', 'DR', 'DDR', 'BDTS', 'MMCT', 'LTT'],
-  'LTT':  ['CSMT', 'CSTM', 'DR', 'DDR', 'BDTS', 'MMCT', 'BCT'],
-  'MAS': ['MMC'],
-  'MMC': ['MAS'],
-  'SBC': ['KSR'],
-  'KSR': ['SBC'],
-};
+const PAN_INDIA_CLUSTERS: string[][] = [
+  ['CSMT', 'CSTM', 'DR', 'DDR', 'BDTS', 'MMCT', 'BCT', 'LTT', 'BVI', 'PNVL', 'KYN', 'TNA'],
+  ['NDLS', 'DLI', 'NZM', 'ANVT', 'DEC', 'GZB', 'DEE'],
+  ['HWH', 'SDAH', 'KOAA', 'SHM'],
+  ['MAS', 'MS', 'PER', 'TBM', 'MMC'],
+  ['SBC', 'YPR', 'SMVB', 'BNC', 'KSR'],
+  ['SC', 'HYB', 'KCG'],
+  ['PUNE', 'CCH', 'LNL'],
+  ['ADI', 'SBT', 'GNC'],
+  ['BSB', 'BSBS', 'DDU', 'MUV'],
+  ['PRYJ', 'PRRB', 'NYN', 'ALD'],
+  ['PNBE', 'PPTA', 'RJPB', 'DNR'],
+  ['LKO', 'LJN', 'ASH'],
+  ['GHY', 'KYQ'],
+  ['ST', 'UDN']
+];
+
+export const TERMINAL_ALIASES: Record<string, string[]> = {};
+
+for (const cluster of PAN_INDIA_CLUSTERS) {
+  for (const stn of cluster) {
+    TERMINAL_ALIASES[stn] = cluster.filter(s => s !== stn);
+  }
+}
 
 /** IRCTC canonical codes for alias clusters — applied only when train schedule contains the canonical stop. */
 export const IRCTC_CANONICAL: Record<string, string> = {
