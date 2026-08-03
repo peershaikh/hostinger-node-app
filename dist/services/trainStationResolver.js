@@ -63,26 +63,35 @@ function mapIrctcInfoToStops(info) {
         Departure_Time: s.departure || s.departure_time || s.Departure_Time || '',
     })).filter((s) => s.Station_Code.length > 0);
 }
-async function loadTrainScheduleContext(trainNo) {
+async function loadTrainScheduleContext(trainNo, fromIn, toIn) {
     const tNo = padTrainNo(trainNo);
     const cacheKey = `sched_ctx_${tNo}`;
-    const cached = cacheService_1.cacheService.get(cacheKey);
-    if (cached)
-        return cached;
+    let cached = cacheService_1.cacheService.get(cacheKey);
+    if (cached && cached.stops && cached.stops.length > 2) {
+        const hasFrom = fromIn ? !!(0, stationResolutionUtils_1.findStopOnSchedule)(cached.stops, fromIn) : true;
+        const hasTo = toIn ? !!(0, stationResolutionUtils_1.findStopOnSchedule)(cached.stops, toIn) : true;
+        if (hasFrom && hasTo) {
+            return cached;
+        }
+        cacheService_1.cacheService.del(cacheKey);
+        cached = null;
+    }
     let stops = await loadScheduleFromDb(tNo);
     let runningDays = await loadRunningDays(tNo);
     let source = stops.length > 0 ? 'db' : 'none';
-    if (stops.length <= 2) {
+    const hasFrom = fromIn ? !!(0, stationResolutionUtils_1.findStopOnSchedule)(stops, fromIn) : true;
+    const hasTo = toIn ? !!(0, stationResolutionUtils_1.findStopOnSchedule)(stops, toIn) : true;
+    if (stops.length <= 2 || !hasFrom || !hasTo) {
         try {
             const info = await irctcService_1.irctcService.getTrainInfo(tNo);
             if (info) {
                 const irctcStops = mapIrctcInfoToStops(info);
-                if (irctcStops.length > stops.length) {
+                if (irctcStops.length > 0) {
                     stops = irctcStops;
                     source = 'irctc';
                 }
                 if (!runningDays) {
-                    runningDays = info.trainInfo?.running_days || info.running_days || null;
+                    runningDays = info.trainInfo?.running_days || info.running_days || info.trainInfo?.runningDays || null;
                 }
             }
         }
@@ -95,6 +104,30 @@ async function loadTrainScheduleContext(trainNo) {
         cacheService_1.cacheService.set(cacheKey, ctx, SCHEDULE_CACHE_TTL);
     }
     return ctx;
+}
+function getDayOffsetForStop(stops, stop) {
+    if (stop.Day || stop.day) {
+        return Math.max(0, (stop.Day || stop.day) - 1);
+    }
+    let currentDay = 1;
+    let prevTimeMinutes = -1;
+    for (const s of stops) {
+        const timeStr = s.Departure_Time && s.Departure_Time !== '--' ? s.Departure_Time : s.Arrival_time;
+        if (timeStr && timeStr !== '--') {
+            const parts = timeStr.split(':');
+            if (parts.length === 2) {
+                const mins = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+                if (prevTimeMinutes >= 0 && mins < prevTimeMinutes) {
+                    currentDay++;
+                }
+                prevTimeMinutes = mins;
+            }
+        }
+        if (s.Station_Code === stop.Station_Code || s.SN === stop.SN) {
+            return Math.max(0, currentDay - 1);
+        }
+    }
+    return 0;
 }
 /**
  * Validate and resolve from/to for a train segment before calling IRCTC availability.
@@ -110,14 +143,14 @@ async function resolveSegmentForAvailability(trainNo, from, to, date) {
             message: 'Missing train number or station codes',
         };
     }
-    const ctx = await loadTrainScheduleContext(tNo);
+    const ctx = await loadTrainScheduleContext(tNo, fromIn, toIn);
     // Restored: Check if train actually runs on this specific boarding date
     if (ctx.runningDays && date) {
         const { normalizeRunningDays, isDayActiveForBoarding } = require('../utils/dayUtils');
         const binary = normalizeRunningDays(ctx.runningDays);
         const fromStop = (0, stationResolutionUtils_1.findStopOnSchedule)(ctx.stops, fromIn);
         if (fromStop && binary) {
-            const dayOffset = (fromStop.Day || fromStop.day || 1) - 1;
+            const dayOffset = getDayOffsetForStop(ctx.stops, fromStop);
             if (!isDayActiveForBoarding(binary, date, dayOffset)) {
                 logger_1.winstonLogger.info(`[STATION_RESOLVER] TRAIN_NOT_RUNNING train=${tNo} boarding=${fromIn} date=${date}`);
                 return {
@@ -181,5 +214,12 @@ async function resolveSegmentForAvailability(trainNo, from, to, date) {
     catch {
         // knowledge layer optional
     }
-    return { success: true, scheduleFrom, scheduleTo, apiFrom, apiTo };
+    const dayOffset = fromStop ? getDayOffsetForStop(ctx.stops, fromStop) : 0;
+    let originDepartureDate = date;
+    if (date && dayOffset > 0) {
+        const d = new Date(date);
+        d.setDate(d.getDate() - dayOffset);
+        originDepartureDate = d.toISOString().split('T')[0];
+    }
+    return { success: true, scheduleFrom, scheduleTo, apiFrom, apiTo, originDepartureDate };
 }

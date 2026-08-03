@@ -747,7 +747,7 @@ class TrainController {
                     });
                 }
                 const rawData = providerResult.data;
-                const source = 'RAPIDAPI';
+                const source = providerResult.providerName || 'IRCTC';
                 if (!rawData) {
                     return res.json({ success: true, availability: null });
                 }

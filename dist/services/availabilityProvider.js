@@ -10,9 +10,18 @@ class AvailabilityProvider {
         this.HOST = process.env.RAPIDAPI_HOST || 'irctc-train-api.p.rapidapi.com';
     }
     async getNextApiKey() {
-        const keys = await providerConfigService_1.providerConfigService.getKeysFor('RAPIDAPI');
-        if (keys.length === 0) {
-            throw new Error("No RapidAPI key configured");
+        let keys = await providerConfigService_1.providerConfigService.getKeysFor('IRCTC');
+        if (!keys || keys.length === 0) {
+            keys = await providerConfigService_1.providerConfigService.getKeysFor('RAILKIT');
+        }
+        if (!keys || keys.length === 0) {
+            keys = await providerConfigService_1.providerConfigService.getKeysFor('RAPIDAPI');
+        }
+        if (!keys || keys.length === 0) {
+            const fallback = process.env.IRCTC_CONNECT_API_KEY || process.env.IRCTC_API_KEY || process.env.RAILKIT_API_KEY || process.env.RAPIDAPI_KEY;
+            if (fallback)
+                return fallback;
+            throw new Error("No IRCTC / RailKit API key configured");
         }
         const key = keys[this.currentKeyIndex % keys.length];
         this.currentKeyIndex = (this.currentKeyIndex + 1) % keys.length;
@@ -48,7 +57,8 @@ class AvailabilityProvider {
         if (irctcGuard.enabled) {
             try {
                 const { irctcService } = require('./irctcService');
-                irctcData = await irctcService.getAvailability(params.trainNo, params.date, fromNorm, toNorm, params.classType, params.quota, { bypassCache: true });
+                const dateToPass = resolution.originDepartureDate || params.date;
+                irctcData = await irctcService.getAvailability(params.trainNo, dateToPass, fromNorm, toNorm, params.classType, params.quota, { bypassCache: true });
                 if (irctcData && typeof irctcData === 'object') {
                     if (irctcData.success === false) {
                         const providerReason = (0, trainStationResolver_1.mapProviderErrorToReason)(irctcData.error || '');

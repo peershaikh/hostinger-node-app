@@ -1136,6 +1136,24 @@ class SplitJourneyEngine {
                         return false;
                     }
                 }
+                // ── PRIORITY 2: SAFE VALIDATION ──
+                // Running Day Check — ALWAYS enforce, even in relaxed mode
+                const rDays = t.runningDays || t.validDays || t.scheduleDays || t.travelDays || t.running_days;
+                const binaryArray = (0, dayUtils_1.normalizeRunningDays)(rDays);
+                if (binaryArray) {
+                    // Use the train's specific date if available, otherwise fallback to the primary journey date
+                    // IMPORTANT: leg2 travelDate is correctly set to date+1 (or date+2) for overnight/long-haul
+                    // trains — always use the leg-specific date, not the journey start date.
+                    const trainDate = t.journeyDate || t.travelDate || t.departureDate || date;
+                    if (!(0, dayUtils_1.isDayActive)(binaryArray, trainDate)) {
+                        logger_1.winstonLogger.debug(`[TRAIN_REJECTED_NOT_RUNNING] ${num} does not run on ${trainDate}`);
+                        return false;
+                    }
+                }
+                else {
+                    // Metadata missing — ALLOW train (safe default)
+                    logger_1.winstonLogger.debug(`[TRAIN_ALLOWED_METADATA_MISSING] ${num} — no running day data, allowing by default`);
+                }
                 // PATCH_4C922_B: Reject Duronto trains in all split proposals.
                 // Duronto trains are semi-non-stop — IRCTC blocks booking for intermediate station
                 // pairs (error: "BOOKING/CANCELLATION NOT ALLOWED FOR GIVEN PAIR OF STATIONS").
@@ -2262,7 +2280,7 @@ class SplitJourneyEngine {
                             raw.forEach((t) => {
                                 const tNo = t.train_number || t.trainNo || t.number || Math.random();
                                 if (!trainMap.has(String(tNo)))
-                                    trainMap.set(String(tNo), { ...t, _fromCode: sc });
+                                    trainMap.set(String(tNo), { ...t, _fromCode: t.fromStationCode || t.from_station_code || t.from_stn_code || sc });
                             });
                         }
                     }

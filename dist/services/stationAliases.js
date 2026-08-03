@@ -7,16 +7,28 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.IRCTC_CANONICAL = exports.TERMINAL_ALIASES = void 0;
 exports.areStationsCompatible = areStationsCompatible;
 exports.normalizeForAPILegacy = normalizeForAPILegacy;
-exports.TERMINAL_ALIASES = {
-    'CSMT': ['CSTM', 'DR', 'DDR'],
-    'CSTM': ['CSMT', 'DR', 'DDR'],
-    'DR': ['CSMT', 'CSTM', 'DDR'],
-    'DDR': ['CSMT', 'CSTM', 'DR'],
-    'MAS': ['MMC'],
-    'MMC': ['MAS'],
-    'SBC': ['KSR'],
-    'KSR': ['SBC'],
-};
+const PAN_INDIA_CLUSTERS = [
+    ['CSMT', 'CSTM', 'DR', 'DDR', 'BDTS', 'MMCT', 'BCT', 'LTT', 'BVI', 'PNVL', 'KYN', 'TNA'],
+    ['NDLS', 'DLI', 'NZM', 'ANVT', 'DEC', 'GZB', 'DEE'],
+    ['HWH', 'SDAH', 'KOAA', 'SHM'],
+    ['MAS', 'MS', 'PER', 'TBM', 'MMC'],
+    ['SBC', 'YPR', 'SMVB', 'BNC', 'KSR'],
+    ['SC', 'HYB', 'KCG'],
+    ['PUNE', 'CCH', 'LNL'],
+    ['ADI', 'SBT', 'GNC'],
+    ['BSB', 'BSBS', 'DDU', 'MUV'],
+    ['PRYJ', 'PRRB', 'NYN', 'ALD'],
+    ['PNBE', 'PPTA', 'RJPB', 'DNR'],
+    ['LKO', 'LJN', 'ASH'],
+    ['GHY', 'KYQ'],
+    ['ST', 'UDN']
+];
+exports.TERMINAL_ALIASES = {};
+for (const cluster of PAN_INDIA_CLUSTERS) {
+    for (const stn of cluster) {
+        exports.TERMINAL_ALIASES[stn] = cluster.filter(s => s !== stn);
+    }
+}
 /** IRCTC canonical codes for alias clusters — applied only when train schedule contains the canonical stop. */
 exports.IRCTC_CANONICAL = {
     CSTM: 'CSMT',
