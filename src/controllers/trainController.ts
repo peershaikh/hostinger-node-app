@@ -929,12 +929,10 @@ export class TrainController {
       //   B) A flat object: { status, current_status, availability, booking_status, probability }
       //   C) An array of class objects: [{ class_type, status, ... }]
 
-      const validStatuses = ['CNF', 'RAC', 'WL', 'GNWL', 'RLWL', 'PQWL', 'AVAILABLE', 'AVL'];
       const normalizeStatus = (st: any): string | null => {
         if (!st) return null;
         const s = String(st).toUpperCase().trim();
-        if (validStatuses.some(v => s === v || s.includes(v))) return s;
-        return null;
+        return s || null;
       };
 
       const buildEntry = (raw: any): { status: string; chance: number; available: boolean; probability: number | null } | null => {
@@ -947,34 +945,34 @@ export class TrainController {
         const isCnf = st.includes('CNF') || st.includes('AVL') || st.includes('AVAILABLE');
         const isRac = st.includes('RAC');
         const isWl  = st.includes('WL');
-        // Dynamic WL chance: parse WL queue number for smarter estimation
-        // WL1-5: ~55-65% (high chance of confirmation), WL6-20: ~35-55%, WL21-50: ~15-30%, WL50+: <10%
+        const isRegret = st.includes('REGRET') || st.includes('NOT AVAILABLE') || st.includes('NO ROOM') || st.includes('BLOCKED');
+
         let chance: number;
         if (isCnf) {
           chance = 90;
         } else if (isRac) {
           chance = 60;
         } else if (isWl) {
-          // Extract WL position from status string e.g. "WL#12", "GNWL/15", "RLWL/8"
           const wlNumMatch = st.match(/(\d+)/);
           const wlNum = wlNumMatch ? parseInt(wlNumMatch[1], 10) : null;
           if (wlNum === null) {
-            chance = 25; // Unknown WL position — conservative estimate
+            chance = 25;
           } else if (wlNum <= 5) {
-            chance = 65; // Very short waitlist — high confirmation probability
+            chance = 65;
           } else if (wlNum <= 15) {
-            chance = 45; // Short-medium waitlist
+            chance = 45;
           } else if (wlNum <= 30) {
-            chance = 25; // Medium-long waitlist
+            chance = 25;
           } else if (wlNum <= 60) {
-            chance = 12; // Long waitlist
+            chance = 12;
           } else {
-            chance = 5;  // Very long waitlist — very unlikely
+            chance = 5;
           }
-          // If probability provided from provider, use it as override (it's more accurate)
           if (typeof prob === 'number' && prob >= 0 && prob <= 100) {
             chance = Math.round(prob);
           }
+        } else if (isRegret) {
+          chance = 0;
         } else {
           chance = 50;
         }
