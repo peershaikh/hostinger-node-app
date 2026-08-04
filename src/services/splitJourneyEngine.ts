@@ -4768,8 +4768,14 @@ export class SplitJourneyEngine {
 
           if (!l2.departure || l2.departure === '--:--') continue;
 
-          // Calculate wait time
-          const leg1ArrivalMs = this.toEpochMs(date, l1.arrival, l1.dayNumber || 1);
+          // Calculate durations (move above to compute correct arrival day)
+          const leg1Duration = l1.durationMins > 0 ? l1.durationMins : this.inferDurationMins(l1.departure, l1.arrival);
+          const leg2Duration = l2.durationMins > 0 ? l2.durationMins : this.inferDurationMins(l2.departure, l2.arrival);
+
+          // Calculate wait time using duration-based hub arrival day
+          const l1DepMinsForDay = this.parseToMins(l1.departure || '00:00');
+          const l1ArrDay = (l1.depDay || 1) + Math.floor((l1DepMinsForDay + leg1Duration) / 1440);
+          const leg1ArrivalMs = this.toEpochMs(date, l1.arrival, l1ArrDay);
           const leg2DepartureMs = this.toEpochMs(leg2Date, l2.departure, 1);
 
           let adjustedDep2Ms = leg2DepartureMs;
@@ -4780,14 +4786,10 @@ export class SplitJourneyEngine {
           }
 
           const waitMins = Math.round((adjustedDep2Ms - leg1ArrivalMs) / 60000);
-          // Guard waitMins (nonâ€‘finite, NaN, or unreasonable)
+          // Guard waitMins (non‑finite, NaN, or unreasonable)
           if (!Number.isFinite(waitMins) || Number.isNaN(waitMins) || waitMins < 0 || waitMins > 720) {
             continue;
           }
-
-          // Calculate durations
-          const leg1Duration = l1.durationMins > 0 ? l1.durationMins : this.inferDurationMins(l1.departure, l1.arrival);
-          const leg2Duration = l2.durationMins > 0 ? l2.durationMins : this.inferDurationMins(l2.departure, l2.arrival);
           // Guard durations
           if (!Number.isFinite(leg1Duration) || Number.isNaN(leg1Duration) ||
             !Number.isFinite(leg2Duration) || Number.isNaN(leg2Duration)) {
