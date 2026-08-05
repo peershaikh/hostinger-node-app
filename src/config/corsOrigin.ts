@@ -17,6 +17,8 @@
  * are also allowed so health checks and server-side calls are not broken.
  */
 
+import { winstonLogger } from '../middleware/logger';
+
 const PRODUCTION_ORIGINS: ReadonlySet<string> = new Set([
   // Primary .in domain
   'https://trayago.in',
@@ -33,6 +35,31 @@ const PRODUCTION_ORIGINS: ReadonlySet<string> = new Set([
   'https://localhost',
 ]);
 
+let cachedExtraOrigins: Set<string> | null = null;
+
+function getExtraOrigins(): Set<string> {
+  if (cachedExtraOrigins) return cachedExtraOrigins;
+
+  const originsSet = new Set<string>();
+  const raw = process.env.EXTRA_CORS_ORIGINS;
+
+  if (raw && typeof raw === 'string') {
+    const parts = raw.split(',');
+    for (const p of parts) {
+      const trimmed = p.trim().toLowerCase();
+      if (!trimmed) continue;
+      if (/^(https?|capacitor):\/\/.+/.test(trimmed)) {
+        originsSet.add(trimmed);
+      } else if (winstonLogger) {
+        winstonLogger.warn(`[CORS_PARSE_WARN] Ignoring malformed origin in EXTRA_CORS_ORIGINS: "${trimmed}"`);
+      }
+    }
+  }
+
+  cachedExtraOrigins = originsSet;
+  return cachedExtraOrigins;
+}
+
 /**
  * Returns true when the origin is on the production whitelist.
  * In development, also allows localhost (any port, http or https).
@@ -40,11 +67,13 @@ const PRODUCTION_ORIGINS: ReadonlySet<string> = new Set([
 export function isOriginAllowed(origin: string | undefined): boolean {
   if (!origin) return true; // no Origin header → allow (same-origin / non-browser)
 
-  if (PRODUCTION_ORIGINS.has(origin)) return true;
+  const normalized = origin.trim().toLowerCase();
+  if (PRODUCTION_ORIGINS.has(origin) || PRODUCTION_ORIGINS.has(normalized)) return true;
+  if (getExtraOrigins().has(normalized)) return true;
 
   if (process.env.NODE_ENV !== 'production') {
     // localhost / 127.0.0.1 / [::1] on any port — dev only
-    if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(origin)) {
+    if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(normalized)) {
       return true;
     }
   }
