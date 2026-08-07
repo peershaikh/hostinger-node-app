@@ -300,6 +300,14 @@ export class ProviderConfigService {
   }
 
   /**
+   * Feature configuration check for Inter-Station Transfers (Phase 4C).
+   * Defaults to false unless process.env.ENABLE_INTER_STATION_TRANSFERS === 'true'.
+   */
+  public isInterStationTransfersEnabled(): boolean {
+    return process.env.ENABLE_INTER_STATION_TRANSFERS === 'true';
+  }
+
+  /**
    * Admin utility to clear cache explicitly after updates.
    */
   public flushCache(providerName?: string) {

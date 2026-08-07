@@ -299,6 +299,10 @@ const startServer = async () => {
         const { hubCatalogRefreshJob } = require('./jobs/hubCatalogRefreshJob');
         await hubCatalogRefreshJob.start();
 
+        // PHASE_5B030: Nightly train schedule sync (dry-run when ENABLE_TRAIN_SCHEDULE_SYNC != true)
+        const { trainScheduleSyncJob } = require('./jobs/trainScheduleSyncJob');
+        await trainScheduleSyncJob.start();
+
         // â”€â”€â”€ Alarm Lifecycle Crons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const scheduleAlarmExpiryCron = () => {
           const MS_1_HOUR = 60 * 60 * 1000;

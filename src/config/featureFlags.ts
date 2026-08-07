@@ -74,4 +74,12 @@ export const featureFlags = {
   // ── PHASE_5B020C — Offline Station Provider ─────────────────────────────────
   /** Use OfflineStationProvider instead of stationMapper for fallbacks */
   useOfflineProvider: process.env.USE_OFFLINE_PROVIDER === 'true',
+
+  // ── PHASE_5B030 — Nightly Train Schedule Sync ─────────────────────────────
+  /**
+   * Gates all DB writes in trainScheduleSyncJob.
+   * Default OFF — job enters dry-run mode (validates but writes nothing).
+   * Set ENABLE_TRAIN_SCHEDULE_SYNC=true in .env to activate nightly sync.
+   */
+  trainScheduleSync: process.env.ENABLE_TRAIN_SCHEDULE_SYNC === 'true',
 };
