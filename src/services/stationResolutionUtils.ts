@@ -23,6 +23,12 @@ export function toIrctcApiCode(scheduleStopCode: string, stops: ScheduleStopLike
   }
   if (codes.has('MAS') && code === 'MMC') return 'MAS';
   if (codes.has('SBC') && code === 'KSR') return 'SBC';
+  // PHASE_5B037 — ADI cluster: DB schedule may store the Ahmedabad hub stop as GNC
+  // (Gandhinagar Canton) or SBT (Sabarmati); IRCTC availability API only accepts ADI.
+  if (codes.has('ADI') && (code === 'GNC' || code === 'SBT')) return 'ADI';
+  // PHASE_5B037 — Bengaluru: DB schedule may store the hub stop as YPR (Yeshwantpur);
+  // IRCTC availability API only accepts SBC for the Bengaluru hub.
+  if (codes.has('SBC') && code === 'YPR') return 'SBC';
 
   if (IRCTC_CANONICAL[code]) {
     const canonical = IRCTC_CANONICAL[code];

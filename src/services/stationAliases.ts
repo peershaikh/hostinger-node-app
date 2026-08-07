@@ -31,8 +31,13 @@ for (const cluster of PAN_INDIA_CLUSTERS) {
 /** IRCTC canonical codes for alias clusters — applied only when train schedule contains the canonical stop. */
 export const IRCTC_CANONICAL: Record<string, string> = {
   CSTM: 'CSMT',
-  MMC: 'MAS',
-  KSR: 'SBC',
+  MMC:  'MAS',
+  KSR:  'SBC',
+  // PHASE_5B037 — ADI cluster: Sabarmati / Gandhinagar Canton → Ahmedabad
+  GNC:  'ADI',
+  SBT:  'ADI',
+  // PHASE_5B037 — Bengaluru: Yeshwantpur → SBC (IRCTC canonical)
+  YPR:  'SBC',
 };
 
 export function areStationsCompatible(code1: string, code2: string): boolean {
