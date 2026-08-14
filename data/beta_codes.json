@@ -1,5 +1,18 @@
 [
   {
+    "code": "AZADI80",
+    "description": "Independence Day Special: 30 Days Free AI Split Journeys & Premium Travel Tools",
+    "maxRedemptions": 1000000,
+    "currentRedemptions": 1,
+    "expiresAt": null,
+    "unlimitedSearch": true,
+    "unlimitedPnr": true,
+    "unlimitedLiveTracking": true,
+    "unlimitedSplitSearch": true,
+    "isActive": true,
+    "createdAt": "2026-08-14T18:52:24.836Z"
+  },
+  {
     "code": "NFREDEEM1782797372162",
     "description": "nf wave1 redeemed test",
     "maxRedemptions": 10,
@@ -50,19 +63,6 @@
     "unlimitedSplitSearch": true,
     "isActive": true,
     "createdAt": "2026-06-30T05:43:03.065497+00:00"
-  },
-  {
-    "code": "TRAYAGO25",
-    "description": "25 User Beta Program",
-    "maxRedemptions": 25,
-    "currentRedemptions": 9,
-    "expiresAt": null,
-    "unlimitedSearch": true,
-    "unlimitedPnr": true,
-    "unlimitedLiveTracking": true,
-    "unlimitedSplitSearch": true,
-    "isActive": true,
-    "createdAt": "2026-06-12T05:52:06.417527+00:00"
   },
   {
     "code": "TRAYAGO-C1-FFEEE8",
@@ -871,6 +871,19 @@
     "createdAt": "2026-06-30T08:15:43.553293+00:00"
   },
   {
+    "code": "TRAYAGO25",
+    "description": "25 User Beta Program",
+    "maxRedemptions": 25,
+    "currentRedemptions": 12,
+    "expiresAt": null,
+    "unlimitedSearch": true,
+    "unlimitedPnr": true,
+    "unlimitedLiveTracking": true,
+    "unlimitedSplitSearch": true,
+    "isActive": true,
+    "createdAt": "2026-06-12T05:52:06.417527+00:00"
+  },
+  {
     "code": "NFREDEEM1782807344299",
     "description": "nf wave1 redeemed test",
     "maxRedemptions": 10,
@@ -1014,16 +1027,42 @@
     "createdAt": "2026-07-08T14:23:57.92724+00:00"
   },
   {
-    "code": "NFREDEEM1783685180827",
-    "description": "nf wave1 redeemed test",
+    "code": "NFUNREDEEM1783685180681",
+    "description": "nf wave1 unredeemed test",
     "maxRedemptions": 10,
-    "expiresAt": "2026-07-11T12:06:20.827Z",
+    "currentRedemptions": 0,
+    "expiresAt": "2026-07-11T12:06:20.681+00:00",
     "unlimitedSearch": true,
     "unlimitedPnr": true,
     "unlimitedLiveTracking": true,
     "unlimitedSplitSearch": true,
     "isActive": true,
+    "createdAt": "2026-07-10T12:06:20.12599+00:00"
+  },
+  {
+    "code": "NFREDEEM1783685180827",
+    "description": "nf wave1 redeemed test",
+    "maxRedemptions": 10,
     "currentRedemptions": 1,
-    "createdAt": "2026-07-10T12:06:20.827Z"
+    "expiresAt": "2026-07-11T12:06:20.827+00:00",
+    "unlimitedSearch": true,
+    "unlimitedPnr": true,
+    "unlimitedLiveTracking": true,
+    "unlimitedSplitSearch": true,
+    "isActive": true,
+    "createdAt": "2026-07-10T12:06:20.252615+00:00"
+  },
+  {
+    "code": "AZADI79",
+    "description": "Independence Day Special: 30 Days Free AI Split Journeys & Premium Travel Tools",
+    "maxRedemptions": 1000000,
+    "currentRedemptions": 1,
+    "expiresAt": null,
+    "unlimitedSearch": true,
+    "unlimitedPnr": true,
+    "unlimitedLiveTracking": true,
+    "unlimitedSplitSearch": true,
+    "isActive": true,
+    "createdAt": "2026-08-14T18:34:06.206651+00:00"
   }
 ]

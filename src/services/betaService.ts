@@ -48,7 +48,7 @@ export class BetaService {
       try {
         const { data: remoteCodes, error: codeErr } = await supabase.from('beta_codes').select('*');
         if (!codeErr && remoteCodes && remoteCodes.length > 0) {
-          this.codes = remoteCodes.map(c => ({
+          const remoteList = remoteCodes.map(c => ({
             code: c.code,
             description: c.description,
             maxRedemptions: c.max_redemptions,
@@ -61,18 +61,32 @@ export class BetaService {
             isActive: c.is_active,
             createdAt: c.created_at
           }));
+          const existingCodes = new Set(this.codes.map(c => c.code.toUpperCase()));
+          for (const c of remoteList) {
+            if (!existingCodes.has(c.code.toUpperCase())) {
+              this.codes.push(c);
+              existingCodes.add(c.code.toUpperCase());
+            }
+          }
           loadedFromDb = true;
         }
 
         const { data: remoteRedemptions, error: redErr } = await supabase.from('beta_redemptions').select('*');
         if (!redErr && remoteRedemptions && remoteRedemptions.length > 0) {
-          this.redemptions = remoteRedemptions.map(r => ({
+          const remoteList = remoteRedemptions.map(r => ({
             id: r.id,
             userId: r.user_id,
             betaCode: r.beta_code,
             redeemedAt: r.redeemed_at,
             expiresAt: r.expires_at
           }));
+          const existingIds = new Set(this.redemptions.map(r => r.id));
+          for (const r of remoteList) {
+            if (!existingIds.has(r.id)) {
+              this.redemptions.push(r);
+              existingIds.add(r.id);
+            }
+          }
           loadedFromDb = true;
         }
       } catch (e: any) {
@@ -149,6 +163,44 @@ export class BetaService {
         });
       }
     }
+
+    const azadiCode = 'AZADI80';
+    if (!this.codes.find(c => c.code === azadiCode)) {
+      const code: BetaCode = {
+        code: azadiCode,
+        description: 'Independence Day Special: 30 Days Free AI Split Journeys & Premium Travel Tools',
+        maxRedemptions: 1000000,
+        currentRedemptions: 0,
+        expiresAt: null,
+        unlimitedSearch: true,
+        unlimitedPnr: true,
+        unlimitedLiveTracking: true,
+        unlimitedSplitSearch: true,
+        isActive: true,
+        createdAt: new Date().toISOString()
+      };
+      this.codes.push(code);
+      this.saveData();
+
+      if (isSupabaseConfigured()) {
+        supabase.from('beta_codes').insert({
+          code: code.code,
+          description: code.description,
+          max_redemptions: code.maxRedemptions,
+          current_redemptions: code.currentRedemptions,
+          expires_at: code.expiresAt,
+          unlimited_search: code.unlimitedSearch,
+          unlimited_pnr: code.unlimitedPnr,
+          unlimited_live_tracking: code.unlimitedLiveTracking,
+          unlimited_split_search: code.unlimitedSplitSearch,
+          is_active: code.isActive
+        }).then(({ error }) => {
+           if (error && error.code !== '23505') {
+             winstonLogger.warn(`[BETA_SERVICE] Failed to seed AZADI80 code to DB: ${error.message}`);
+           }
+        });
+      }
+    }
   }
 
   private async syncWithSupabase() {
@@ -156,7 +208,25 @@ export class BetaService {
   }
 
   public getCode(code: string): BetaCode | undefined {
-    return this.codes.find(c => c.code.toUpperCase() === code.toUpperCase());
+    let found = this.codes.find(c => c.code.toUpperCase() === code.toUpperCase());
+    if (!found && code.toUpperCase() === 'AZADI80') {
+      found = {
+        code: 'AZADI80',
+        description: 'Independence Day Special: 30 Days Free AI Split Journeys & Premium Travel Tools',
+        maxRedemptions: 1000000,
+        currentRedemptions: 0,
+        expiresAt: null,
+        unlimitedSearch: true,
+        unlimitedPnr: true,
+        unlimitedLiveTracking: true,
+        unlimitedSplitSearch: true,
+        isActive: true,
+        createdAt: new Date().toISOString()
+      };
+      this.codes.push(found);
+      this.saveData();
+    }
+    return found;
   }
 
   public getAllCodes(): BetaCode[] {
@@ -266,12 +336,19 @@ export class BetaService {
 
     code.currentRedemptions += 1;
 
+    let redemptionExpiresAt = code.expiresAt;
+    if (!redemptionExpiresAt || code.code.toUpperCase() === 'AZADI80') {
+      const exp = new Date();
+      exp.setDate(exp.getDate() + 30);
+      redemptionExpiresAt = exp.toISOString();
+    }
+
     const redemption: BetaRedemption = {
       id: crypto.randomUUID(),
       userId,
       betaCode: code.code,
       redeemedAt: new Date().toISOString(),
-      expiresAt: code.expiresAt
+      expiresAt: redemptionExpiresAt
     };
 
     this.redemptions.push(redemption);
