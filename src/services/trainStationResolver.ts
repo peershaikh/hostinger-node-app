@@ -3,7 +3,7 @@
  */
 import { isSupabaseConfigured, supabase } from '../config/supabase';
 import { winstonLogger } from '../middleware/logger';
-import { isDayActive, normalizeRunningDays } from '../utils/dayUtils';
+import { isDayActive, normalizeRunningDays, trainOperatesOnDate } from '../utils/dayUtils';
 import { cacheService } from './cacheService';
 import { irctcService } from './irctcService';
 import {
@@ -51,6 +51,9 @@ interface TrainScheduleContext {
   stops: ScheduleStop[];
   runningDays: string | null;
   source: 'db' | 'irctc' | 'none';
+  validFrom?: string | null;
+  validTo?: string | null;
+  runningDaysAuthoritative?: boolean;
 }
 
 const SCHEDULE_CACHE_TTL = 7200;
@@ -119,6 +122,9 @@ async function loadTrainScheduleContext(trainNo: string, fromIn?: string, toIn?:
   let stops = await loadScheduleFromDb(tNo);
   let runningDays = await loadRunningDays(tNo);
   let source: TrainScheduleContext['source'] = stops.length > 0 ? 'db' : 'none';
+  let validFrom: string | null = null;
+  let validTo: string | null = null;
+  let runningDaysAuthoritative = false;
 
   const hasFrom = fromIn ? !!findStopOnSchedule(stops, fromIn) : true;
   const hasTo   = toIn   ? !!findStopOnSchedule(stops, toIn)   : true;
@@ -132,8 +138,19 @@ async function loadTrainScheduleContext(trainNo: string, fromIn?: string, toIn?:
           stops = irctcStops;
           source = 'irctc';
         }
-        if (!runningDays) {
-          runningDays = info.trainInfo?.running_days || info.running_days || info.trainInfo?.runningDays || null;
+        const inner = info.trainInfo || info;
+        const liveRunningDays =
+          inner?.running_days || inner?.runningDays || info?.running_days || info?.runningDays || null;
+        const liveValidFrom =
+          inner?.validFrom || inner?.valid_from || info?.validFrom || info?.valid_from || null;
+        const liveValidTo =
+          inner?.validTo || inner?.valid_to || info?.validTo || info?.valid_to || null;
+
+        if (liveValidFrom) validFrom = liveValidFrom;
+        if (liveValidTo) validTo = liveValidTo;
+        if (liveRunningDays) {
+          runningDays = liveRunningDays;
+          runningDaysAuthoritative = true;
         }
       }
     } catch (e: any) {
@@ -141,7 +158,14 @@ async function loadTrainScheduleContext(trainNo: string, fromIn?: string, toIn?:
     }
   }
 
-  const ctx: TrainScheduleContext = { stops, runningDays, source };
+  const ctx: TrainScheduleContext = {
+    stops,
+    runningDays,
+    source,
+    validFrom,
+    validTo,
+    runningDaysAuthoritative,
+  };
   if (stops.length > 0) {
     cacheService.set(cacheKey, ctx, SCHEDULE_CACHE_TTL);
   }
@@ -196,22 +220,24 @@ export async function resolveSegmentForAvailability(
 
   const ctx = await loadTrainScheduleContext(tNo, fromIn, toIn);
 
-  // Restored: Check if train actually runs on this specific boarding date
-  if (ctx.runningDays && date) {
-    const { normalizeRunningDays, isDayActiveForBoarding } = require('../utils/dayUtils');
-    const binary = normalizeRunningDays(ctx.runningDays);
+  // PHASE_5B161 — generic service-date truth validation
+  if (date) {
     const fromStop = findStopOnSchedule(ctx.stops, fromIn);
-    
-    if (fromStop && binary) {
-      const dayOffset = getDayOffsetForStop(ctx.stops, fromStop);
-      if (!isDayActiveForBoarding(binary, date, dayOffset)) {
-        winstonLogger.info(`[STATION_RESOLVER] TRAIN_NOT_RUNNING train=${tNo} boarding=${fromIn} date=${date}`);
-        return {
-          success: false,
-          reason: 'TRAIN_NOT_RUNNING',
-          message: `Train ${tNo} does not depart its origin on the required date to arrive at ${fromIn} on ${date}`,
-        };
-      }
+    const dayOffset = fromStop ? getDayOffsetForStop(ctx.stops, fromStop) : 0;
+    const verdict = trainOperatesOnDate(date, ctx.runningDays, {
+      validFrom: ctx.validFrom,
+      validTo: ctx.validTo,
+      runningDaysAuthoritative: ctx.runningDaysAuthoritative === true,
+      dayOffset,
+    });
+
+    if (verdict === 'NO') {
+      winstonLogger.info(`[STATION_RESOLVER] TRAIN_NOT_RUNNING train=${tNo} boarding=${fromIn} date=${date} verdict=NO`);
+      return {
+        success: false,
+        reason: 'TRAIN_NOT_RUNNING',
+        message: `Train ${tNo} does not operate on ${date}`,
+      };
     }
   }
 

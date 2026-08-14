@@ -185,4 +185,100 @@ export function isDayActiveForBoarding(binary: number[] | null | undefined, boar
     winstonLogger?.error?.(`[DAY_UTILS] Error parsing boarding date ${boardingDateStr}: ${err}`);
     return false;
   }
-}
+}
+
+/**
+ * PHASE_5B161 — generic service-date truth verdict.
+ *
+ * Returns YES / NO / UNKNOWN for "does this train operate on this service date?".
+ * UNKNOWN means the available data cannot prove operation, and callers that need
+ * fail-closed behaviour (split candidate eligibility) must treat it as a rejection.
+ *
+ * Authority rules:
+ *  - A validFrom/validTo service window is authoritative when both bounds parse.
+ *  - A running_days placeholder of 'Daily'/'All days' is only treated as YES when
+ *    the caller vouches for it (`runningDaysAuthoritative`); for seasonal/special
+ *    trains a DB 'Daily' is a stale placeholder and must resolve to UNKNOWN, never YES.
+ *  - A real 7-day pattern is always evaluated by weekday (via isDayActiveForBoarding,
+ *    which correctly accounts for the boarding day offset from origin).
+ */
+
+export type ServiceDateVerdict = 'YES' | 'NO' | 'UNKNOWN';
+
+export function isSpecialTrainNumber(trainNo: string | null | undefined): boolean {
+  return /^09\d{3}$/.test(String(trainNo || '').trim());
+}
+
+function toUtcIsoDate(value: string | null | undefined): string | null {
+  if (!value || typeof value !== 'string') return null;
+  let s = value.trim();
+  if (!s) return null;
+  if (/^\d{8}$/.test(s)) {
+    s = `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+  } else if (/^\d{2}-\d{2}-\d{4}$/.test(s)) {
+    const [dd, mm, yyyy] = s.split('-');
+    s = `${yyyy}-${mm}-${dd}`;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}/.test(s)) return null;
+  const iso = s.slice(0, 10);
+  const date = new Date(`${iso}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? null : iso;
+}
+
+function shiftIsoDate(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().split('T')[0];
+}
+
+export function trainOperatesOnDate(
+  serviceDate: string | null | undefined,
+  runningDays: string | null | undefined,
+  options: {
+    validFrom?: string | null;
+    validTo?: string | null;
+    runningDaysAuthoritative?: boolean;
+    dayOffset?: number;
+  } = {}
+): ServiceDateVerdict {
+  const dateIso = toUtcIsoDate(serviceDate);
+  if (!dateIso) return 'UNKNOWN';
+
+  const dayOffset =
+    Number.isInteger(options.dayOffset) && (options.dayOffset || 0) > 0
+      ? options.dayOffset!
+      : 0;
+  const effectiveIso = dayOffset > 0 ? shiftIsoDate(dateIso, -dayOffset) : dateIso;
+
+  const windowFrom = toUtcIsoDate(options.validFrom);
+  const windowTo = toUtcIsoDate(options.validTo);
+
+  // Authoritative service window: the train operates only within [from, to].
+  if (windowFrom && windowTo && (effectiveIso < windowFrom || effectiveIso > windowTo)) {
+    return 'NO';
+  }
+
+  const rd = String(runningDays || '').trim();
+  if (!rd) return 'UNKNOWN';
+
+  const lower = rd.toLowerCase();
+  const isDailyPlaceholder =
+    lower === 'daily' ||
+    lower === 'all days' ||
+    lower === '0,1,2,3,4,5,6' ||
+    lower.includes('all');
+
+  if (isDailyPlaceholder && options.runningDaysAuthoritative === false) {
+    // A window already authorises the date when present; otherwise a stale
+    // 'Daily' placeholder proves nothing and must not become YES.
+    return windowFrom && windowTo ? 'YES' : 'UNKNOWN';
+  }
+
+  const binary = normalizeRunningDays(rd);
+  if (!binary) {
+    return windowFrom && windowTo ? 'YES' : 'UNKNOWN';
+  }
+
+  return isDayActiveForBoarding(binary, dateIso, dayOffset) ? 'YES' : 'NO';
+}
+
