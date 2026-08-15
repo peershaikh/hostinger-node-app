@@ -227,6 +227,30 @@ class TrainService {
                 }
             }));
         }
+        // ── Post-normalization: Authoritative running days enrichment pass (FIX 1) ──
+        const trainsMissingDays = direct.filter(t => !t.running_days && !t.runningDays);
+        if (trainsMissingDays.length > 0 && (0, supabase_1.isSupabaseConfigured)()) {
+            try {
+                const trainNos = [...new Set(trainsMissingDays.map(t => String(t.trainNo || t.number || '')).filter(Boolean))];
+                const { data: dbTrainRows } = await supabase_1.supabase
+                    .from('trains')
+                    .select('number, running_days')
+                    .in('number', trainNos);
+                if (dbTrainRows && dbTrainRows.length > 0) {
+                    const metaMap = new Map(dbTrainRows.map((r) => [String(r.number), r.running_days]));
+                    for (const train of direct) {
+                        const metaDays = metaMap.get(String(train.trainNo || train.number || ''));
+                        if (metaDays && !train.running_days && !train.runningDays) {
+                            train.running_days = metaDays;
+                            train.runningDays = metaDays;
+                        }
+                    }
+                }
+            }
+            catch (err) {
+                logger_1.winstonLogger.warn(`[RUNNING_DAYS_ENRICH_FAIL] ${err.message}`);
+            }
+        }
         // PHASE_4C931 TASK 2: Determine correct status code.
         // success=true ONLY when verified results exist.
         // Explicit status codes replace the blanket success:true masking.
@@ -301,6 +325,7 @@ class TrainService {
     }
     normalizeTrain(dt) {
         const safe = (v, d = "N/A") => (v !== undefined && v !== null && v !== "" ? v : d);
+        const runningDays = dt.running_days || dt.runningDays || dt.days || dt.scheduleDays || dt.travelDays || dt.run_days || undefined;
         return {
             trainNo: String(safe(dt.number || dt.train_number || dt.trainNo, "00000")),
             trainName: safe(dt.train_name || dt.name || dt.trainName, undefined),
@@ -314,6 +339,9 @@ class TrainService {
             total_journey_time: dt.total_journey_time || `${Math.floor((dt.duration_mins || 0) / 60)}h ${(dt.duration_mins || 0) % 60}m`,
             type: dt.type || "Express",
             travelDate: dt.travelDate,
+            running_days: runningDays,
+            runningDays: runningDays,
+            dayOffset: dt.dayOffset || dt.day_offset || 0,
             _isLive: !!dt._isLive,
             api_used: dt.api_used || "DATABASE"
         };
@@ -564,6 +592,14 @@ class TrainService {
             t.train?.name ||
             t.train?.trainName ||
             null);
+        const runningDays = t.running_days ||
+            t.runningDays ||
+            t.days ||
+            t.scheduleDays ||
+            t.travelDays ||
+            t.run_days ||
+            t.train_days ||
+            undefined;
         return {
             id: `live-${trainNo}`,
             trainNo,
@@ -584,6 +620,9 @@ class TrainService {
                 '',
             type: t.type || t.train_type || 'Express',
             travelDate: date,
+            running_days: runningDays,
+            runningDays: runningDays,
+            dayOffset: t.dayOffset || t.day_offset || 0,
             _isLive: true,
             api_used: 'LIVE',
             isCancelled: t.isCancelled || false,

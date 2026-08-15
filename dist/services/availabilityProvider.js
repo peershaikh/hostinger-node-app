@@ -18,7 +18,7 @@ class AvailabilityProvider {
             keys = await providerConfigService_1.providerConfigService.getKeysFor('RAPIDAPI');
         }
         if (!keys || keys.length === 0) {
-            const fallback = process.env.IRCTC_CONNECT_API_KEY || process.env.IRCTC_API_KEY || process.env.RAILKIT_API_KEY || process.env.RAPIDAPI_KEY;
+            const fallback = process.env.IRCTC_CONNECT_API_KEY || process.env.IRCTC_API_KEY || process.env.RAILKIT_API_KEY;
             if (fallback)
                 return fallback;
             throw new Error("No IRCTC / RailKit API key configured");
@@ -57,16 +57,31 @@ class AvailabilityProvider {
         if (irctcGuard.enabled) {
             try {
                 const { irctcService } = require('./irctcService');
-                const dateToPass = resolution.originDepartureDate || params.date;
+                const dateToPass = params.date;
                 irctcData = await irctcService.getAvailability(params.trainNo, dateToPass, fromNorm, toNorm, params.classType, params.quota, { bypassCache: true });
                 if (irctcData && typeof irctcData === 'object') {
                     if (irctcData.success === false) {
-                        const providerReason = (0, trainStationResolver_1.mapProviderErrorToReason)(irctcData.error || '');
+                        let isDateNonRunning = false;
+                        try {
+                            const { trainOperatesOnDate } = require('../utils/dayUtils');
+                            const runningVerdict = trainOperatesOnDate(params.date, resolution.runningDays, {
+                                dayOffset: resolution.dayOffset || 0
+                            });
+                            if (runningVerdict === 'NO')
+                                isDateNonRunning = true;
+                        }
+                        catch { /* non-fatal */ }
+                        const providerReason = (0, trainStationResolver_1.mapProviderErrorToReason)(irctcData.error || '', isDateNonRunning);
                         logger_1.winstonLogger.info(`[AVAIL_PROVIDER_HANDLED_ERROR] train=${params.trainNo} error=${irctcData.error} reason=${providerReason}`);
+                        const message = providerReason === 'TRAIN_NOT_RUNNING'
+                            ? `Train ${params.trainNo} does not run on this date`
+                            : providerReason === 'PROVIDER_REQUEST_REJECTED'
+                                ? 'Railway servers rejected availability check for this date/class'
+                                : (irctcData.error || 'Class not available in selected quota/class');
                         irctcHandledError = {
                             success: false,
                             reason: providerReason,
-                            message: irctcData.error || "Class not available in selected quota/class"
+                            message
                         };
                     }
                     else {
@@ -114,9 +129,33 @@ class AvailabilityProvider {
             logger_1.winstonLogger.info(`${skipLabel} RAILRADAR | Reason: ${rrGuard.reason}`);
         }
         if (irctcHandledError) {
+            logger_1.winstonLogger.warn({
+                message: '[AVAIL_FAILURE]',
+                availabilityRequest: true,
+                trainNo: params.trainNo,
+                from: fromNorm,
+                to: toNorm,
+                date: params.date,
+                classType: params.classType,
+                quota: params.quota,
+                providerStatus: irctcData?.error || 'REJECTED',
+                normalizedReason: irctcHandledError.reason,
+            });
             return irctcHandledError;
         }
         logger_1.winstonLogger.error(`[AVAIL_PROVIDER_FAIL] train=${params.trainNo} - No further availability fallbacks available`);
+        logger_1.winstonLogger.warn({
+            message: '[AVAIL_FAILURE]',
+            availabilityRequest: true,
+            trainNo: params.trainNo,
+            from: fromNorm,
+            to: toNorm,
+            date: params.date,
+            classType: params.classType,
+            quota: params.quota,
+            providerStatus: 'EXHAUSTED',
+            normalizedReason: 'PROVIDER_UNAVAILABLE',
+        });
         return { success: false, reason: 'PROVIDER_UNAVAILABLE', message: 'The railway booking system is currently unresponsive. Please try again later.' };
     }
     /**

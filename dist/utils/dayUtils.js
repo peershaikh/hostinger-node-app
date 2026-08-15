@@ -4,6 +4,8 @@ exports.normalizeRunningDays = normalizeRunningDays;
 exports.isDayActive = isDayActive;
 exports.binaryToDays = binaryToDays;
 exports.isDayActiveForBoarding = isDayActiveForBoarding;
+exports.isSpecialTrainNumber = isSpecialTrainNumber;
+exports.trainOperatesOnDate = trainOperatesOnDate;
 const logger_1 = require("../middleware/logger");
 /**
  * Normalizes running_days string into a strict 7-length binary array [Sun, Mon, Tue, Wed, Thu, Fri, Sat]
@@ -175,4 +177,64 @@ function isDayActiveForBoarding(binary, boardingDateStr, dayOffset = 0) {
         logger_1.winstonLogger?.error?.(`[DAY_UTILS] Error parsing boarding date ${boardingDateStr}: ${err}`);
         return false;
     }
+}
+function isSpecialTrainNumber(trainNo) {
+    return /^09\d{3}$/.test(String(trainNo || '').trim());
+}
+function toUtcIsoDate(value) {
+    if (!value || typeof value !== 'string')
+        return null;
+    let s = value.trim();
+    if (!s)
+        return null;
+    if (/^\d{8}$/.test(s)) {
+        s = `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+    }
+    else if (/^\d{2}-\d{2}-\d{4}$/.test(s)) {
+        const [dd, mm, yyyy] = s.split('-');
+        s = `${yyyy}-${mm}-${dd}`;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}/.test(s))
+        return null;
+    const iso = s.slice(0, 10);
+    const date = new Date(`${iso}T00:00:00.000Z`);
+    return Number.isNaN(date.getTime()) ? null : iso;
+}
+function shiftIsoDate(iso, days) {
+    const d = new Date(`${iso}T00:00:00.000Z`);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().split('T')[0];
+}
+function trainOperatesOnDate(serviceDate, runningDays, options = {}) {
+    const dateIso = toUtcIsoDate(serviceDate);
+    if (!dateIso)
+        return 'UNKNOWN';
+    const dayOffset = Number.isInteger(options.dayOffset) && (options.dayOffset || 0) > 0
+        ? options.dayOffset
+        : 0;
+    const effectiveIso = dayOffset > 0 ? shiftIsoDate(dateIso, -dayOffset) : dateIso;
+    const windowFrom = toUtcIsoDate(options.validFrom);
+    const windowTo = toUtcIsoDate(options.validTo);
+    // Authoritative service window: the train operates only within [from, to].
+    if (windowFrom && windowTo && (effectiveIso < windowFrom || effectiveIso > windowTo)) {
+        return 'NO';
+    }
+    const rd = String(runningDays || '').trim();
+    if (!rd)
+        return 'UNKNOWN';
+    const lower = rd.toLowerCase();
+    const isDailyPlaceholder = lower === 'daily' ||
+        lower === 'all days' ||
+        lower === '0,1,2,3,4,5,6' ||
+        lower.includes('all');
+    if (isDailyPlaceholder && options.runningDaysAuthoritative === false) {
+        // A window already authorises the date when present; otherwise a stale
+        // 'Daily' placeholder proves nothing and must not become YES.
+        return windowFrom && windowTo ? 'YES' : 'UNKNOWN';
+    }
+    const binary = normalizeRunningDays(rd);
+    if (!binary) {
+        return windowFrom && windowTo ? 'YES' : 'UNKNOWN';
+    }
+    return isDayActiveForBoarding(binary, dateIso, dayOffset) ? 'YES' : 'NO';
 }

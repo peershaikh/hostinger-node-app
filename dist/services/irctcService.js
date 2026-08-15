@@ -392,6 +392,8 @@ class IrctcService {
                 errMsg.includes('not available') ||
                 errMsg.includes('invalid') ||
                 errMsg.includes('does not run') ||
+                errMsg.includes('unable to process your request') ||
+                errMsg.includes('bad request') ||
                 errMsg.includes('not found')) {
                 return { success: false, error: e.message };
             }
