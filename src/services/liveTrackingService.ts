@@ -448,6 +448,104 @@ export class LiveTrackingService {
     const dbTrainName = (dbTrainNameResult.status === 'fulfilled' ? dbTrainNameResult.value : '') || irctcScheduleTrainName;
     const activeDate = await this.getActiveJourneyDate(trainNo, scheduleWithDays);
 
+    const todayIstStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const requestedDateStr = date && /^\d{4}-\d{2}-\d{2}$/.test(date.trim()) ? date.trim() : null;
+
+    // ── FUTURE DATE GUARD: Pure schedule mode (no live running claims) ────────────
+    if (requestedDateStr && requestedDateStr > todayIstStr) {
+      winstonLogger.info(`[FUTURE_DATE_SCHEDULE] ${trainNo} for ${requestedDateStr} (today=${todayIstStr}): returning static schedule`);
+      
+      let finalSchedule = dbSchedule;
+      if (finalSchedule.length === 0) {
+        try {
+          const geminiResult = await geminiTrainScheduleService.getAndSave(trainNo);
+          if (geminiResult && geminiResult.stations) {
+            finalSchedule = geminiResult.stations.map((s: any, idx: number) => ({
+              station_name: s.station_name,
+              station_code: s.station_code,
+              arrival_time: s.arrival_time,
+              departure_time: s.departure_time,
+              delay_minutes: 0,
+              is_current: false,
+              is_departed: false,
+              status: 'SCHEDULED',
+              station_type: classifyStation(s.station_code, s.station_name, idx, geminiResult.stations.length),
+              platform: null
+            }));
+          }
+        } catch {}
+      } else {
+        finalSchedule = finalSchedule.map((s: any, idx: number) => ({
+          ...s,
+          delay_minutes: 0,
+          is_current: false,
+          is_departed: false,
+          status: 'SCHEDULED',
+          station_type: classifyStation(s.station_code, s.station_name, idx, finalSchedule.length),
+          platform: null
+        }));
+      }
+
+      const futureStatus: LiveTrainStatus = {
+        train_number: trainNo,
+        train_name: dbTrainName || `Train ${trainNo}`,
+        current_station: '',
+        next_station: '',
+        current_station_index: -1,
+        latitude: undefined,
+        longitude: undefined,
+        train_location: null,
+        delay_minutes: 0,
+        status_summary: `Scheduled for ${requestedDateStr}`,
+        last_updated: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }),
+        is_running: false,
+        is_cancelled: false,
+        journey_timeline: finalSchedule,
+        api_used: 'DATABASE_SCHEDULE',
+        active_journey_date: requestedDateStr
+      };
+
+      cacheService.set(cacheKey, futureStatus, 3600);
+      return futureStatus;
+    }
+
+    // ── PAST DATE GUARD: Historical schedule mode ────────────────────────────────
+    if (requestedDateStr && requestedDateStr < todayIstStr) {
+      winstonLogger.info(`[PAST_DATE_SCHEDULE] ${trainNo} for ${requestedDateStr} (today=${todayIstStr}): returning completed schedule`);
+      
+      const finalSchedule = dbSchedule.map((s: any, idx: number) => ({
+        ...s,
+        delay_minutes: 0,
+        is_current: false,
+        is_departed: true,
+        status: 'COMPLETED',
+        station_type: classifyStation(s.station_code, s.station_name, idx, dbSchedule.length),
+        platform: null
+      }));
+
+      const pastStatus: LiveTrainStatus = {
+        train_number: trainNo,
+        train_name: dbTrainName || `Train ${trainNo}`,
+        current_station: '',
+        next_station: '',
+        current_station_index: -1,
+        latitude: undefined,
+        longitude: undefined,
+        train_location: null,
+        delay_minutes: 0,
+        status_summary: 'Past Date Schedule',
+        last_updated: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }),
+        is_running: false,
+        is_cancelled: false,
+        journey_timeline: finalSchedule,
+        api_used: 'DATABASE_SCHEDULE',
+        active_journey_date: requestedDateStr
+      };
+
+      cacheService.set(cacheKey, pastStatus, 3600);
+      return pastStatus;
+    }
+
     let usedApi = 'DATABASE_SCHEDULE';
 
     try {
