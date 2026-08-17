@@ -25,9 +25,17 @@ router.get('/', (0, errorHandler_1.asyncHandler)(async (req, res) => {
     res.json({ success: true, count: articles.length, data: articles });
 }));
 /**
+ * GET /api/news/sources
+ * Returns health and status information for all registered news sources.
+ */
+router.get('/sources', (0, errorHandler_1.asyncHandler)(async (_req, res) => {
+    const health = railwayNewsService_1.railwayNewsService.getSourceHealthSummary();
+    res.json({ success: true, count: health.length, data: health });
+}));
+/**
  * POST /api/news/refresh
  * Manually triggers a news cache refresh (for internal use).
- * Protected by a simple shared secret to prevent abuse.
+ * Protected by a shared secret or authenticated admin session.
  */
 router.post('/refresh', (0, errorHandler_1.asyncHandler)(async (req, res) => {
     const secret = req.headers['x-refresh-secret'];

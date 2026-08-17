@@ -4,626 +4,343 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.railwayNewsService = void 0;
+const fs_1 = __importDefault(require("fs"));
+const path_1 = __importDefault(require("path"));
 const logger_1 = require("../middleware/logger");
 const cacheService_1 = require("./cacheService");
 const supabase_1 = require("../config/supabase");
-const rss_parser_1 = __importDefault(require("rss-parser"));
-const crypto_1 = __importDefault(require("crypto"));
+const newsSourceRegistry_1 = require("./news/newsSourceRegistry");
+const newsIngestionEngine_1 = require("./news/newsIngestionEngine");
 // ─── Constants ────────────────────────────────────────────────────────────────
 const NEWS_CACHE_KEY = 'railway_news_v2';
 const NEWS_CACHE_TTL = 30 * 60; // 30 minutes
-const MAX_ARTICLES_PER_FEED = 200;
 const MAX_TOTAL_ARTICLES = 40;
-// ─── RSS Sources ──────────────────────────────────────────────────────────────
-// Priority order: official government sources first, then trusted media.
-// PIB feed removed due to persistent HTTP 403 errors (PHASE_4C756 diagnostic)
-const NEWS_SOURCES = [
-    {
-        name: 'Ministry of Railways (PIB)',
-        url: 'https://news.google.com/rss/search?q=%22Ministry+of+Railways%22+site:pib.gov.in&hl=en-IN&gl=IN&ceid=IN:en',
-        category: 'Official',
-    },
-    {
-        name: 'Indian Railways',
-        url: 'https://news.google.com/rss/search?q=%22Indian+Railways%22+site:indianrailways.gov.in&hl=en-IN&gl=IN&ceid=IN:en',
-        category: 'Official',
-    },
-    {
-        name: 'Railway Board',
-        url: 'https://news.google.com/rss/search?q=%22Railway+Board%22&hl=en-IN&gl=IN&ceid=IN:en',
-        category: 'Official',
-    },
-    {
-        name: 'IRCTC',
-        url: 'https://news.google.com/rss/search?q=%22IRCTC%22&hl=en-IN&gl=IN&ceid=IN:en',
-        category: 'Official',
-    },
-];
+const LOCAL_FALLBACK_FILE = path_1.default.join(process.cwd(), 'data', 'railway_news_cache.json');
+// ─── Local Fallback Helper ────────────────────────────────────────────────────
+function readLocalNewsFallback() {
+    try {
+        if (fs_1.default.existsSync(LOCAL_FALLBACK_FILE)) {
+            const raw = fs_1.default.readFileSync(LOCAL_FALLBACK_FILE, 'utf-8');
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed))
+                return parsed;
+        }
+    }
+    catch (err) {
+        logger_1.winstonLogger.warn('[NEWS_LOCAL_FALLBACK_READ_FAIL]', { error: err.message });
+    }
+    return [];
+}
+function writeLocalNewsFallback(articles) {
+    try {
+        const dir = path_1.default.dirname(LOCAL_FALLBACK_FILE);
+        if (!fs_1.default.existsSync(dir))
+            fs_1.default.mkdirSync(dir, { recursive: true });
+        (0, supabase_1.safeWriteFileSync)(LOCAL_FALLBACK_FILE, JSON.stringify(articles, null, 2));
+    }
+    catch (err) {
+        logger_1.winstonLogger.warn('[NEWS_LOCAL_FALLBACK_WRITE_FAIL]', { error: err.message });
+    }
+}
 // ─── Schema Transformation ────────────────────────────────────────────────────
-// Transforms NewsArticle (camelCase) → railway_news table (snake_case)
-function transformForDatabase(articles) {
+function transformToDatabasePayload(articles) {
     return articles.map(article => ({
         id: article.id,
+        slug: article.slug,
         title: article.title,
+        seo_title: article.seo_title,
+        meta_description: article.meta_description,
         summary: article.summary,
-        source_name: article.sourceName,
-        source_url: article.sourceUrl,
-        published_at: article.publishedAt,
+        key_takeaways: article.key_takeaways || [],
+        affected_trains: article.affected_trains || [],
+        affected_stations: article.affected_stations || [],
         category: article.category,
-        image_url: article.imageUrl,
+        source_name: article.source_name,
+        source_url: article.source_url,
+        source_id: article.source_id,
+        source_tier: article.source_tier,
+        source_guid: article.source_guid,
+        content_hash: article.content_hash,
+        simhash: article.simhash,
+        relevance_score: article.relevance_score,
+        image_url: article.image_url,
+        status: article.status || 'READY_FOR_AI',
+        ingestion_status: article.ingestion_status || 'PENDING_AI',
+        published_at: article.published_at,
+        first_seen_at: article.first_seen_at,
+        last_seen_at: article.last_seen_at,
         updated_at: new Date().toISOString(),
     }));
 }
-// ─── Railway relevance filter ───────────────────────────────────────────────────
-// Drops articles from broad feeds (PIB, ToI, IE) that have no railway relevance.
-function isRailwayRelevant(title, summary, sourceName) {
-    const text = (title + ' ' + summary).toLowerCase();
-    // 1. REJECT CATEGORY PENALTIES
-    let penalty = 0;
-    // General politics & elections
-    if (/\b(elections?|polls?|voting|voters?|constituency|constituencies|seat\s+sharing|bjp|congress|political\s+rally|campaigning|opposition\s+party|parties|parliament\s+session|parliamentary)\b/i.test(text)) {
-        penalty += 60;
-    }
-    // Minister speeches (unless specifically containing high-score railway words)
-    const isRailwaySpecific = /\b(indian\s+railways?|irctc|vande\s+bharat|railway\s+board|railway\s+ministry|ministry\s+of\s+railways)\b/i.test(text);
-    if (!isRailwaySpecific && /\b(speeches?|addressed|addresses|remarks|tribute|condolences?|mourns?|demise|death\s+anniversary)\b/i.test(text)) {
-        penalty += 50;
-    }
-    // Obituaries
-    if (/\b(obituary|demise|passes\s+away|mourned|condolences?|tribute\s+to|sad\s+demise|posthumous|funeral)\b/i.test(text)) {
-        penalty += 80;
-    }
-    // Education (exclude unless this is specifically a RAILWAY recruitment/exam article).
-    // PHASE_4C796 FIX: bare 'recruitment' without 'rrb' / 'railway' must NOT suppress education penalty.
-    // The false positive 'Maharashtra teacher recruitment test cancelled' had recruitment=true
-    // but zero railway context — the guard was too broad.
-    const isRailwayRecruitment = /\b(rrb|railway\s+recruitment|railway\s+jobs?|railway\s+exam|rrc|ntpc\s+cbt)\b/i.test(text);
-    if (!isRailwayRecruitment && /\b(schools?|colleges?|universit(y|ies)|admissions?|board\s+exams?|results?|syllabus|students?|education|academics?|teachers?|paper\s+leak|tet\b|cet\b|neet\b|jee\b|upsc\b|mpsc\b|entrance\s+exams?|eligibility\s+test)\b/i.test(text)) {
-        penalty += 60;
-    }
-    // Farming / Agriculture (exclude unless track blockade/protest is mentioned)
-    const isBlockade = /\b(protests?|blockade|tracks?|agitation|disrupt(ed|ion)?)\b/i.test(text);
-    if (!isBlockade && /\b(farming|farmers?|crops?|agriculture|harvest|sowing|cultivation)\b/i.test(text)) {
-        penalty += 60;
-    }
-    // Crime
-    const isRailwayCrime = /\b(train|station|railway|platform)\b/i.test(text);
-    if (!isRailwayCrime && /\b(murder(ed)?|kidnap(ped)?|smuggling|extortion|robbery|heist|arrested\s+for|police\s+custody|convicted|court\s+sentenced)\b/i.test(text)) {
-        penalty += 50;
-    }
-    // Celebrity / Entertainment
-    if (/\b(bollywood|hollywood|actors?|actress|movies?|films?|box\s+office|celebrity|singer|concerts?|song|album|releasing\s+date|theatre|music\s+video)\b/i.test(text)) {
-        penalty += 80;
-    }
-    // Sports
-    if (/\b(sports|cricket|football|hockey|tennis|olympics|ipl|dhoni|kohli|world\s+cup|trophy|athletics|medals?|badminton|wimbledon|stadium)\b/i.test(text)) {
-        penalty += 80;
-    }
-    // Metro-only exclusion
-    if (/\bmetros?\b/i.test(text)) {
-        const hasStrongNationalRailway = /\b(indian\s+railways?|irctc|vande\s+bharat|railway\s+board|railway\s+ministry|ministry\s+of\s+railways)\b/i.test(text);
-        if (!hasStrongNationalRailway) {
-            penalty += 80;
-        }
-    }
-    // 2. POSITIVE WEIGHTED SCORING
-    let score = 0;
-    // Extremely High Quality Indicators (+50 points each)
-    const primaryIndicators = [
-        /\bindian\s+railways?\b/i,
-        /\birctc\b/i,
-        /\bvande\s+bharat\b/i,
-        /\bbullet\s+trains?\b/i,
-        /\brailway\s+board\b/i,
-        /\b(railway\s+)?minist(er|ry)\b/i,
-        /\bamrit\s+bharat\b/i,
-        /\brrb\b/i,
-        /\brail(way)?\s+budget\b/i,
-        /\b(train|railway)\s+cancellations?\b/i,
-        /\b(train|railway)\s+diversions?\b/i,
-        /\bderail(ment)?|train\s+accidents?\b/i
-    ];
-    primaryIndicators.forEach(regex => {
-        if (regex.test(text)) {
-            score += 50;
-        }
-    });
-    // Secondary Railway terms (+30 points each)
-    const secondaryIndicators = [
-        /\btrains?\b/i,
-        /\brailways?\b/i,
-        /\brail\b/i, // standalone word
-        /\blocomotives?|locos?\b/i,
-        /\brailway\s+stations?\b/i,
-        /\bplatforms?\b/i,
-        /\bfreight|goods\s+trains?\b/i,
-        /\bjunctions?\b/i,
-        /\btatkals?\b/i,
-        /\bpnr\b/i,
-        /\bwaitlists?\b/i,
-        /\bsleeper\s+class\b/i,
-        /\brailway\s+coaches?\b/i,
-        /\bpassenger\s+services?\b/i,
-        /\bstation\s+development\b/i,
-        /\brail(way)?\s+safety\b/i,
-        /\bdivisional\s+railway\s+manager|drm\b/i,
-        /\bgoods\s+sheds?\b/i,
-        // PHASE_4C796: targeted additions to fix FN articles with thin context
-        /\bflagged\s+off\b/i, // train inauguration phrasing
-        /\blhb\s+coaches?\b/i, // LHB (Linke-Hofmann-Busch) coaches
-        /\brailway\s+bridge\b/i, // bridge infrastructure stories
-        /\bkonkan\s+railway\b/i, // named railway zone
-        /\bcentral\s+railway\b/i, // named railway zone
-        /\bwestern\s+railway\b/i, // named railway zone
-        /\b(southern|northern|eastern|western|south\s+eastern|north\s+eastern|northeast\s+frontier)\s+railway\b/i, // all zones
-        /\btrain\s+services?\s+suspended\b/i, // service suspension phrasing
-        /(रेल|ट्रेन|रेलवे)/i
-    ];
-    secondaryIndicators.forEach(regex => {
-        if (regex.test(text)) {
-            score += 30;
-        }
-    });
-    // Supporting/Contextual terms (+20 points each)
-    const contextualIndicators = [
-        /\bbooking|reservation\b/i,
-        /\btickets?\b/i,
-        /\btimetables?\b/i,
-        /\bdelays?|late\s+running\b/i,
-        /\bschedule\b/i,
-        /\bcollision|crash|accident\b/i,
-        /\bsafety\b/i,
-        /\brecruitment\b/i,
-        /\bdevelopment|upgrade\b/i,
-        /\bdivert(ed)?|cancell(ed)?|restored\b/i,
-        // PHASE_4C796: additional contextual terms
-        /\bsuspended?\b/i, // train service suspension
-        /\brefund\b/i, // IRCTC refund policy stories
-        /\binaugurat(ed|ion)?\b/i, // infrastructure/train inaugurations
-    ];
-    contextualIndicators.forEach(regex => {
-        if (regex.test(text)) {
-            score += 20;
-        }
-    });
-    // Combination Bonus rule (+30 points)
-    const hasRailwayBase = /\b(trains?|railways?|rail|station|platform|junction|locomotive|locos?)\b/i.test(text) || /(रेल|ट्रेन|रेलवे)/i.test(text);
-    const hasOperationalEvent = /\b(cancell(ed|ation)?|divert(ed|sion)?|delay(ed)?|late|running|booking|reservation|tickets?|timetable|schedule|derail(ment)?|accident|crash|collision|safety|recruitment|upgrade|development|restored)\b/i.test(text);
-    if (hasRailwayBase && hasOperationalEvent) {
-        score += 30;
-    }
-    // Extra penalty: political/opinion pieces about railway policy (not operational news)
-    // e.g. "India Rejects Ex-Minister's Bullet Train Remarks" — no operational info
-    if (/\b(remarks?|rejects?|controversy|statements?|claims?|argues?|criticized|dispute|variance|refutes?)\b/i.test(text)) {
-        const hasOperational = /\b(route|schedule|train\s+number|station|platform|booking|ticket|cancel|delay|derail|accident|inaugurate|launch)\b/i.test(text);
-        if (!hasOperational) {
-            penalty += 60;
-        }
-    }
-    // External affairs / foreign policy (unless railway-specific international project)
-    if (/\b(foreign\s+minister|external\s+affairs|embassy|ambassador|bilateral|geopolitics|sanctions|diplomacy|visa|passport)\b/i.test(text)) {
-        const isRailwayInternational = /\b(bullet\s+train\s+project|japan|shinkansen|high.?speed\s+rail\s+project|india.japan)\b/i.test(text);
-        if (!isRailwayInternational)
-            penalty += 70;
-    }
-    const finalScore = Math.max(0, score - penalty);
-    // Raised from 80 → 120: stricter railway-only filter
-    const isRelevant = finalScore >= 120;
-    if (isRelevant) {
-        logger_1.winstonLogger.info(`[NEWS_RELEVANCE_PASS] "${title.slice(0, 60)}" | Score: ${finalScore} | Positives: ${score} | Penalty: ${penalty}`);
-    }
-    else {
-        logger_1.winstonLogger.debug(`[NEWS_RELEVANCE_FAIL] "${title.slice(0, 60)}" | Score: ${finalScore} | Positives: ${score} | Penalty: ${penalty}`);
-    }
-    return isRelevant;
+function transformFromDatabaseRow(row) {
+    return {
+        id: row.id,
+        title: row.title,
+        summary: row.summary || 'Official railway update.',
+        sourceName: row.source_name,
+        sourceUrl: row.source_url,
+        publishedAt: row.published_at,
+        category: row.category || 'Railway Updates',
+        imageUrl: row.image_url || null,
+        slug: row.slug || null,
+        seoTitle: row.seo_title || null,
+        metaDescription: row.meta_description || null,
+        sourceId: row.source_id,
+        sourceTier: row.source_tier,
+        status: row.status,
+        relevanceScore: row.relevance_score,
+        affectedTrains: row.affected_trains || [],
+        affectedStations: row.affected_stations || [],
+    };
 }
-// ─── Category classifier ──────────────────────────────────────────────────────
-function classifyCategory(title, summary) {
-    const text = (title + ' ' + summary).toLowerCase();
-    if (/cancel|cancelled|suspension|suspended/.test(text))
-        return 'Cancellation';
-    if (/delay|late|slow|fog|monsoon|rainfall|flood|landslide|derail/.test(text))
-        return 'Delays';
-    if (/tatkal|premium tatkal/.test(text))
-        return 'Tatkal';
-    if (/new train|new route|launch|inaugurate|new express|new superfast/.test(text))
-        return 'New Routes';
-    if (/irctc|booking|ticket|reservation|waitlist|chart/.test(text))
-        return 'IRCTC';
-    if (/vande bharat|bullet train|high.?speed|semi.?high/.test(text))
-        return 'Vande Bharat';
-    if (/accident|crash|collision|derailment/.test(text))
-        return 'Safety';
-    if (/strike|protest|agitation/.test(text))
-        return 'Operations';
-    if (/fare|price|hike|revision|charge/.test(text))
-        return 'Fares';
-    if (/platform|station|terminal|junction/.test(text))
-        return 'Infrastructure';
-    return 'Railway Updates';
+function canonicalToLegacyArticle(a) {
+    return {
+        id: a.id,
+        title: a.title,
+        summary: a.summary,
+        sourceName: a.source_name,
+        sourceUrl: a.source_url,
+        publishedAt: a.published_at,
+        category: a.category,
+        imageUrl: a.image_url,
+        slug: a.slug,
+        seoTitle: a.seo_title,
+        metaDescription: a.meta_description,
+        sourceId: a.source_id,
+        sourceTier: a.source_tier,
+        status: a.status,
+        relevanceScore: a.relevance_score,
+        affectedTrains: a.affected_trains,
+        affectedStations: a.affected_stations,
+    };
 }
-// ─── Image extractor ──────────────────────────────────────────────────────────
-function extractImage(item) {
-    // Try media:content, enclosure, or content fields
-    const media = item['media:content'] || item['media:thumbnail'];
-    if (media && typeof media === 'object' && media.$ && media.$.url)
-        return media.$.url;
-    if (item.enclosure && item.enclosure.url && item.enclosure.type?.startsWith('image'))
-        return item.enclosure.url;
-    // Try to extract from content HTML
-    if (item.content || item['content:encoded']) {
-        const html = item.content || item['content:encoded'] || '';
-        const match = html.match(/<img[^>]+src=["']([^"']+)["']/i);
-        if (match)
-            return match[1];
-    }
-    return null;
-}
-// ─── RSS Parser ───────────────────────────────────────────────────────────────
-// PHASE_4C756: RSS reader headers - NO Accept-Encoding (gzip causes binary response that parser can't decompress)
-const parser = new rss_parser_1.default({
-    timeout: 10000,
-    headers: {
-        'User-Agent': 'FeedParser/6.0 (+https://trayago.in)',
-        'Accept': 'application/rss+xml, application/xml, text/xml, */*',
-    },
-    customFields: {
-        item: ['source', 'media:content', 'media:thumbnail', 'content:encoded', 'enclosure'],
-    },
-});
-// ─── Retry Logic ──────────────────────────────────────────────────────────────
-// PHASE_4C756: Exponential backoff for transient 503/timeout errors
-async function fetchWithRetry(url, maxRetries = 3, baseDelay = 1000) {
-    let lastError;
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-            const feed = await parser.parseURL(url);
-            return feed;
-        }
-        catch (err) {
-            lastError = err;
-            // Don't retry on permanent failures (403, 404, invalid feed)
-            const isPermanent = err.message?.includes('403') ||
-                err.message?.includes('404') ||
-                err.message?.includes('Invalid XML') ||
-                err.message?.includes('Not Found');
-            if (isPermanent || attempt === maxRetries) {
-                throw err;
-            }
-            // Exponential backoff: 1s, 2s, 4s
-            const delay = baseDelay * Math.pow(2, attempt - 1);
-            logger_1.winstonLogger.warn(`[NEWS_FETCH_RETRY] Attempt ${attempt}/${maxRetries} failed, retrying in ${delay}ms: ${err.message}`, { url });
-            await new Promise(resolve => setTimeout(resolve, delay));
-        }
-    }
-    throw lastError;
-}
-// ─── Status Code Helper ───────────────────────────────────────────────────────
-// PHASE_4C756: Enhanced error logging
-function getStatusCode(error) {
-    const msg = error.message || '';
-    if (msg.includes('403'))
-        return 'SOURCE_HTTP_403';
-    if (msg.includes('503'))
-        return 'SOURCE_HTTP_503';
-    if (msg.includes('timeout') || msg.includes('ETIMEDOUT'))
-        return 'SOURCE_TIMEOUT';
-    if (msg.includes('ENOTFOUND') || msg.includes('ECONNREFUSED'))
-        return 'SOURCE_UNREACHABLE';
-    if (msg.includes('Invalid XML'))
-        return 'SOURCE_INVALID_FEED';
-    return 'SOURCE_ERROR';
-}
-// ─── Deduplication ────────────────────────────────────────────────────────────
-function deduplicateArticles(articles) {
-    const seen = new Set();
-    return articles.filter(article => {
-        // Deduplicate strictly by the generated ID to prevent DB upsert conflicts
-        if (seen.has(article.id))
-            return false;
-        seen.add(article.id);
-        return true;
-    });
-}
-// ─── Source URL validator ─────────────────────────────────────────────────────
-function isValidSourceUrl(url) {
-    if (!url || url === '#' || url.trim() === '')
-        return false;
-    try {
-        const u = new URL(url);
-        return u.protocol === 'https:' || u.protocol === 'http:';
-    }
-    catch {
-        return false;
-    }
-}
-// ─── Feed fetcher ─────────────────────────────────────────────────────────────
-async function fetchFeed(source) {
-    const articles = [];
-    let rejectedCount = 0;
-    const start = Date.now();
-    try {
-        logger_1.winstonLogger.info(`[NEWS_FETCH_START] Fetching feed: ${source.name}`);
-        const feed = await fetchWithRetry(source.url); // PHASE_4C756: Use retry wrapper
-        const rawCount = feed.items?.length || 0;
-        logger_1.winstonLogger.info(`[NEWS_FETCH_RAW] ${source.name}: ${rawCount} raw items received`);
-        let filteredCount = 0;
-        let relevanceDropped = 0;
-        let urlDropped = 0;
-        let titleDropped = 0;
-        for (const item of (feed.items || []).slice(0, MAX_ARTICLES_PER_FEED)) {
-            const title = (item.title || '').trim();
-            if (!title || title.length < 10) {
-                titleDropped++;
-                rejectedCount++;
-                continue;
-            }
-            // Validate source URL — skip article if link is dead/missing
-            const rawLink = item.link || item.guid || '';
-            if (!isValidSourceUrl(rawLink)) {
-                urlDropped++;
-                rejectedCount++;
-                logger_1.winstonLogger.debug(`[NEWS_FETCH_URL_DROP] ${source.name}: "${title.slice(0, 50)}" — invalid URL: ${rawLink}`);
-                continue;
-            }
-            const summary = (item.contentSnippet || item.summary || item.content || '')
-                .replace(/<[^>]+>/g, '')
-                .trim()
-                .slice(0, 300);
-            // Railway relevance guard — filters out off-topic articles from broad feeds
-            if (!isRailwayRelevant(title, summary || '', source.name)) {
-                relevanceDropped++;
-                rejectedCount++;
-                logger_1.winstonLogger.debug(`[NEWS_FETCH_RELEVANCE_DROP] ${source.name}: "${title.slice(0, 50)}"`);
-                continue;
-            }
-            const category = classifyCategory(title, summary);
-            // publishedAt: prefer pubDate, then isoDate, then current time
-            // PIB often omits per-item dates — acceptable to use fetch time
-            const publishedAt = item.pubDate
-                ? new Date(item.pubDate).toISOString()
-                : item.isoDate
-                    ? new Date(item.isoDate).toISOString()
-                    : new Date().toISOString();
-            // Determine source name: for Google News results the publisher is in item.source
-            let sourceName = source.name;
-            if (item.source && typeof item.source === 'string' && item.source.trim()) {
-                sourceName = item.source.trim();
-            }
-            else if (item.source && typeof item.source === 'object' && item.source.name) {
-                sourceName = item.source.name;
-            }
-            const id = crypto_1.default.createHash('md5')
-                .update(title.slice(0, 60) + publishedAt.slice(0, 10))
-                .digest('hex');
-            articles.push({
-                id,
-                title,
-                summary: summary || 'Read the full article for details.',
-                sourceName,
-                sourceUrl: rawLink,
-                publishedAt,
-                category,
-                imageUrl: extractImage(item),
-            });
-            filteredCount++;
-        }
-        const fetchLatency = Date.now() - start;
-        logger_1.winstonLogger.info(`[NEWS_FETCH_OBSERVABILITY] SOURCE: ${source.name} | STATUS: SUCCESS | LATENCY: ${fetchLatency}ms | ARTICLE COUNT: ${articles.length}`);
-        // PHASE_4C756: Enhanced success logging
-        if (articles.length > 0) {
-            logger_1.winstonLogger.info(`[SOURCE_SUCCESS] ${source.name}: ${articles.length} articles accepted`);
-        }
-        logger_1.winstonLogger.info(`[NEWS_FETCH_COMPLETE] ${source.name}: ${filteredCount} passed filters (dropped: ${relevanceDropped} relevance, ${urlDropped} URL, ${titleDropped} title)`);
-    }
-    catch (err) {
-        const fetchLatency = Date.now() - start;
-        const statusCode = getStatusCode(err);
-        logger_1.winstonLogger.info(`[NEWS_FETCH_OBSERVABILITY] SOURCE: ${source.name} | STATUS: FAILED (${statusCode}) | LATENCY: ${fetchLatency}ms | ARTICLE COUNT: 0`);
-        // PHASE_4C756: Enhanced error logging with status codes
-        const stackPreview = err.stack ? err.stack.split('\n').slice(0, 3).join('\n') : '';
-        logger_1.winstonLogger.error(`[${statusCode}] ${source.name} failed: ${err.message}`, {
-            url: source.url,
-            stackPreview
-        });
-    }
-    return { accepted: articles, rejected: rejectedCount };
-}
-// ─── Main service ─────────────────────────────────────────────────────────────
+// ─── Main Service ─────────────────────────────────────────────────────────────
 exports.railwayNewsService = {
     /**
-     * Returns the latest railway news articles.
-     * Serves from 30-minute cache; fetches fresh on cache miss.
-     * Falls back to database if cache empty.
+     * Returns latest railway news articles.
+     * Serves from 30-minute memory cache; falls back to DB or local storage; refreshes on total miss.
      */
     getLatestNews: async () => {
-        // 1. Serve from cache if warm
+        // 1. Memory cache
         const cached = cacheService_1.cacheService.get(NEWS_CACHE_KEY);
         if (cached && cached.length > 0) {
             logger_1.winstonLogger.info('[NEWS_CACHE_HIT] Serving from cache', { count: cached.length });
             return cached;
         }
         logger_1.winstonLogger.info('[NEWS_CACHE_MISS] Cache empty, checking database...');
-        // 2. Database fallback layer (Filter out older than 48h)
+        // 2. Database layer (Breaking news window: last 48h)
         const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
         try {
-            const { data: dbArticles, error } = await supabase_1.supabase
-                .from('railway_news')
-                .select('*')
-                .gte('published_at', fortyEightHoursAgo)
-                .order('published_at', { ascending: false })
-                .limit(MAX_TOTAL_ARTICLES);
-            if (error) {
-                logger_1.winstonLogger.warn('[NEWS_DB_FALLBACK] Database query failed', { error: error.message });
-            }
-            else if (dbArticles && dbArticles.length > 0) {
-                // Transform snake_case → camelCase
-                const rawArticles = dbArticles.map(row => ({
-                    id: row.id,
-                    title: row.title,
-                    summary: row.summary,
-                    sourceName: row.source_name,
-                    sourceUrl: row.source_url,
-                    publishedAt: row.published_at,
-                    category: row.category,
-                    imageUrl: row.image_url,
-                }));
-                // PHASE_4C796 FIX: Re-apply relevance filter on DB articles so stale
-                // false-positives stored before filter tightening are evicted on read.
-                const articles = rawArticles.filter(a => isRailwayRelevant(a.title, a.summary, a.sourceName));
-                const evicted = rawArticles.length - articles.length;
-                if (evicted > 0) {
-                    logger_1.winstonLogger.info(`[NEWS_DB_FALLBACK] Evicted ${evicted} stale false-positive(s) from DB result`);
+            if ((0, supabase_1.isSupabaseConfigured)()) {
+                const { data: dbArticles, error } = await supabase_1.supabase
+                    .from('railway_news')
+                    .select('*')
+                    .gte('published_at', fortyEightHoursAgo)
+                    .order('published_at', { ascending: false })
+                    .limit(MAX_TOTAL_ARTICLES);
+                if (!error && dbArticles && dbArticles.length > 0) {
+                    const articles = dbArticles
+                        .map(transformFromDatabaseRow)
+                        .filter(a => newsIngestionEngine_1.newsIngestionEngine.evaluateRelevance(a.title, a.summary, a.sourceName).isRelevant);
+                    if (articles.length > 0) {
+                        logger_1.winstonLogger.info('[NEWS_DB_FALLBACK] Serving from database', { count: articles.length });
+                        cacheService_1.cacheService.set(NEWS_CACHE_KEY, articles, NEWS_CACHE_TTL);
+                        writeLocalNewsFallback(articles);
+                        return articles;
+                    }
                 }
-                logger_1.winstonLogger.info('[NEWS_DB_FALLBACK] Serving from database', { count: articles.length });
-                // Repopulate cache with filtered set
-                cacheService_1.cacheService.set(NEWS_CACHE_KEY, articles, NEWS_CACHE_TTL);
-                return articles;
             }
         }
         catch (err) {
-            logger_1.winstonLogger.error('[NEWS_DB_FALLBACK] Database error', { error: err.message });
+            logger_1.winstonLogger.warn('[NEWS_DB_FALLBACK_FAIL]', { error: err.message });
         }
-        // 3. Cache and DB both empty → trigger refresh
+        // 3. Local JSON fallback
+        const local = readLocalNewsFallback();
+        if (local.length > 0) {
+            const recent = local.filter(a => new Date(a.publishedAt).getTime() >= Date.now() - 48 * 60 * 60 * 1000);
+            if (recent.length > 0) {
+                logger_1.winstonLogger.info('[NEWS_LOCAL_FALLBACK] Serving from local JSON', { count: recent.length });
+                cacheService_1.cacheService.set(NEWS_CACHE_KEY, recent, NEWS_CACHE_TTL);
+                return recent;
+            }
+        }
+        // 4. Trigger fresh multi-source refresh
         return exports.railwayNewsService.refreshNews();
     },
     /**
-     * Force-fetches from all RSS sources, deduplicates, sorts newest-first,
-     * persists to database, and writes to cache. Called by scheduler every 6 hours and on cache miss.
+     * Ingests fresh articles across all registered and enabled sources.
+     * Employs multi-layer deduplication, relevance scoring, retry isolation, and non-destructive persistence.
      */
     refreshNews: async () => {
-        logger_1.winstonLogger.info('[NEWS_REFRESH_STARTED] Refreshing news from all sources...');
-        // Fetch all feeds in parallel, tolerate individual failures
-        const results = await Promise.allSettled(NEWS_SOURCES.map(source => fetchFeed(source)));
-        const allArticles = [];
-        let successCount = 0;
-        let failCount = 0;
-        let totalRejected = 0;
-        results.forEach((result, i) => {
-            if (result.status === 'fulfilled') {
-                successCount++;
-                logger_1.winstonLogger.info(`[NEWS_AGGREGATION] ${NEWS_SOURCES[i].name}: ${result.value.accepted.length} articles accepted`);
-                allArticles.push(...result.value.accepted);
-                totalRejected += result.value.rejected;
-            }
-            else {
-                failCount++;
-                logger_1.winstonLogger.error(`[NEWS_AGGREGATION] ${NEWS_SOURCES[i].name}: REJECTED — ${result.reason}`);
-            }
-        });
-        logger_1.winstonLogger.info(`[NEWS_AGGREGATION_SUMMARY] ${successCount} feeds succeeded, ${failCount} failed, ${allArticles.length} total articles pre-dedup`);
-        if (allArticles.length === 0) {
-            logger_1.winstonLogger.error('[NEWS_REFRESH_FAILED] All feeds failed or returned zero articles — returning stale cache or empty');
-            const stale = cacheService_1.cacheService.get(NEWS_CACHE_KEY);
-            return stale || [];
-        }
-        // Deduplicate, drop older than 48h, sort newest-first, cap at MAX_TOTAL_ARTICLES
-        const preDedup = allArticles.length;
-        const fortyEightHoursAgoTime = Date.now() - 48 * 60 * 60 * 1000;
-        const deduped = deduplicateArticles(allArticles)
-            .filter(a => new Date(a.publishedAt).getTime() >= fortyEightHoursAgoTime)
-            .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
-            .slice(0, MAX_TOTAL_ARTICLES);
-        const dedupDropped = preDedup - deduped.length;
-        totalRejected += dedupDropped;
-        logger_1.winstonLogger.info('[NEWS_REFRESH_DEDUP] Deduplication complete', {
-            before: preDedup,
-            after: deduped.length,
-            dropped: dedupDropped
-        });
-        // Clean up expired (>48h) articles during refresh
+        logger_1.winstonLogger.info('[NEWS_REFRESH_STARTED] Multi-source ingestion started...');
+        const sources = newsSourceRegistry_1.newsSourceRegistry.getEnabledSources();
+        // Fetch existing articles from DB/local to enable cross-source deduplication
+        let existingArticles = [];
         try {
-            const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-            const { error: delErr } = await supabase_1.supabase
-                .from('railway_news')
-                .delete()
-                .lt('published_at', fortyEightHoursAgo);
-            if (delErr)
-                logger_1.winstonLogger.warn('[NEWS_CLEANUP] Failed to delete expired articles', { error: delErr.message });
-            else
-                logger_1.winstonLogger.info('[NEWS_CLEANUP] Deleted articles older than 48 hours');
-        }
-        catch (err) {
-            logger_1.winstonLogger.error('[NEWS_CLEANUP] Error', { error: err.message });
-        }
-        // Database persistence layer (write first, then cache)
-        try {
-            const dbPayload = transformForDatabase(deduped);
-            const { error } = await supabase_1.supabase
-                .from('railway_news')
-                .upsert(dbPayload, { onConflict: 'id' });
-            if (error) {
-                logger_1.winstonLogger.error('[NEWS_REFRESH_DB_UPSERT] Database upsert failed', {
-                    error: error.message,
-                    hint: 'Articles still cached but will not survive restart'
-                });
-            }
-            else {
-                logger_1.winstonLogger.info('[NEWS_REFRESH_DB_UPSERT] Database persistence complete', { count: deduped.length });
-                logger_1.winstonLogger.info(`[NEWS_AGGREGATION_FINAL_SUMMARY]
-Feeds attempted: ${NEWS_SOURCES.length}
-Feeds succeeded: ${successCount}
-Feeds failed: ${failCount}
-Articles accepted: ${allArticles.length}
-Articles rejected: ${totalRejected}
-Articles stored: ${deduped.length}`);
-            }
-        }
-        catch (err) {
-            logger_1.winstonLogger.error('[NEWS_REFRESH_DB_UPSERT] Database error', { error: err.message });
-        }
-        // Database consolidation (use DB as canonical cache source)
-        try {
-            const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-            const { data: dbArticles, error: queryError } = await supabase_1.supabase
-                .from('railway_news')
-                .select('*')
-                .gte('published_at', fortyEightHoursAgo)
-                .order('published_at', { ascending: false })
-                .limit(MAX_TOTAL_ARTICLES);
-            if (queryError)
-                throw queryError;
-            if (dbArticles && dbArticles.length > 0) {
-                const rawConsolidated = dbArticles.map(row => ({
-                    id: row.id,
-                    title: row.title,
-                    summary: row.summary,
-                    sourceName: row.source_name,
-                    sourceUrl: row.source_url,
-                    publishedAt: row.published_at,
-                    category: row.category,
-                    imageUrl: row.image_url,
-                }));
-                // PHASE_4C796 FIX: Re-apply relevance filter on DB consolidation read
-                // to evict articles stored before filter was tightened.
-                const consolidatedArticles = rawConsolidated.filter(a => isRailwayRelevant(a.title, a.summary, a.sourceName));
-                const evicted = rawConsolidated.length - consolidatedArticles.length;
-                if (evicted > 0) {
-                    logger_1.winstonLogger.info(`[NEWS_CONSOLIDATION] Evicted ${evicted} stale false-positive(s) on consolidation read`);
+            if ((0, supabase_1.isSupabaseConfigured)()) {
+                const { data } = await supabase_1.supabase
+                    .from('railway_news')
+                    .select('*')
+                    .order('published_at', { ascending: false })
+                    .limit(100);
+                if (data) {
+                    existingArticles = data.map(row => ({
+                        id: row.id,
+                        slug: row.slug || null,
+                        title: row.title,
+                        seo_title: row.seo_title || null,
+                        meta_description: row.meta_description || null,
+                        summary: row.summary || '',
+                        key_takeaways: row.key_takeaways || [],
+                        affected_trains: row.affected_trains || [],
+                        affected_stations: row.affected_stations || [],
+                        category: row.category || 'Railway Updates',
+                        source_name: row.source_name,
+                        source_url: row.source_url,
+                        source_id: row.source_id || 'unknown',
+                        source_tier: row.source_tier || 'TIER_1_OFFICIAL',
+                        source_guid: row.source_guid || null,
+                        content_hash: row.content_hash || '',
+                        simhash: row.simhash || '',
+                        relevance_score: row.relevance_score || 120,
+                        image_url: row.image_url || null,
+                        status: row.status || 'READY_FOR_AI',
+                        ingestion_status: row.ingestion_status || 'PENDING_AI',
+                        first_seen_at: row.first_seen_at || new Date().toISOString(),
+                        last_seen_at: row.last_seen_at || new Date().toISOString(),
+                        published_at: row.published_at,
+                        created_at: row.created_at || new Date().toISOString(),
+                        updated_at: row.updated_at || new Date().toISOString(),
+                    }));
                 }
-                cacheService_1.cacheService.set(NEWS_CACHE_KEY, consolidatedArticles, NEWS_CACHE_TTL);
-                logger_1.winstonLogger.info(`[NEWS_REFRESH_COMPLETE] Cache consolidated from DB: ${consolidatedArticles.length} articles`);
-                return consolidatedArticles;
             }
         }
-        catch (err) {
-            logger_1.winstonLogger.error('[NEWS_CACHE_CONSOLIDATION] Failed to query DB, falling back to delta cache', { error: err.message });
+        catch {
+            // Non-fatal if DB query fails during warmup
         }
-        // Fallback: Write delta to cache (30 min TTL) if DB query fails or is empty
-        cacheService_1.cacheService.set(NEWS_CACHE_KEY, deduped, NEWS_CACHE_TTL);
-        logger_1.winstonLogger.info(`[NEWS_REFRESH_COMPLETE] Cache refreshed with delta fallback: ${deduped.length} articles`);
-        return deduped;
+        // Ingest all sources in parallel with total failure isolation
+        const results = await Promise.allSettled(sources.map(src => newsIngestionEngine_1.newsIngestionEngine.ingestSource(src, existingArticles)));
+        const newCanonical = [];
+        let successSources = 0;
+        let failedSources = 0;
+        for (let i = 0; i < results.length; i++) {
+            const res = results[i];
+            if (res.status === 'fulfilled') {
+                if (res.value.status === 'SUCCESS') {
+                    successSources++;
+                    newCanonical.push(...res.value.accepted);
+                    logger_1.winstonLogger.info(`[NEWS_INGESTION_SOURCE_SUCCESS] ${sources[i].name}: ${res.value.accepted.length} accepted, ${res.value.rejectedCount} rejected`);
+                }
+                else {
+                    failedSources++;
+                    logger_1.winstonLogger.warn(`[NEWS_INGESTION_SOURCE_WARN] ${sources[i].name} returned status ${res.value.status}: ${res.value.error}`);
+                }
+            }
+            else {
+                failedSources++;
+                logger_1.winstonLogger.error(`[NEWS_INGESTION_SOURCE_CRASH] ${sources[i].name} unhandled crash: ${res.reason}`);
+            }
+        }
+        logger_1.winstonLogger.info(`[NEWS_INGESTION_SUMMARY] ${successSources} sources succeeded, ${failedSources} failed, ${newCanonical.length} new candidate articles.`);
+        // 3. AI Fact Distillation & Zero-Hallucination Validation Pipeline
+        let processedCanonical = newCanonical;
+        if (newCanonical.length > 0) {
+            logger_1.winstonLogger.info(`[NEWS_AI_PIPELINE_START] Distilling facts and SEO for ${newCanonical.length} candidate articles...`);
+            const { newsDistillationService } = require('./news/newsDistillationService');
+            processedCanonical = await newsDistillationService.batchDistill(newCanonical);
+            logger_1.winstonLogger.info(`[NEWS_AI_PIPELINE_COMPLETE] Processed ${processedCanonical.length} articles.`);
+        }
+        // If all sources failed and returned 0, return cached or fallback
+        if (processedCanonical.length === 0 && existingArticles.length === 0) {
+            logger_1.winstonLogger.warn('[NEWS_REFRESH_EMPTY] Zero articles ingested; serving memory or local fallback.');
+            const cached = cacheService_1.cacheService.get(NEWS_CACHE_KEY);
+            return cached || readLocalNewsFallback();
+        }
+        // Non-destructive DB persistence (additive upsert with legacy schema fallback)
+        if (processedCanonical.length > 0 && (0, supabase_1.isSupabaseConfigured)()) {
+            try {
+                const payload = transformToDatabasePayload(processedCanonical);
+                const { error } = await supabase_1.supabase
+                    .from('railway_news')
+                    .upsert(payload, { onConflict: 'id' });
+                if (error) {
+                    // If Supabase table does not have new additive columns yet, fallback to legacy schema
+                    if (error.message?.includes('column') || error.code === 'PGRST204') {
+                        logger_1.winstonLogger.info('[NEWS_DB_UPSERT_LEGACY_FALLBACK] Retrying with legacy schema columns...');
+                        const legacyPayload = newCanonical.map(a => ({
+                            id: a.id,
+                            title: a.title,
+                            summary: a.summary,
+                            source_name: a.source_name,
+                            source_url: a.source_url,
+                            published_at: a.published_at,
+                            category: a.category,
+                            image_url: a.image_url,
+                            updated_at: new Date().toISOString(),
+                        }));
+                        const { error: legacyErr } = await supabase_1.supabase
+                            .from('railway_news')
+                            .upsert(legacyPayload, { onConflict: 'id' });
+                        if (legacyErr) {
+                            logger_1.winstonLogger.warn('[NEWS_DB_LEGACY_UPSERT_FAIL]', { error: legacyErr.message });
+                        }
+                        else {
+                            logger_1.winstonLogger.info('[NEWS_DB_LEGACY_UPSERT_SUCCESS]', { count: legacyPayload.length });
+                        }
+                    }
+                    else {
+                        logger_1.winstonLogger.warn('[NEWS_DB_UPSERT_FAIL]', { error: error.message });
+                    }
+                }
+                else {
+                    logger_1.winstonLogger.info('[NEWS_DB_UPSERT_SUCCESS]', { count: processedCanonical.length });
+                }
+            }
+            catch (err) {
+                logger_1.winstonLogger.error('[NEWS_DB_UPSERT_ERROR]', { error: err.message });
+            }
+        }
+        // Combine newly ingested articles + existing articles, filter out rejected ones, filter by 48h freshness for breaking news, sort newest first
+        const combined = [...processedCanonical, ...existingArticles];
+        const seenIds = new Set();
+        const fortyEightHoursAgoTime = Date.now() - 48 * 60 * 60 * 1000;
+        const finalArticles = combined
+            .filter(a => {
+            if (seenIds.has(a.id))
+                return false;
+            seenIds.add(a.id);
+            return new Date(a.published_at).getTime() >= fortyEightHoursAgoTime;
+        })
+            .sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime())
+            .slice(0, MAX_TOTAL_ARTICLES)
+            .map(canonicalToLegacyArticle);
+        // Update in-process cache and local storage
+        cacheService_1.cacheService.set(NEWS_CACHE_KEY, finalArticles, NEWS_CACHE_TTL);
+        writeLocalNewsFallback(finalArticles);
+        logger_1.winstonLogger.info('[NEWS_REFRESH_COMPLETE]', { count: finalArticles.length });
+        return finalArticles;
     },
     /**
-     * Triggers push notifications for breaking news alerts via Firebase FCM.
+     * Returns source health metrics for monitoring and admin diagnostics.
+     */
+    getSourceHealthSummary: () => {
+        return newsSourceRegistry_1.newsSourceRegistry.getHealthSummary();
+    },
+    /**
+     * Triggers push notification for high-priority rail updates.
      */
     triggerPushAlert: async (article) => {
         const alertCategories = ['Delays', 'Cancellation', 'Safety', 'Operations'];
         if (alertCategories.includes(article.category)) {
             logger_1.winstonLogger.info(`[PUSH_ALERT] Broadcasting alert: ${article.title}`);
-            const { broadcastToTopic } = require('./firebaseService');
-            const topic = article.category.toLowerCase().replace(/\s+/g, '_');
-            await broadcastToTopic(topic, `🚨 ${article.category}`, article.title);
+            try {
+                const { broadcastToTopic } = require('./firebaseService');
+                const topic = article.category.toLowerCase().replace(/\s+/g, '_');
+                await broadcastToTopic(topic, `🚨 ${article.category}`, article.title);
+            }
+            catch (err) {
+                logger_1.winstonLogger.warn('[PUSH_ALERT_FAIL]', { error: err.message });
+            }
         }
     },
 };

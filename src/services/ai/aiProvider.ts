@@ -7,6 +7,44 @@ export interface AiCapabilities {
   normalizeAvailability: boolean;
   suggestAlternatives: boolean;
   genericPrompt: boolean;
+  distillNewsArticle?: boolean;
+}
+
+export interface NewsDistillationInput {
+  title: string;
+  summary: string;
+  sourceName: string;
+  sourceUrl: string;
+  sourceTier: 'TIER_1_OFFICIAL' | 'TIER_2_GOVERNMENT' | 'TIER_3_RECOGNIZED_MEDIA' | string;
+  publishedAt: string;
+  category: string;
+  candidateTrains?: string[];
+  candidateStations?: string[];
+}
+
+export interface NewsKeyTakeaways {
+  what_happened: string;
+  who_is_affected: string;
+  what_passengers_should_do: string;
+}
+
+export interface NewsFaqItem {
+  question: string;
+  answer: string;
+}
+
+export interface NewsDistillationOutput {
+  title: string;
+  summary: string;
+  key_takeaways: NewsKeyTakeaways;
+  affected_trains: string[];
+  affected_stations: string[];
+  seo_title: string;
+  meta_description: string;
+  slug: string;
+  faqs: NewsFaqItem[];
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW' | 'REJECTED';
+  model?: string;
 }
 
 export type AiErrorCode =
@@ -136,6 +174,7 @@ export interface AiProvider {
   generateSchedule?(trainNo: string): Promise<ScheduleGenerationOutput | null>;
   normalizeAvailability?(rawAvailString: string): Promise<AvailabilityItemOutput[]>;
   suggestAlternatives?(source: string, destination: string): Promise<any[]>;
+  distillNewsArticle?(input: NewsDistillationInput): Promise<NewsDistillationOutput | null>;
   generateText?(prompt: string, options?: { json?: boolean; temperature?: number; timeoutMs?: number }): Promise<any>;
   healthCheck?(): Promise<{ status: 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY'; latencyMs: number; message: string }>;
 }
