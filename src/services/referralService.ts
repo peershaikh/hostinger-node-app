@@ -5,6 +5,7 @@ import path from 'path';
 import { winstonLogger } from '../middleware/logger';
 import { analyticsService } from './analyticsService';
 import { authService } from './authService';
+import { safeWriteFileSync } from '../config/supabase';
 
 
 const REFERRAL_PREFIX = 'RAIL-';
@@ -87,7 +88,7 @@ class ReferralService {
 
   private saveAttributionStore() {
     try {
-      fs.writeFileSync(ATTRIBUTION_FILE, JSON.stringify(this.attributionStore, null, 2));
+      safeWriteFileSync(ATTRIBUTION_FILE, JSON.stringify(this.attributionStore, null, 2));
     } catch (e: any) {
       winstonLogger.error(`[REFERRAL_ATTR] Failed to save attribution store: ${e.message}`);
     }

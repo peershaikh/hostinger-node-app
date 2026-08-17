@@ -13,6 +13,8 @@ import { aiOperationsService } from '../services/aiOperationsService';
 import { incidentDetectionService } from '../services/incidentDetectionService';
 import { adminIntelligenceV2Service } from '../services/adminIntelligenceV2Service';
 import { productionIncidentService } from '../services/productionIncidentService';
+import { signupIntelligenceService } from '../services/signupIntelligenceService';
+import { learningObservabilityService } from '../services/learningObservabilityService';
 
 export class AdminController {
 
@@ -434,6 +436,27 @@ export class AdminController {
     } catch (err: any) {
       winstonLogger.error(`[ADMIN_USERS] listUsers error: ${err.message}`);
       res.status(500).json({ success: false, error: 'Failed to fetch users' });
+    }
+  }
+
+  async getSignupIntelligence(req: Request, res: Response) {
+    try {
+      const days = parseInt(req.query.days as string, 10) || 7;
+      const data = await signupIntelligenceService.getSignupIntelligence(days);
+      res.json({ success: true, data });
+    } catch (err: any) {
+      winstonLogger.error(`[ADMIN_SIGNUP_INTELLIGENCE] Error: ${err.message}`);
+      res.status(500).json({ success: false, error: 'Failed to compute signup intelligence metrics' });
+    }
+  }
+
+  async getLearningIntelligence(req: Request, res: Response) {
+    try {
+      const data = await learningObservabilityService.getLearningIntelligence();
+      res.json({ success: true, data });
+    } catch (err: any) {
+      winstonLogger.error(`[ADMIN_LEARNING_INTELLIGENCE] Error: ${err.message}`);
+      res.status(500).json({ success: false, error: 'Failed to compute learning intelligence observatory report' });
     }
   }
 

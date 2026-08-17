@@ -144,10 +144,13 @@ const piiSanitizerFormat = winston_1.default.format((info) => {
     return sanitizeValue(info);
 });
 const winston_daily_rotate_file_1 = __importDefault(require("winston-daily-rotate-file"));
-exports.winstonLogger = winston_1.default.createLogger({
-    level: process.env.LOG_LEVEL || 'info',
-    format: winston_1.default.format.combine(structuredFormat(), piiSanitizerFormat(), winston_1.default.format.timestamp(), winston_1.default.format.json()),
-    transports: [
+// This cannot import config/supabase: that module imports winstonLogger. Read
+// the shell-only flag directly so ordinary E2E request logging stays console
+// only and never creates/rotates local log files.
+const noWriteMode = process.env.LOCAL_E2E_NO_WRITE === 'true';
+const loggerTransports = noWriteMode
+    ? [new winston_1.default.transports.Console()]
+    : [
         new winston_1.default.transports.Console(),
         new winston_daily_rotate_file_1.default({
             filename: 'logs/error-%DATE%.log',
@@ -164,7 +167,11 @@ exports.winstonLogger = winston_1.default.createLogger({
             maxSize: '20m',
             maxFiles: '14d'
         })
-    ],
+    ];
+exports.winstonLogger = winston_1.default.createLogger({
+    level: process.env.LOG_LEVEL || 'info',
+    format: winston_1.default.format.combine(structuredFormat(), piiSanitizerFormat(), winston_1.default.format.timestamp(), winston_1.default.format.json()),
+    transports: loggerTransports,
 });
 // Add structured logging methods to the winstonLogger instance
 exports.winstonLogger.requestStart = (reqId, endpoint, params) => {

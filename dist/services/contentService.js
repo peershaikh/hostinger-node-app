@@ -2,11 +2,19 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.contentService = exports.ContentService = void 0;
 const supabase_js_1 = require("@supabase/supabase-js");
+const supabase_1 = require("../config/supabase");
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
 let supabase = null;
 if (SUPABASE_URL && SUPABASE_KEY) {
-    supabase = (0, supabase_js_1.createClient)(SUPABASE_URL, SUPABASE_KEY);
+    // PHASE 5B136: second Supabase client. In LOCAL_E2E_NO_WRITE mode the same
+    // transport guard is installed here; OFF mode keeps the original
+    // two-argument createClient call verbatim.
+    supabase = (0, supabase_1.isNoWriteMode)()
+        ? (0, supabase_js_1.createClient)(SUPABASE_URL, SUPABASE_KEY, {
+            global: { fetch: (0, supabase_1.createNoWriteFetch)('services/contentService') }
+        })
+        : (0, supabase_js_1.createClient)(SUPABASE_URL, SUPABASE_KEY);
 }
 class ContentService {
     // -------------------------------------------------------------

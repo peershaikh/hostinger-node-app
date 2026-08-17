@@ -7,17 +7,10 @@ exports.emailService = exports.EmailService = void 0;
 const resend_1 = require("resend");
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const logger_1 = require("../middleware/logger");
-// Initialize Resend with the provided API key
+// Initialize Resend with the provided API key if present
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
-if (!RESEND_API_KEY) {
-    throw new Error('RESEND_API_KEY is not defined in environment variables.');
-}
-const resend = new resend_1.Resend(RESEND_API_KEY);
-const SENDER_EMAIL = process.env.SENDER_EMAIL;
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-if (!SENDER_EMAIL || !EMAIL_REGEX.test(SENDER_EMAIL)) {
-    throw new Error('SENDER_EMAIL is missing or invalid in environment variables.');
-}
+const resend = RESEND_API_KEY ? new resend_1.Resend(RESEND_API_KEY) : null;
+const SENDER_EMAIL = process.env.SENDER_EMAIL || 'support@trayago.in';
 // Initialize Nodemailer for Brevo SMTP (Fallback)
 const brevoTransporter = nodemailer_1.default.createTransport({
     host: 'smtp-relay.brevo.com',
@@ -59,18 +52,25 @@ class EmailService {
         </div>
       </div>
     `;
-        try {
-            const { error } = await resend.emails.send({
-                from: `Trayago <${SENDER_EMAIL}>`,
-                to: toEmail,
-                subject,
-                html: htmlContent,
-            });
-            if (error) {
-                throw new Error(error.message);
-            }
-            logger_1.winstonLogger.info(`[EMAIL_SUCCESS] OTP sent to ${toEmail} via Resend`);
+        if (!resend && !process.env.BREVO_SMTP_LOGIN) {
+            logger_1.winstonLogger.info(`[DEV_OTP] Verification code for ${toEmail}: ${otpCode}`);
             return true;
+        }
+        try {
+            if (resend) {
+                const { error } = await resend.emails.send({
+                    from: `Trayago <${SENDER_EMAIL}>`,
+                    to: toEmail,
+                    subject,
+                    html: htmlContent,
+                });
+                if (error) {
+                    throw new Error(error.message);
+                }
+                logger_1.winstonLogger.info(`[EMAIL_SUCCESS] OTP sent to ${toEmail} via Resend`);
+                return true;
+            }
+            throw new Error('Resend not configured');
         }
         catch (err) {
             logger_1.winstonLogger.warn(`[EMAIL_WARN] Resend failed for ${toEmail}: ${err.message}. Falling back to Brevo SMTP...`);
@@ -121,18 +121,25 @@ class EmailService {
         </div>
       </div>
     `;
-        try {
-            const { error } = await resend.emails.send({
-                from: `Trayago <${SENDER_EMAIL}>`,
-                to: toEmail,
-                subject,
-                html: htmlContent,
-            });
-            if (error) {
-                throw new Error(error.message);
-            }
-            logger_1.winstonLogger.info(`[EMAIL_SUCCESS] Password reset OTP sent to ${toEmail} via Resend`);
+        if (!resend && !process.env.BREVO_SMTP_LOGIN) {
+            logger_1.winstonLogger.info(`[DEV_PASSWORD_RESET_OTP] Reset code for ${toEmail}: ${otpCode}`);
             return true;
+        }
+        try {
+            if (resend) {
+                const { error } = await resend.emails.send({
+                    from: `Trayago <${SENDER_EMAIL}>`,
+                    to: toEmail,
+                    subject,
+                    html: htmlContent,
+                });
+                if (error) {
+                    throw new Error(error.message);
+                }
+                logger_1.winstonLogger.info(`[EMAIL_SUCCESS] Password reset OTP sent to ${toEmail} via Resend`);
+                return true;
+            }
+            throw new Error('Resend not configured');
         }
         catch (err) {
             logger_1.winstonLogger.warn(`[EMAIL_WARN] Resend failed for ${toEmail}: ${err.message}. Falling back to Brevo SMTP...`);
@@ -153,24 +160,31 @@ class EmailService {
         }
     }
     async sendAlertEmail(toEmail, alertTitle, alertMessage) {
+        if (!resend && !process.env.BREVO_SMTP_LOGIN) {
+            logger_1.winstonLogger.info(`[DEV_ALERT] Alert for ${toEmail}: ${alertTitle}`);
+            return true;
+        }
         try {
-            const { error } = await resend.emails.send({
-                from: `Trayago Alerts <${SENDER_EMAIL}>`,
-                to: toEmail,
-                subject: alertTitle,
-                html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
-            <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-              <h2 style="color: #ef4444; margin-top: 0;">${alertTitle}</h2>
-              <p style="color: #555; font-size: 16px; line-height: 1.5;">
-                ${alertMessage}
-              </p>
+            if (resend) {
+                const { error } = await resend.emails.send({
+                    from: `Trayago Alerts <${SENDER_EMAIL}>`,
+                    to: toEmail,
+                    subject: alertTitle,
+                    html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
+              <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <h2 style="color: #ef4444; margin-top: 0;">${alertTitle}</h2>
+                <p style="color: #555; font-size: 16px; line-height: 1.5;">
+                  ${alertMessage}
+                </p>
+              </div>
             </div>
-          </div>
-        `,
-            });
-            if (error) {
-                throw new Error(error.message);
+          `,
+                });
+                if (error) {
+                    throw new Error(error.message);
+                }
+                return true;
             }
             return true;
         }
@@ -180,15 +194,22 @@ class EmailService {
         }
     }
     async sendHealthReportEmail(toEmail, subject, htmlContent) {
+        if (!resend && !process.env.BREVO_SMTP_LOGIN) {
+            logger_1.winstonLogger.info(`[DEV_HEALTH_REPORT] Health report for ${toEmail}: ${subject}`);
+            return true;
+        }
         try {
-            const { error } = await resend.emails.send({
-                from: `Trayago Monitor <${SENDER_EMAIL}>`,
-                to: toEmail,
-                subject: subject,
-                html: htmlContent,
-            });
-            if (error) {
-                throw new Error(error.message);
+            if (resend) {
+                const { error } = await resend.emails.send({
+                    from: `Trayago Monitor <${SENDER_EMAIL}>`,
+                    to: toEmail,
+                    subject: subject,
+                    html: htmlContent,
+                });
+                if (error) {
+                    throw new Error(error.message);
+                }
+                return true;
             }
             return true;
         }

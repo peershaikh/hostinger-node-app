@@ -98,12 +98,41 @@ export class AnalyticsController {
    * POST /api/analytics/event
    */
   async trackEvent(req: Request, res: Response) {
-    const { event_type, pnr, metadata } = req.body;
+    const { event_type, event_name, eventName, pnr, metadata, guestId, userId, searchId, requestId, optionId, segmentId, mode, provider, status, latencyMs } = req.body;
     try {
-      const sessionId = (metadata?.session_id || metadata?.sessionId || metadata?.userId || metadata?.user_id || null) as string | null;
+      const sessionId = (metadata?.session_id || metadata?.sessionId || metadata?.userId || metadata?.user_id || guestId || userId || null) as string | null;
+      const rawEventName = event_name || eventName || event_type || 'custom_event';
 
+      // 1. Dual-emit into canonical universal event stream
+      const { universalEventEmitter } = require('../services/universalEventEmitter');
+      const { UniversalEventNames, UNIVERSAL_EVENT_NAME_SET } = require('../constants/eventTaxonomy');
+      const normalizedName = rawEventName.toLowerCase().replace(/[\s-]+/g, '_');
+      const canonicalName = UNIVERSAL_EVENT_NAME_SET.has(normalizedName)
+        ? normalizedName
+        : UniversalEventNames.NOTIFICATION_SENT;
+
+      universalEventEmitter.emit({
+        eventName: canonicalName,
+        requestId: requestId || undefined,
+        searchId: searchId || undefined,
+        optionId: optionId || undefined,
+        segmentId: segmentId || undefined,
+        guestId: sessionId || undefined,
+        userId: (userId || metadata?.user_id || metadata?.userId || null) as string | null,
+        mode: mode || 'rail',
+        provider: provider || undefined,
+        status: status || undefined,
+        latencyMs: latencyMs || undefined,
+        metadata: {
+          ...metadata,
+          original_event_type: rawEventName,
+          pnr: pnr || undefined
+        }
+      });
+
+      // 2. Legacy table write for backward compatibility
       const dbPayload = {
-        event_type,
+        event_type: rawEventName,
         session_id: sessionId,
         metadata: metadata || {},
         payload: {
@@ -124,12 +153,23 @@ export class AnalyticsController {
    * POST /api/analytics/split-click
    */
   async logSplitClick(req: Request, res: Response) {
-    const { id } = req.body;
+    const { id, searchId, hub, trainNos } = req.body;
     try {
       if (id) {
         const { learningService } = require('../services/learningService');
         await learningService.updateSplitInteraction(id, true, false);
       }
+
+      const { universalEventEmitter } = require('../services/universalEventEmitter');
+      const { UniversalEventNames } = require('../constants/eventTaxonomy');
+      universalEventEmitter.emit({
+        eventName: UniversalEventNames.SPLIT_RESULT_CLICKED,
+        searchId: searchId || undefined,
+        optionId: id || undefined,
+        mode: 'rail',
+        metadata: { split_id: id, hub, train_nos: trainNos }
+      });
+
       res.status(200).json({ success: true });
     } catch (err: any) {
       winstonLogger.error(`[SPLIT_CLICK_LOG] Error: ${err.message}`);
@@ -141,9 +181,27 @@ export class AnalyticsController {
    * POST /api/analytics/feedback
    */
   async submitFeedback(req: Request, res: Response) {
-    const { pnr, is_accurate, comments, prediction_percent, confidence_label, current_status } = req.body;
+    const { pnr, is_accurate, comments, prediction_percent, confidence_label, current_status, userId, guestId } = req.body;
     try {
-      // 1. Try legacy feedback table
+      // 1. Dual-emit into canonical universal event stream
+      const { universalEventEmitter } = require('../services/universalEventEmitter');
+      const { UniversalEventNames } = require('../constants/eventTaxonomy');
+      universalEventEmitter.emit({
+        eventName: UniversalEventNames.PNR_PREDICTION_FEEDBACK,
+        guestId: guestId || undefined,
+        userId: userId || undefined,
+        mode: 'rail',
+        metadata: {
+          pnr: pnr || undefined,
+          is_accurate: !!is_accurate,
+          prediction_percent,
+          confidence_label,
+          current_status,
+          comments
+        }
+      });
+
+      // 2. Try legacy feedback table
       try {
         await supabase.from('feedback').insert([{ 
           pnr, 
@@ -155,7 +213,7 @@ export class AnalyticsController {
         // Ignore legacy table errors
       }
 
-      // 2. Insert into new public.pnr_prediction_feedback table
+      // 3. Insert into new public.pnr_prediction_feedback table
       const payload = { 
         pnr, 
         prediction_percent: prediction_percent !== undefined ? parseInt(String(prediction_percent), 10) : 50,
@@ -177,7 +235,7 @@ export class AnalyticsController {
           const filePath = path.join(DATA_DIR, 'pnr_prediction_feedback_fallback.jsonl');
           const line = JSON.stringify({ ...payload, created_at: new Date().toISOString() }) + '\n';
           fs.appendFileSync(filePath, line, 'utf8');
-          winstonLogger.info(`[FEEDBACK] Saved to local fallback: ${pnr}`);
+          winstonLogger.info(`[FALLBACK_ENQUEUE] file=pnr_prediction_feedback_fallback.jsonl count=1 pnr=${pnr}`);
         } else {
           throw error;
         }
@@ -193,7 +251,7 @@ export class AnalyticsController {
    * POST /api/analytics/complaint
    */
   async logComplaint(req: Request, res: Response) {
-    const { pnr, train_no, issue_type, tweet_content } = req.body;
+    const { pnr, train_no, issue_type, tweet_content, userId, guestId } = req.body;
     const payload = { 
       pnr, 
       train_no, 
@@ -202,6 +260,20 @@ export class AnalyticsController {
       timestamp: new Date().toISOString() 
     };
     try {
+      const { universalEventEmitter } = require('../services/universalEventEmitter');
+      const { UniversalEventNames } = require('../constants/eventTaxonomy');
+      universalEventEmitter.emit({
+        eventName: UniversalEventNames.COMPLAINT_LOGGED,
+        guestId: guestId || undefined,
+        userId: userId || undefined,
+        mode: 'rail',
+        metadata: {
+          train_no,
+          issue_type,
+          pnr: pnr || undefined
+        }
+      });
+
       const { error } = await supabase.from('social_complaints').insert([payload]);
       if (error) {
         throw error;
@@ -219,7 +291,7 @@ export class AnalyticsController {
         const filePath = path.join(DATA_DIR, 'social_complaints_fallback.jsonl');
         const line = JSON.stringify(payload) + '\n';
         fs.appendFileSync(filePath, line, 'utf8');
-        winstonLogger.info(`[COMPLAINT_LOG] Saved to local fallback: ${pnr}`);
+        winstonLogger.info(`[FALLBACK_ENQUEUE] file=social_complaints_fallback.jsonl count=1 pnr=${pnr}`);
         res.status(200).json({ success: true, fallback: true });
       } catch (fallbackErr: any) {
         winstonLogger.error(`[COMPLAINT_LOG] Fallback write failed: ${fallbackErr.message}`);

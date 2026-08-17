@@ -10,6 +10,7 @@ const path_1 = __importDefault(require("path"));
 const supabase_1 = require("../config/supabase");
 const logger_1 = require("../middleware/logger");
 const llmService_1 = require("../services/llmService");
+const userFeedbackIntelligenceService_1 = require("../services/userFeedbackIntelligenceService");
 const FEEDBACK_FILE = path_1.default.join(__dirname, '../../../data/feedback.json');
 const FEEDBACK_CATEGORIES_FILE = path_1.default.join(__dirname, '../../../data/feedback_categories.json');
 // ─── Async background categorization (non-blocking) ─────────────────────────
@@ -141,6 +142,29 @@ exports.feedbackController = {
             const feedbackText = [bug, suggestions, feature].filter(Boolean).join(' | ') || 'No description provided';
             setImmediate(() => {
                 categorizeFeedbackAsync(feedback.id, feedbackText, { feature, severity, device });
+            });
+            // ───────────────────────────────────────────────────────────────────────
+            // ─── Phase 029 User Feedback Intelligence Ingestion ────────────────────
+            setImmediate(() => {
+                userFeedbackIntelligenceService_1.userFeedbackIntelligenceService.ingestExplicitFeedback({
+                    feedbackId: feedback.id,
+                    userId: userId || null,
+                    guestId: req.headers['x-device-id'] || undefined,
+                    ipAddress: req.ip || req.socket.remoteAddress,
+                    comments: feedbackText,
+                    overallRating: performance ? parseInt(performance, 10) : undefined,
+                    feature,
+                    severity,
+                    device,
+                    metadata: {
+                        bug,
+                        suggestions,
+                        ui,
+                        routeContext
+                    }
+                }).catch(err => {
+                    logger_1.winstonLogger.debug(`[FEEDBACK_INTELLIGENCE_ERR] ${err.message}`);
+                });
             });
             // ───────────────────────────────────────────────────────────────────────
             return res.json({ success: true });

@@ -7,10 +7,11 @@ exports.SplitDebugLogger = void 0;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const logger_1 = require("../middleware/logger");
+const supabase_1 = require("../config/supabase");
 // Create logs directory if it doesn't exist
 const logsDir = path_1.default.join(__dirname, '../../logs');
-if (!fs_1.default.existsSync(logsDir)) {
-    fs_1.default.mkdirSync(logsDir, { recursive: true });
+if (!(0, supabase_1.isNoWriteMode)() && !fs_1.default.existsSync(logsDir)) {
+    (0, supabase_1.safeMkdirSync)(logsDir, { recursive: true });
 }
 const debugLogPath = path_1.default.join(logsDir, 'split-debug.log');
 class SplitDebugLogger {
@@ -21,7 +22,10 @@ class SplitDebugLogger {
                 timestamp: new Date().toISOString()
             };
             const logLine = JSON.stringify(logEntry) + '\n';
-            fs_1.default.appendFileSync(debugLogPath, logLine, 'utf8');
+            if ((0, supabase_1.isNoWriteMode)()) {
+                return;
+            }
+            (0, supabase_1.safeAppendFileSync)(debugLogPath, logLine, 'utf8');
             logger_1.winstonLogger.info(`[SPLIT_DEBUG] Logged debug data for ${data.source} → ${data.destination}`);
         }
         catch (error) {

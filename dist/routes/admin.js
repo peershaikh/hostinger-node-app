@@ -10,6 +10,10 @@ const adminAuth_1 = require("../middleware/adminAuth");
 const rateLimiter_1 = require("../middleware/rateLimiter");
 const providers_1 = __importDefault(require("./providers"));
 const rates_1 = __importDefault(require("./rates"));
+const bulkAdmin_1 = __importDefault(require("./bulkAdmin"));
+const featureFlagAdmin_1 = __importDefault(require("./featureFlagAdmin"));
+const bookingAdmin_1 = __importDefault(require("./bookingAdmin"));
+const aiAdmin_1 = __importDefault(require("./aiAdmin"));
 // ── Phase 10.8.42 additions (T2/T3/T4) ──────────────────────────────────────
 const eventMetrics_1 = require("../services/eventMetrics");
 const userCache_1 = require("../cache/userCache");
@@ -97,9 +101,17 @@ router.post('/users/bulk-block', rateLimiter_1.adminLimiter, adminAuth_1.require
 router.post('/users/bulk-unblock', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.bulkUnblockUsers.bind(adminController_1.adminController));
 router.post('/users/:id/terminate-sessions', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.terminateUserSessions.bind(adminController_1.adminController));
 router.post('/users/:id/adjust-credits', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.adjustUserCredits.bind(adminController_1.adminController));
+router.get('/signup-intelligence', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getSignupIntelligence.bind(adminController_1.adminController));
+router.get('/learning-intelligence', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getLearningIntelligence.bind(adminController_1.adminController));
+// ─── Safe Bulk Operations Engine (Phase 053) ────────────────────────────────
+router.use('/bulk', bulkAdmin_1.default);
+// ─── Safe Feature Flag & Kill Switch Control Center (Phase 054) ─────────────
+router.use('/feature-flags', featureFlagAdmin_1.default);
 // ─── API Provider Management ────────────────────────────────────────────────
 router.use('/providers/rates', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, rates_1.default);
 router.use('/providers', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, providers_1.default);
+router.use('/booking', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, bookingAdmin_1.default);
+router.use('/ai', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, aiAdmin_1.default);
 // ─── Beta Codes Management ──────────────────────────────────────────────────
 router.get('/beta/codes', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.listBetaCodes.bind(adminController_1.adminController));
 router.post('/beta/codes', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.createBetaCode.bind(adminController_1.adminController));

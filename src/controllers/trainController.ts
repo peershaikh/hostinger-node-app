@@ -14,6 +14,8 @@ import { selfLearningService } from '../services/selfLearningService';
 import { knowledgeMetricsService } from '../services/knowledgeMetricsService';
 import { rankingService } from '../services/rankingService';
 import { segmentAvailabilityEngine } from '../services/segmentAvailabilityEngine';
+import { providerConfigService } from '../services/providerConfigService';
+import { bookingProviderResolver } from '../services/booking';
 
 export class TrainController {
 
@@ -100,13 +102,29 @@ export class TrainController {
         const rawSplits = results.split || results.smart_routes || [];
         const mergedSplits = rawSplits;
 
-        // Deduplicate splits
+        // Deduplicate splits using full route identity so distinct dates,
+        // endpoints, and times never collapse into one candidate.
         const seen = new Set<string>();
         const uniqueSplits = mergedSplits.filter((s: any) => {
           if (!s) return false;
-          const leg1No = s.leg1?.trainNo || s.legs?.[0]?.trainNo || '';
-          const leg2No = s.leg2?.trainNo || s.legs?.[1]?.trainNo || '';
-          const key = `${s.hub}_${leg1No}_${leg2No}_${s.leg1?.departure || ''}`;
+          const leg1 = s.leg1 || s.legs?.[0] || {};
+          const leg2 = s.leg2 || s.legs?.[1] || {};
+          const hub = s.hub || s.via || '';
+          const key = [
+            hub,
+            leg1.trainNo || '',
+            leg1.fromCode || leg1.from || '',
+            leg1.toCode || leg1.to || '',
+            leg1.travelDate || leg1.journeyDate || '',
+            leg1.departure || '',
+            leg1.arrival || '',
+            leg2.trainNo || '',
+            leg2.fromCode || leg2.from || '',
+            leg2.toCode || leg2.to || '',
+            leg2.travelDate || leg2.journeyDate || '',
+            leg2.departure || '',
+            leg2.arrival || '',
+          ].join('|');
           if (seen.has(key)) return false;
           seen.add(key);
           return true;
@@ -115,6 +133,9 @@ export class TrainController {
         const rankedSplits = rankingService.rankTrains(uniqueSplits);
 
         finalSplits = rankedSplits.slice(0, 5); // NEVER more than 5
+        if (!providerConfigService.isInterStationTransfersEnabled()) {
+          finalSplits = finalSplits.map(({ transferMeta, ...rest }: any) => rest);
+        }
         winstonLogger.info(`[CONTROLLER] Split results: ${finalSplits.length}`);
         knowledgeMetricsService.endSearchContext();
       }
@@ -316,13 +337,29 @@ export class TrainController {
 
         const mergedSplits = rawSplits;
 
-        // Deduplicate splits
+        // Deduplicate splits using full route identity so distinct dates,
+        // endpoints, and times never collapse into one candidate.
         const seen = new Set<string>();
         const uniqueSplits = mergedSplits.filter((s: any) => {
           if (!s) return false;
-          const leg1No = s.leg1?.trainNo || s.legs?.[0]?.trainNo || '';
-          const leg2No = s.leg2?.trainNo || s.legs?.[1]?.trainNo || '';
-          const key = `${s.hub}_${leg1No}_${leg2No}_${s.leg1?.departure || ''}`;
+          const leg1 = s.leg1 || s.legs?.[0] || {};
+          const leg2 = s.leg2 || s.legs?.[1] || {};
+          const hub = s.hub || s.via || '';
+          const key = [
+            hub,
+            leg1.trainNo || '',
+            leg1.fromCode || leg1.from || '',
+            leg1.toCode || leg1.to || '',
+            leg1.travelDate || leg1.journeyDate || '',
+            leg1.departure || '',
+            leg1.arrival || '',
+            leg2.trainNo || '',
+            leg2.fromCode || leg2.from || '',
+            leg2.toCode || leg2.to || '',
+            leg2.travelDate || leg2.journeyDate || '',
+            leg2.departure || '',
+            leg2.arrival || '',
+          ].join('|');
           if (seen.has(key)) return false;
           seen.add(key);
           return true;
@@ -360,6 +397,10 @@ export class TrainController {
           }));
         } else {
           finalSplits = slicedSplits;
+        }
+
+        if (!providerConfigService.isInterStationTransfersEnabled()) {
+          finalSplits = finalSplits.map(({ transferMeta, ...rest }: any) => rest);
         }
 
         const execTime = Date.now() - execStart;
@@ -724,7 +765,8 @@ export class TrainController {
             option.hub,
             option.bufferMinutes || 0,
             option.totalDuration || 0,
-            option.score || 95
+            option.score || 95,
+            option.transferMeta
           );
           if (recId) {
             option.recommendation_id = recId;
@@ -841,22 +883,20 @@ export class TrainController {
         }
       }
 
-      // Construct target IRCTC URL
-      let irctcUrl = `https://www.irctc.co.in/nget/train-search?fromStation=${encodeURIComponent(fromStation)}&toStation=${encodeURIComponent(toStation)}&trainNo=${encodeURIComponent(trainNo)}&journeyDate=${encodeURIComponent(journeyDate)}`;
+      // Generate booking URL via BookingProviderResolver
+      const bookingResult = await bookingProviderResolver.generateBookingUrl({
+        fromStation,
+        toStation,
+        trainNo,
+        journeyDate,
+        partnerId: featureFlags.partnerAttribution ? (req.query.partnerId as string | undefined) : undefined,
+        campaignId: featureFlags.partnerAttribution ? (req.query.campaignId as string | undefined) : undefined,
+        utmSource: featureFlags.partnerAttribution ? (req.query.source as string | undefined) : 'trayago',
+        medium: featureFlags.partnerAttribution ? (req.query.medium as string | undefined) : undefined,
+        interactionId: id
+      });
 
-      // PHASE_4C823 — Partner Attribution (feature-flagged, additive only)
-      if (featureFlags.partnerAttribution) {
-        const partnerId  = req.query.partnerId  as string | undefined;
-        const campaignId = req.query.campaignId as string | undefined;
-        const utmSource  = req.query.source     as string | undefined;
-        const utmMedium  = req.query.medium     as string | undefined;
-        if (partnerId)  irctcUrl += `&partner_id=${encodeURIComponent(partnerId)}`;
-        if (campaignId) irctcUrl += `&campaign_id=${encodeURIComponent(campaignId)}`;
-        if (utmSource)  irctcUrl += `&utm_source=${encodeURIComponent(utmSource)}`;
-        if (utmMedium)  irctcUrl += `&utm_medium=${encodeURIComponent(utmMedium)}`;
-      }
-
-      return res.redirect(302, irctcUrl);
+      return res.redirect(302, bookingResult.url);
     } catch (err: any) {
       winstonLogger.error(`[RESCUE_REDIRECT] Redirect failed: ${err.message}`);
       return res.redirect(302, 'https://www.irctc.co.in/nget/train-search');

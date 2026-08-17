@@ -10,6 +10,7 @@ const path_1 = __importDefault(require("path"));
 const logger_1 = require("../middleware/logger");
 const analyticsService_1 = require("./analyticsService");
 const authService_1 = require("./authService");
+const supabase_1 = require("../config/supabase");
 const REFERRAL_PREFIX = 'RAIL-';
 const CODE_LENGTH = 6;
 const REFERRAL_COOLDOWN_HOURS = 24;
@@ -47,7 +48,7 @@ class ReferralService {
     }
     saveAttributionStore() {
         try {
-            fs_1.default.writeFileSync(ATTRIBUTION_FILE, JSON.stringify(this.attributionStore, null, 2));
+            (0, supabase_1.safeWriteFileSync)(ATTRIBUTION_FILE, JSON.stringify(this.attributionStore, null, 2));
         }
         catch (e) {
             logger_1.winstonLogger.error(`[REFERRAL_ATTR] Failed to save attribution store: ${e.message}`);

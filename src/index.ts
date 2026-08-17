@@ -9,7 +9,7 @@ import xss from 'xss-clean';
 import { createServer } from 'http';
 import path from 'path';
 
-import { validateConnection } from './config/supabase';
+import { validateConnection, isNoWriteMode } from './config/supabase';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { winstonLogger } from './middleware/logger';
 import { requestTimingMiddleware } from './middleware/requestTiming';
@@ -131,9 +131,13 @@ declare global {
 global.SYSTEM_MODE = 'MODE_C';
 
 // ====================== DEPLOYMENT VALIDATION ======================
-const requiredEnvs = ['RAPIDAPI_KEY', 'JWT_SECRET', 'REFRESH_TOKEN_SECRET', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
+const requiredEnvs = ['JWT_SECRET', 'REFRESH_TOKEN_SECRET', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
 if (process.env.USE_DB_PROVIDERS === 'true') {
   requiredEnvs.push('ENCRYPTION_KEY');
+}
+const hasIrctcKey = process.env.IRCTC_CONNECT_API_KEY || process.env.IRCTC_API_KEY || process.env.RAPIDAPI_KEY;
+if (!hasIrctcKey) {
+  winstonLogger.warn('[STARTUP] IRCTC_CONNECT_API_KEY is not set. Live availability provider will be disabled.');
 }
 for (const env of requiredEnvs) {
   const val = process.env[env];
@@ -280,6 +284,18 @@ const startServer = async () => {
         }
 
         // Start background services
+        // ── PHASE 5B136: LOCAL_E2E_NO_WRITE boot-writer suppression ─────────
+        // Every worker/cron below mutates production Supabase on a timer, with
+        // no incoming request to scope a guard to, so in no-write mode none of
+        // them is started at all. Production startup (flag OFF) takes the else
+        // branch and is completely unaffected.
+        //
+        // The guarded block is intentionally NOT re-indented: that keeps this
+        // change to the handful of lines that add the guard, instead of
+        // re-touching ~110 lines of production boot code in the diff.
+        if (isNoWriteMode()) {
+          winstonLogger.warn('[NO_WRITE] Boot writers suppressed: pnrWorker, metricsService snapshot scheduler, alarmWorker, event queue worker, alertDispatcher, dailyHealthReportJob, newsRefreshJob, hubCatalogRefreshJob, trainScheduleSyncJob, user_station_alarms expiry UPDATE cron, user_station_alarms hard-delete DELETE cron, users midnight daily-reset UPDATE cron.');
+        } else {
         pnrWorker.start();
         metricsService.startSnapshotScheduler();
         alarmWorker.start();
@@ -390,6 +406,7 @@ const startServer = async () => {
           }, msUntilMidnight);
         };
         scheduleMidnightReset();
+        } // ── end PHASE 5B136 boot-writer guard ──────────────────────────────
 
         // PHASE_4C814 (now runs in background, no longer blocks listen())
         const irctcInitStart = Date.now();

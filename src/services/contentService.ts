@@ -1,11 +1,19 @@
 import { createClient } from '@supabase/supabase-js';
+import { isNoWriteMode, createNoWriteFetch } from '../config/supabase';
 
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
 
 let supabase: ReturnType<typeof createClient> | null = null;
 if (SUPABASE_URL && SUPABASE_KEY) {
-  supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+  // PHASE 5B136: second Supabase client. In LOCAL_E2E_NO_WRITE mode the same
+  // transport guard is installed here; OFF mode keeps the original
+  // two-argument createClient call verbatim.
+  supabase = isNoWriteMode()
+    ? createClient(SUPABASE_URL, SUPABASE_KEY, {
+        global: { fetch: createNoWriteFetch('services/contentService') }
+      })
+    : createClient(SUPABASE_URL, SUPABASE_KEY);
 }
 
 export class ContentService {

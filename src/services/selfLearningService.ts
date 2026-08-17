@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import { supabase, isSupabaseConfigured } from '../config/supabase';
+import { supabase, isSupabaseConfigured, safeAppendFileSync, safeMkdirSync, safeWriteFileSync } from '../config/supabase';
 import { winstonLogger } from '../middleware/logger';
 import { gptRouteEnrichmentService } from './gptRouteEnrichmentService';
 
@@ -117,7 +117,7 @@ export class SelfLearningService {
 
   private ensureDataDir() {
     if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
+      safeMkdirSync(DATA_DIR, { recursive: true });
     }
   }
 
@@ -156,7 +156,8 @@ export class SelfLearningService {
   private saveLocalData(filename: string, data: any) {
     try {
       const filePath = this.getFilePath(filename);
-      fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+      // PHASE 5B136: suppressed when LOCAL_E2E_NO_WRITE=true (existing file untouched)
+      safeWriteFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
     } catch (err: any) {
       winstonLogger.error(`[SELF_LEARNING] Failed to save local file ${filename}: ${err.message}`);
     }
@@ -313,6 +314,22 @@ export class SelfLearningService {
     }
     this.saveLocalData('missing_queries.json', this.missingQueries);
 
+    // Telemetry Integration
+    try {
+      const { universalEventEmitter } = require('./universalEventEmitter');
+      const { UniversalEventNames } = require('../constants/eventTaxonomy');
+      universalEventEmitter.emit({
+        eventName: UniversalEventNames.MISSING_ROUTE_DETECTED,
+        searchId: dbId,
+        userId: userId || undefined,
+        mode: 'rail',
+        route: `${cleanSource}-${cleanDestination}`,
+        metadata: { source: cleanSource, destination: cleanDestination, date, query_id: dbId }
+      });
+    } catch {
+      // Non-blocking telemetry
+    }
+
     // Supabase Dual Write
     if (isSupabaseConfigured()) {
       try {
@@ -402,6 +419,22 @@ export class SelfLearningService {
       this.missingRoutes.push(existing);
     }
     this.saveLocalData('missing_routes.json', this.missingRoutes);
+
+    // Telemetry Integration
+    try {
+      const { universalEventEmitter } = require('./universalEventEmitter');
+      const { UniversalEventNames } = require('../constants/eventTaxonomy');
+      universalEventEmitter.emit({
+        eventName: UniversalEventNames.MISSING_ROUTE_DETECTED,
+        searchId: dbId,
+        userId: userId || undefined,
+        mode: 'rail',
+        route: `${cleanSource}-${cleanDestination}`,
+        metadata: { source: cleanSource, destination: cleanDestination, query_id: dbId }
+      });
+    } catch {
+      // Non-blocking telemetry
+    }
 
     if (isSupabaseConfigured()) {
       try {
@@ -521,6 +554,21 @@ export class SelfLearningService {
     }
     this.saveLocalData('missing_stations.json', this.missingStations);
 
+    // Telemetry Integration
+    try {
+      const { universalEventEmitter } = require('./universalEventEmitter');
+      const { UniversalEventNames } = require('../constants/eventTaxonomy');
+      universalEventEmitter.emit({
+        eventName: UniversalEventNames.MISSING_STATION_DETECTED,
+        searchId: dbId,
+        userId: userId || undefined,
+        mode: 'rail',
+        metadata: { query: cleanQuery, query_id: dbId }
+      });
+    } catch {
+      // Non-blocking telemetry
+    }
+
     if (isSupabaseConfigured()) {
       try {
         const { data, error } = await supabase
@@ -564,7 +612,7 @@ export class SelfLearningService {
     try {
       const pnrFailuresFile = this.getFilePath('pnr_failures.jsonl');
       const logEntry = JSON.stringify({ pnr: cleanPnr, user_id: userId, timestamp }) + '\n';
-      fs.appendFileSync(pnrFailuresFile, logEntry, 'utf8');
+      safeAppendFileSync(pnrFailuresFile, logEntry, 'utf8');
       winstonLogger.info(`[SELF_LEARNING] Logged failed PNR lookup: ${cleanPnr}`);
     } catch (err: any) {
       winstonLogger.warn(`[SELF_LEARNING] Failed to write PNR failure locally: ${err.message}`);

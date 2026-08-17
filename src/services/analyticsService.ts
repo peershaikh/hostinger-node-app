@@ -1,5 +1,7 @@
+import { UniversalEventNames, UNIVERSAL_EVENT_NAME_SET } from '../constants/eventTaxonomy';
 import { supabase } from '../config/supabase';
 import { winstonLogger } from '../middleware/logger';
+import { universalEventEmitter } from './universalEventEmitter';
 
 export interface AnalyticsEvent {
   event_type: string;
@@ -85,6 +87,25 @@ export class AnalyticsService {
     try {
       const sessionId = (metadata?.session_id || metadata?.sessionId || metadata?.userId || metadata?.user_id || null) as string | null;
 
+      // 1. Dual-emit into canonical universal event stream
+      const normalizedName = eventType.toLowerCase().replace(/[\s-]+/g, '_');
+      const canonicalName = UNIVERSAL_EVENT_NAME_SET.has(normalizedName)
+        ? (normalizedName as any)
+        : UniversalEventNames.NOTIFICATION_SENT;
+
+      universalEventEmitter.emit({
+        eventName: canonicalName,
+        guestId: sessionId || undefined,
+        userId: (metadata?.user_id || metadata?.userId || null) as string | null,
+        mode: 'rail',
+        metadata: {
+          ...metadata,
+          original_event_type: eventType,
+          pnr: pnr || undefined
+        }
+      });
+
+      // 2. Legacy table write for backward compatibility
       const dbPayload = {
         event_type: eventType,
         session_id: sessionId,
@@ -124,4 +145,4 @@ export class AnalyticsService {
   }
 }
 
-export const analyticsService = new AnalyticsService();
+export const analyticsService = new AnalyticsService();

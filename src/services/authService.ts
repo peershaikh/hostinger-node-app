@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import fs from 'fs';
 import path from 'path';
 import { applyReferralCode, generateReferralCode, generateReferralCodeSync } from './referralService';
-import { supabase, isSupabaseConfigured } from '../config/supabase';
+import { supabase, isSupabaseConfigured, safeMkdirSync, safeWriteFileSync } from '../config/supabase';
 import { winstonLogger } from '../middleware/logger';
 import { userRepository, DatabaseError } from '../repositories/userRepository';
 import { userCache } from '../cache/userCache';
@@ -72,6 +72,12 @@ export interface GuestUsage {
 }
 
 export class AuthService {
+  public static readonly UNLIMITED_LIMIT = 9999;
+
+  public static isUnlimitedLimit(limit: number | undefined | null): boolean {
+    return typeof limit === 'number' && limit >= AuthService.UNLIMITED_LIMIT;
+  }
+
   private users: User[] = [];
   private guests: GuestUsage[] = [];
   private otps: Record<string, { otp: string; expiresAt: number }> = {};
@@ -584,9 +590,10 @@ export class AuthService {
               
               // Flush back to users.json to ensure hybrid fallback is perfectly synced
               if (!fs.existsSync(path.dirname(USERS_FILE))) {
-                  fs.mkdirSync(path.dirname(USERS_FILE), { recursive: true });
+                  safeMkdirSync(path.dirname(USERS_FILE), { recursive: true });
               }
-              fs.writeFileSync(USERS_FILE, JSON.stringify(this.users, null, 2));
+              // PHASE 5B136: suppressed when LOCAL_E2E_NO_WRITE=true
+              safeWriteFileSync(USERS_FILE, JSON.stringify(this.users, null, 2));
           }
       } catch (e: any) {
           winstonLogger.error(`[AUTH_SUPABASE] Sync error: ${e.message}`);
@@ -605,9 +612,10 @@ export class AuthService {
   private saveUsers() {
     try {
       if (!fs.existsSync(path.dirname(USERS_FILE))) {
-        fs.mkdirSync(path.dirname(USERS_FILE), { recursive: true });
+        safeMkdirSync(path.dirname(USERS_FILE), { recursive: true });
       }
-      fs.writeFileSync(USERS_FILE, JSON.stringify(this.users, null, 2));
+      // PHASE 5B136: suppressed when LOCAL_E2E_NO_WRITE=true
+      safeWriteFileSync(USERS_FILE, JSON.stringify(this.users, null, 2));
  
       // Async Supabase sync
       if (isSupabaseConfigured()) {
@@ -673,9 +681,10 @@ export class AuthService {
   private saveGuests() {
     try {
       if (!fs.existsSync(path.dirname(GUESTS_FILE))) {
-        fs.mkdirSync(path.dirname(GUESTS_FILE), { recursive: true });
+        safeMkdirSync(path.dirname(GUESTS_FILE), { recursive: true });
       }
-      fs.writeFileSync(GUESTS_FILE, JSON.stringify(this.guests, null, 2));
+      // PHASE 5B136: suppressed when LOCAL_E2E_NO_WRITE=true
+      safeWriteFileSync(GUESTS_FILE, JSON.stringify(this.guests, null, 2));
     } catch (e) {
       // Silent
     }
@@ -696,13 +705,16 @@ export class AuthService {
       if (existingAdmin) {
         existingAdmin.isAdmin = true;
         existingAdmin.planType = 'admin';
+        existingAdmin.password = bcrypt.hashSync(adminPassword, 10);
         if (isSupabaseConfigured()) {
           try {
-            await userRepository.update(existingAdmin.id, { isAdmin: true, planType: 'admin' });
+            await userRepository.update(existingAdmin.id, { isAdmin: true, planType: 'admin', password: existingAdmin.password });
           } catch (e) {
             winstonLogger.warn(`[ensureAdmin] Failed to persist admin flag for ${adminEmail}:`, e);
           }
         }
+        this.updateLocalUser(existingAdmin);
+        this.saveUsers();
       } else {
         const today = new Date().toISOString().split('T')[0];
         const adminUser: User = {
@@ -1454,9 +1466,9 @@ export class AuthService {
         if (type === 'pnr') return 2;
         return 1; // live
       }
-      if (type === 'search') return 5;
-      if (type === 'pnr') return 3;
-      return 3; // live
+      if (type === 'search') return AuthService.UNLIMITED_LIMIT;
+      if (type === 'pnr') return 5;
+      return AuthService.UNLIMITED_LIMIT; // live
     }
 
     try {
@@ -1507,9 +1519,9 @@ export class AuthService {
       if (type === 'pnr') return 2;
       return 1; // live
     }
-    if (type === 'search') return 5;
-    if (type === 'pnr') return 3;
-    return 3; // live
+    if (type === 'search') return AuthService.UNLIMITED_LIMIT;
+    if (type === 'pnr') return 5;
+    return AuthService.UNLIMITED_LIMIT; // live
   }
 
   public verifyDeviceIpBinding(ip: string, deviceId: string): boolean {
@@ -1569,6 +1581,7 @@ export class AuthService {
         // implicit reset removed
         
         const limit = await this.getEffectiveLimit(null, 'guest', type);
+        if (AuthService.isUnlimitedLimit(limit)) return true;
         switch (type) {
             case 'search': return guest.dailySearchCount < limit;
             case 'pnr': return guest.dailyPnrCount < limit;
@@ -1619,6 +1632,7 @@ export class AuthService {
 
     // Check limits
     const limit = await this.getEffectiveLimit(userId, user.planType, type);
+    if (AuthService.isUnlimitedLimit(limit)) return true;
     switch (type) {
       case 'search': return user.dailySearchCount < limit;
       case 'pnr': return user.dailyPnrCount < limit;
@@ -1665,6 +1679,28 @@ export class AuthService {
     if (this.userBypassesQuota(user) || this.isProPlanActive(user)) return true;
 
     // Check if user has temporary split access
+    if (user.splitAccessUntil && new Date(user.splitAccessUntil).getTime() > Date.now()) {
+      return true;
+    }
+
+    return false;
+  }
+
+  public async canUsePnrPrediction(userId: string | null, betaCode?: string): Promise<boolean> {
+    if (userId && betaService.hasActiveRedemption(userId)) return true;
+    if (this.betaHeaderGrantsUnlimited(userId, betaCode, 'pnr') || this.betaHeaderGrantsUnlimited(userId, betaCode, 'split')) return true;
+    if (!userId) return false; // Guests cannot use AI PNR prediction
+
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!UUID_REGEX.test(userId)) return false;
+
+    const user = await this.getUserById(userId);
+    if (!user || user.isBlocked) return false;
+
+    // Admin / Beta / Pro / Paid all have AI prediction unlocked
+    if (this.userBypassesQuota(user) || this.isProPlanActive(user)) return true;
+
+    // Users with active AI Pass or temporary split access pass
     if (user.splitAccessUntil && new Date(user.splitAccessUntil).getTime() > Date.now()) {
       return true;
     }
@@ -1827,9 +1863,9 @@ export class AuthService {
           isBeta: true,
           planType: 'beta',
           hasSplitAccess: true,
-          splitMinutesLeft: 9999,
+          splitMinutesLeft: AuthService.UNLIMITED_LIMIT,
           usage: { searches: 0, pnr: 0, live: 0 },
-          limits: { searches: 9999, pnr: 9999, live: 9999 },
+          limits: { searches: AuthService.UNLIMITED_LIMIT, pnr: AuthService.UNLIMITED_LIMIT, live: AuthService.UNLIMITED_LIMIT },
           warnings: { searches: false, pnr: false, live: false },
           adsWatchedToday: 0
         };
@@ -1883,12 +1919,12 @@ export class AuthService {
     if (hasSplitAccess && user.splitAccessUntil && !isUnlimited && !this.isProPlanActive(user)) {
       splitMinutesLeft = Math.max(0, Math.floor((new Date(user.splitAccessUntil).getTime() - Date.now()) / 60000));
     } else if (isUnlimited || this.isProPlanActive(user)) {
-      splitMinutesLeft = 9999;
+      splitMinutesLeft = AuthService.UNLIMITED_LIMIT;
     }
 
-    const searchLimit = isUnlimited ? 9999 : await this.getEffectiveLimit(userId, user.planType, 'search');
-    const pnrLimit = isUnlimited ? 9999 : await this.getEffectiveLimit(userId, user.planType, 'pnr');
-    const liveLimit = isUnlimited ? 9999 : await this.getEffectiveLimit(userId, user.planType, 'live');
+    const searchLimit = isUnlimited ? AuthService.UNLIMITED_LIMIT : await this.getEffectiveLimit(userId, user.planType, 'search');
+    const pnrLimit = isUnlimited ? AuthService.UNLIMITED_LIMIT : await this.getEffectiveLimit(userId, user.planType, 'pnr');
+    const liveLimit = isUnlimited ? AuthService.UNLIMITED_LIMIT : await this.getEffectiveLimit(userId, user.planType, 'live');
 
     let threshold = 0.80;
     if (isSupabaseConfigured() && !isBetaUser) {
@@ -1942,9 +1978,9 @@ export class AuthService {
         live: liveLimit
       },
       warnings: {
-        searches: !isUnlimited && (usageSearches / searchLimit) >= threshold,
-        pnr: !isUnlimited && (usagePnr / pnrLimit) >= threshold,
-        live: !isUnlimited && (usageLive / liveLimit) >= threshold
+        searches: !isUnlimited && !AuthService.isUnlimitedLimit(searchLimit) && (usageSearches / searchLimit) >= threshold,
+        pnr: !isUnlimited && !AuthService.isUnlimitedLimit(pnrLimit) && (usagePnr / pnrLimit) >= threshold,
+        live: !isUnlimited && !AuthService.isUnlimitedLimit(liveLimit) && (usageLive / liveLimit) >= threshold
       },
       bypassQuota: isUnlimited,
       adsWatchedToday: user.adsWatchedToday,

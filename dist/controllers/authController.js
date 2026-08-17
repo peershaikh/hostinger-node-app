@@ -47,6 +47,18 @@ const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const admin = __importStar(require("firebase-admin"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+// PHASE_5B142 Fix: on localhost (http) browsers require secure:false for cookies.
+// secure:true + sameSite:none is correct for production cross-domain (www → app),
+// but httpOnly cookies with secure:true are silently dropped on http:// in Safari
+// and older Chrome. sameSite:lax is safe for same-site localhost (port isolation
+// is same-site per spec, so :3000 → :5000 still qualifies).
+const isProd = process.env.NODE_ENV === 'production';
+const REFRESH_COOKIE_OPTIONS = {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: (isProd ? 'none' : 'lax'),
+    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+};
 class AuthController {
     constructor() {
         this.googleLogin = async (req, res) => {
@@ -73,12 +85,7 @@ class AuthController {
                     return res.status(400).json({ success: false, error: 'Invalid Google token' });
                 }
                 const result = await authService_1.authService.googleLogin(payload.email, payload.name || '', payload.picture || '', deviceId, referralCode);
-                res.cookie('refreshToken', result.tokens.refreshToken, {
-                    httpOnly: true,
-                    secure: true,
-                    sameSite: 'none',
-                    maxAge: 30 * 24 * 60 * 60 * 1000
-                });
+                res.cookie('refreshToken', result.tokens.refreshToken, REFRESH_COOKIE_OPTIONS);
                 return res.json({
                     success: true,
                     data: result.user,
@@ -133,12 +140,7 @@ class AuthController {
                 if (deviceId) {
                     // This is handled in the signup method now
                 }
-                res.cookie('refreshToken', result.tokens.refreshToken, {
-                    httpOnly: true,
-                    secure: true, // required for sameSite:none
-                    sameSite: 'none', // cross-domain fix: www.trayago.com → app.trayago.in
-                    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
-                });
+                res.cookie('refreshToken', result.tokens.refreshToken, REFRESH_COOKIE_OPTIONS); // PHASE_5B142 Fix
                 return res.json({
                     success: true,
                     data: result.user,
@@ -162,12 +164,7 @@ class AuthController {
                     // We'll check this after login
                 }
                 const result = await authService_1.authService.login(email, password, deviceId, referralCode);
-                res.cookie('refreshToken', result.tokens.refreshToken, {
-                    httpOnly: true,
-                    secure: true, // required for sameSite:none
-                    sameSite: 'none', // cross-domain fix: www.trayago.com → app.trayago.in
-                    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
-                });
+                res.cookie('refreshToken', result.tokens.refreshToken, REFRESH_COOKIE_OPTIONS); // PHASE_5B142 Fix
                 return res.json({
                     success: true,
                     data: result.user,
@@ -355,12 +352,7 @@ class AuthController {
                 }
                 const tokens = await authService_1.authService.verifyRefreshToken(token);
                 // Re-set cookie with cross-domain settings
-                res.cookie('refreshToken', tokens.refreshToken, {
-                    httpOnly: true,
-                    secure: true,
-                    sameSite: 'none',
-                    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-                });
+                res.cookie('refreshToken', tokens.refreshToken, REFRESH_COOKIE_OPTIONS); // PHASE_5B142 Fix
                 // Return refreshToken in body too — mobile clients store it in AsyncStorage
                 return res.json({
                     success: true,

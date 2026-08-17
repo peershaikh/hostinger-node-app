@@ -97,11 +97,30 @@ export function parseDelayString(delayStr: string | undefined | null): number {
   if (!delayStr) return 0;
   const s = delayStr.trim();
   if (!s || /^(on time|right time)$/i.test(s)) return 0;
-  const hrMatch  = s.match(/(\d+)\s*Hr/i);
-  const minMatch = s.match(/(\d+)\s*Min/i);
-  const hrs  = hrMatch  ? parseInt(hrMatch[1],  10) : 0;
-  const mins = minMatch ? parseInt(minMatch[1], 10) : 0;
-  return hrs * 60 + mins;
+  if (/^early/i.test(s)) return 0;
+
+  // Format 1: "HH:MM Hr" or "HH:MM Hrs" or "HH:MM" (e.g. "06:43 Hr")
+  const colonMatch = s.match(/^(\d{1,2}):(\d{2})(?:\s*Hrs?|\s*Hours?)?/i);
+  if (colonMatch) {
+    const hrs = parseInt(colonMatch[1], 10) || 0;
+    const mins = parseInt(colonMatch[2], 10) || 0;
+    return hrs * 60 + mins;
+  }
+
+  // Format 2: "X Hr Y Min" or "X Hr" or "Y Min"
+  const hrMatch = s.match(/(\d+)\s*(?:hr|hour)s?/i);
+  const minMatch = s.match(/(\d+)\s*(?:min|minute)s?/i);
+  if (hrMatch || minMatch) {
+    const hrs = hrMatch ? parseInt(hrMatch[1], 10) : 0;
+    const mins = minMatch ? parseInt(minMatch[1], 10) : 0;
+    return hrs * 60 + mins;
+  }
+
+  // Format 3: pure number (e.g. "45")
+  const num = parseInt(s, 10);
+  if (!isNaN(num) && num > 0) return num;
+
+  return 0;
 }
 
 export class LiveTrackingService {
@@ -450,10 +469,15 @@ export class LiveTrackingService {
 
     const todayIstStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     const requestedDateStr = date && /^\d{4}-\d{2}-\d{2}$/.test(date.trim()) ? date.trim() : null;
+    const isHistoricalRequest = Boolean(requestedDateStr && requestedDateStr < todayIstStr);
+    const isFutureRequest = Boolean(requestedDateStr && requestedDateStr > todayIstStr);
+    const startTimeMs = Date.now();
+
+    winstonLogger.info(`[LIVE_REQUEST] trainNo=${trainNo} requestedDate=${requestedDateStr || 'today'} activeDate=${activeDate}`);
 
     // ── FUTURE DATE GUARD: Pure schedule mode (no live running claims) ────────────
-    if (requestedDateStr && requestedDateStr > todayIstStr) {
-      winstonLogger.info(`[FUTURE_DATE_SCHEDULE] ${trainNo} for ${requestedDateStr} (today=${todayIstStr}): returning static schedule`);
+    if (isFutureRequest) {
+      winstonLogger.info(`[LIVE_SCHEDULED] ${trainNo} for ${requestedDateStr} (today=${todayIstStr}): returning static schedule`);
       
       let finalSchedule = dbSchedule;
       if (finalSchedule.length === 0) {
@@ -502,67 +526,53 @@ export class LiveTrackingService {
         is_cancelled: false,
         journey_timeline: finalSchedule,
         api_used: 'DATABASE_SCHEDULE',
-        active_journey_date: requestedDateStr
+        active_journey_date: requestedDateStr || undefined
       };
 
       cacheService.set(cacheKey, futureStatus, 3600);
       return futureStatus;
     }
 
-    // ── PAST DATE GUARD: Historical schedule mode ────────────────────────────────
-    if (requestedDateStr && requestedDateStr < todayIstStr) {
-      winstonLogger.info(`[PAST_DATE_SCHEDULE] ${trainNo} for ${requestedDateStr} (today=${todayIstStr}): returning completed schedule`);
-      
-      const finalSchedule = dbSchedule.map((s: any, idx: number) => ({
-        ...s,
-        delay_minutes: 0,
-        is_current: false,
-        is_departed: true,
-        status: 'COMPLETED',
-        station_type: classifyStation(s.station_code, s.station_name, idx, dbSchedule.length),
-        platform: null
-      }));
-
-      const pastStatus: LiveTrainStatus = {
-        train_number: trainNo,
-        train_name: dbTrainName || `Train ${trainNo}`,
-        current_station: '',
-        next_station: '',
-        current_station_index: -1,
-        latitude: undefined,
-        longitude: undefined,
-        train_location: null,
-        delay_minutes: 0,
-        status_summary: 'Past Date Schedule',
-        last_updated: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }),
-        is_running: false,
-        is_cancelled: false,
-        journey_timeline: finalSchedule,
-        api_used: 'DATABASE_SCHEDULE',
-        active_journey_date: requestedDateStr
-      };
-
-      cacheService.set(cacheKey, pastStatus, 3600);
-      return pastStatus;
-    }
-
     let usedApi = 'DATABASE_SCHEDULE';
 
     try {
-      winstonLogger.info(`[LIVE_TRACE] Priority fetch for ${trainNo}`);
+      winstonLogger.info(`[LIVE_TRACE] Priority fetch for ${trainNo} (date: ${requestedDateStr || 'today'})`);
 
       const liveData = await fetchWithPriority<any>({
         irctc: async () => {
           // getLiveStatus() uses trackTrain() — returns real-time delay data.
           // getTrainInfo() returns only static schedule (no delay) — do NOT use for live.
-          const res = await irctcService.getLiveStatus(trainNo, date);
+          const res = await irctcService.getLiveStatus(trainNo, requestedDateStr || undefined);
           if (res) { usedApi = 'IRCTC'; return res; }
           return null;
         },
         db: async () => {
           if (scheduleWithDays.length > 0) {
             usedApi = 'DATABASE_SCHEDULE';
-            winstonLogger.info(`[PROVIDER_FALLBACK_DATABASE] All live APIs failed for ${trainNo} -> Falling back to database schedule`);
+            winstonLogger.info(`[PROVIDER_FALLBACK_DATABASE] Live APIs returned no data for ${trainNo} -> Falling back to database schedule`);
+
+            if (isHistoricalRequest) {
+              winstonLogger.info(`[LIVE_HISTORICAL_FALLBACK] ${trainNo} for past date ${requestedDateStr}: returning completed schedule`);
+              const finalSchedule = dbSchedule.map((s: any, idx: number) => ({
+                ...s,
+                delay_minutes: 0,
+                is_current: false,
+                is_departed: true,
+                status: 'COMPLETED',
+                station_type: classifyStation(s.station_code, s.station_name, idx, dbSchedule.length),
+                platform: null
+              }));
+
+              return {
+                stations: finalSchedule,
+                train_name: dbTrainName || `Train ${trainNo}`,
+                is_running: false,
+                current_station: finalSchedule[finalSchedule.length - 1]?.station_name || '',
+                next_station: 'Destination Reached',
+                status_summary: 'Journey Completed (Historical Schedule)'
+              };
+            }
+
             winstonLogger.info(`[DB_SCHED_FALLBACK] ${trainNo}: simulating live status from ${scheduleWithDays.length} stops`);
 
             const targetDateStr = date || activeDate || new Date().toLocaleDateString('en-CA');
@@ -1110,18 +1120,23 @@ export class LiveTrackingService {
               }
             : null,
         delay_minutes:  delayMins,
-        status_summary: isCancelled ? 'Train Cancelled' : (isJourneyCompleted ? 'Train has reached destination' : (liveData.status_as_of || liveData.position || liveData.current_status || 'Running')),
-        last_updated:   liveData.last_updated_time || liveData.updated_at || new Date().toLocaleTimeString('en-IN'),
+        status_summary: isCancelled ? 'Train Cancelled' : (isJourneyCompleted ? 'Train has reached destination' : (liveData.status_as_of || liveData.position || liveData.current_status || liveData.statusNote || 'Running')),
+        last_updated:   liveData.last_updated_time || liveData.updated_at || liveData.lastUpdate || new Date().toLocaleTimeString('en-IN'),
         is_running:     isCancelled ? false : (isJourneyCompleted ? false : (liveData.is_running ?? true)),
         is_cancelled:   isCancelled,
         journey_timeline: finalTimeline,
         api_used: usedApi,
-        active_journey_date: activeDate || undefined
+        active_journey_date: requestedDateStr || activeDate || todayIstStr
       };
 
 
       cacheService.set(cacheKey, result, 60);
-      winstonLogger.info(`[LIVE_SUCCESS] ${trainNo} "${trainName}" @ ${finalCurrentStation} | Delay:${delayMins}m | TL:${finalTimeline.length} stops | API:${usedApi}`);
+      winstonLogger.info(`[LIVE_RESPONSE] trainNo=${trainNo} mode=${isHistoricalRequest ? 'HISTORICAL' : 'LIVE'} provider=${usedApi} currentStation=${finalCurrentStation} delayMinutes=${delayMins} durationMs=${Date.now() - startTimeMs}`);
+      if (isHistoricalRequest) {
+        winstonLogger.info(`[LIVE_HISTORICAL] trainNo=${trainNo} date=${requestedDateStr}`);
+      } else {
+        winstonLogger.info(`[LIVE_TODAY] trainNo=${trainNo} date=${todayIstStr}`);
+      }
 
       // ── DELAY INTELLIGENCE: Fire-and-forget delay log ──────────────────────
       // Silently log delay data to live_learning for historical analysis.
@@ -1206,22 +1221,30 @@ export class LiveTrackingService {
         status: idx === fallbackIdx ? 'CURRENT' : idx < fallbackIdx ? 'DEPARTED' : 'UPCOMING'
       }));
 
+      let fallbackSummary = isJourneyCompletedFallback ? 'Train has reached destination' : (fallbackTimeline.length > 0 ? 'Running' : 'Status unavailable');
+      let fallbackRunning = isJourneyCompletedFallback ? false : true;
+      if (isHistoricalRequest) {
+        fallbackSummary = 'Journey Completed (Historical Schedule)';
+        fallbackRunning = false;
+      }
+
       const fallback: LiveTrainStatus = {
         train_number:    trainNo,
         train_name:      trainName,
-        current_station: dbSchedule[fallbackIdx]?.station_name || 'En Route',
-        next_station:    isJourneyCompletedFallback ? 'Destination Reached' : (dbSchedule[fallbackIdx + 1]?.station_name || 'Unknown'),
-        current_station_index: fallbackIdx,
+        current_station: isHistoricalRequest ? (dbSchedule[dbSchedule.length - 1]?.station_name || 'Destination Reached') : (dbSchedule[fallbackIdx]?.station_name || 'En Route'),
+        next_station:    (isJourneyCompletedFallback || isHistoricalRequest) ? 'Destination Reached' : (dbSchedule[fallbackIdx + 1]?.station_name || 'Unknown'),
+        current_station_index: isHistoricalRequest ? dbSchedule.length - 1 : fallbackIdx,
         delay_minutes:  0,
-        status_summary: isJourneyCompletedFallback ? 'Train has reached destination' : (fallbackTimeline.length > 0 ? 'Running' : 'Status unavailable'),
+        status_summary: fallbackSummary,
         last_updated:  new Date().toLocaleTimeString('en-IN'),
-        is_running:    isJourneyCompletedFallback ? false : true,
-        journey_timeline: fallbackTimeline,
+        is_running:    fallbackRunning,
+        journey_timeline: isHistoricalRequest ? dbSchedule.map((s, idx) => ({ ...s, is_current: false, is_departed: true, status: 'COMPLETED' })) : fallbackTimeline,
         api_used: 'DATABASE_SCHEDULE',
-        active_journey_date: activeDate || undefined
+        active_journey_date: requestedDateStr || activeDate || todayIstStr
       };
 
-      cacheService.set(cacheKey, fallback, 180);
+      cacheService.set(cacheKey, fallback, isHistoricalRequest ? 3600 : 180);
+      winstonLogger.info(`[LIVE_RESPONSE] trainNo=${trainNo} mode=${isHistoricalRequest ? 'HISTORICAL' : 'LIVE'} provider=DATABASE_SCHEDULE currentStation=${fallback.current_station} delayMinutes=0 durationMs=${Date.now() - startTimeMs}`);
       return fallback;
     }
   }

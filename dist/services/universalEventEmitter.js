@@ -1,6 +1,6 @@
 "use strict";
 /**
- * PHASE_4C822 / PHASE_4C823 — Universal Event Emitter
+ * PHASE_4C822 / PHASE_4C823 / PHASE_AI_EVENT_FOUNDATION_024 — Universal Event Emitter
  *
  * Public API for emitting instrumentation events.
  * Zero synchronous cost to callers — validation runs inline (<1 μs),
@@ -24,7 +24,7 @@ class UniversalEventEmitter {
      * Runs validation synchronously (O(1)), then pushes onto the in-memory queue.
      * The caller returns before any DB I/O occurs.
      * If the event is invalid it is dropped with a structured WARN log.
-     * If the DB is unavailable later, the queue worker dead-letters via ERROR log.
+     * If the DB is unavailable later, the queue worker dead-letters / stores to fallback.
      */
     emit(payload) {
         eventMetrics_1.eventMetrics.incReceived();
@@ -35,7 +35,22 @@ class UniversalEventEmitter {
         }
         // Enqueue is a synchronous array push — adds <1 μs to the request path
         (0, eventQueueWorker_1.enqueueEvent)(payload);
-        logger_1.winstonLogger.debug(`[EVENT_RECEIVED] eventName=${payload.eventName} mode=${payload.mode ?? 'unknown'}`);
+        // Non-blocking forward to userFeedbackIntelligenceService for implicit signal derivation
+        try {
+            const { userFeedbackIntelligenceService } = require('./userFeedbackIntelligenceService');
+            userFeedbackIntelligenceService.ingestImplicitSignal({
+                eventName: payload.eventName,
+                eventId: payload.eventId,
+                userId: payload.userId,
+                guestId: payload.guestId,
+                route: payload.route,
+                metadata: payload.metadata
+            });
+        }
+        catch {
+            // Non-blocking
+        }
+        logger_1.winstonLogger.debug(`[EVENT_EMIT] event_name=${payload.eventName} mode=${payload.mode ?? 'rail'} guest=${payload.guestId ?? 'none'} user=${payload.userId ?? 'anon'}`);
     }
 }
 exports.universalEventEmitter = new UniversalEventEmitter();

@@ -10,6 +10,9 @@ const rankingService_1 = require("./rankingService");
 const irctcService_1 = require("./irctcService");
 const providerConfigService_1 = require("./providerConfigService");
 const knowledgeMetricsService_1 = require("./knowledgeMetricsService");
+// PHASE_5B085: import registry check to detect corrupted DB origins in same-train rescue
+const stationResolutionUtils_1 = require("./stationResolutionUtils");
+const availabilityCacheKeys_1 = require("../utils/availabilityCacheKeys");
 // PHASE_4C862 — shared aliases; train-aware IRCTC mapping in trainStationResolver.ts
 var stationAliases_1 = require("./stationAliases");
 Object.defineProperty(exports, "TERMINAL_ALIASES", { enumerable: true, get: function () { return stationAliases_1.TERMINAL_ALIASES; } });
@@ -261,9 +264,18 @@ function getAvailabilityText(rawAvail) {
     }
     return text ? text.trim() : 'CHECK_IRCTC';
 }
+// PHASE 5B136: upper bound on the LOCAL_E2E_NO_WRITE schedule side channel, so a
+// long local run cannot grow it without limit. Local-test-mode only; never
+// allocated when LOCAL_E2E_NO_WRITE is off.
+const NO_WRITE_SCHEDULE_HANDOFF_MAX = 200;
 class SegmentAvailabilityEngine {
     constructor() {
         this.inFlightInjections = new Map();
+        // PHASE 5B136: validated IRCTC schedule rows handed from
+        // _injectScheduleFromIRCTC to getMidpointHubs when LOCAL_E2E_NO_WRITE=true,
+        // replacing the train_schedule upsert + DB re-read round trip. Populated
+        // ONLY in no-write mode; stays permanently empty in production.
+        this.noWriteInjectedSchedules = new Map();
     }
     async findSegmentSplits(source, destination, date, directTrains, classType = '3A', quota = 'GN') {
         // Feature Flag Guard
@@ -444,12 +456,12 @@ class SegmentAvailabilityEngine {
             return cachedHubs;
         }
         try {
-            const { data: stops, error } = await supabase_1.supabase
+            const { data: dbStops, error } = await supabase_1.supabase
                 .from('train_schedule')
                 .select('Station_Code, SN, Station_Name, Arrival_time, Departure_Time')
                 .eq('Train_No', trainNo)
                 .order('SN', { ascending: true });
-            if (error || !stops || stops.length <= 2) {
+            if (error || !dbStops || dbStops.length <= 2) {
                 // ── FIX_2: Dynamic Schedule Injection ────────────────────────────────
                 // DB has no schedule for this train, or only has the 2-stop stub
                 // (origin + destination only, no intermediate stops).
@@ -476,6 +488,23 @@ class SegmentAvailabilityEngine {
                     this._runB1DualReadCompare(trainNo, srcCode, destCode, [], null);
                     return [];
                 }
+                // PHASE 5B136: in no-write mode nothing was persisted, so the DB re-read
+                // below would find no rows. Consume the validated in-memory rows handed
+                // over by _injectScheduleFromIRCTC instead. Entries are deliberately NOT
+                // removed on read so coalesced concurrent callers all observe them.
+                if ((0, supabase_1.isNoWriteMode)()) {
+                    const memoryStops = this.noWriteInjectedSchedules.get(trainNo);
+                    if (memoryStops && memoryStops.length > 0) {
+                        logger_1.winstonLogger.warn(`[NO_WRITE] Train ${trainNo}: skipped train_schedule DB re-read; building hubs from ${memoryStops.length} in-memory validated rows.`);
+                        const memoryHubs = await this._buildHubsFromStops(memoryStops, srcCode, destCode);
+                        if (memoryHubs.length > 0) {
+                            cacheService_1.cacheService.set(hubCacheKey, memoryHubs, 86400); // 24h — key and TTL unchanged
+                        }
+                        this._runB1DualReadCompare(trainNo, srcCode, destCode, memoryHubs, memoryStops);
+                        return memoryHubs;
+                    }
+                    logger_1.winstonLogger.warn(`[NO_WRITE] Train ${trainNo}: no in-memory schedule available; falling through to DB re-read (expected to return no rows).`);
+                }
                 // Single retry after injection
                 const { data: stopsRetry, error: retryErr } = await supabase_1.supabase
                     .from('train_schedule')
@@ -493,6 +522,61 @@ class SegmentAvailabilityEngine {
                 }
                 this._runB1DualReadCompare(trainNo, srcCode, destCode, hubs, stopsRetry);
                 return hubs;
+            }
+            // PHASE_5B085: Before building hubs, verify the DB stops are authoritative.
+            // If the train's known physical origin (from EXPLICIT_TRAIN_ENDPOINTS registry) differs
+            // from the DB SN:1 station AND they are cluster-compatible (i.e. the DB origin is a
+            // synthetic/alias station for the real origin), the DB schedule may contain corrupted
+            // intermediate stops (e.g. 19407 DB: ADI→AII which does not exist on the live route
+            // SBIB→LGH). In this case, fetch the authoritative live schedule and use it instead.
+            // If the live fetch fails (circuit breaker, API unavailable), return [] to prevent the
+            // same-train rescue from building ghost cards from corrupted DB data.
+            const num = (0, availabilityCacheKeys_1.normalizeTrainNumber)(trainNo);
+            // PHASE_5B129 — compile-only change (wrapper retired). Behaviour is INTENTIONALLY
+            // identical, including for `inferred` origins: this path never rewrites a
+            // Station_Code — it either replaces the whole stop list with the live route or
+            // returns [] and skips the rescue. Both outcomes are non-destructive, so the
+            // inferred tier is safe here and is deliberately NOT gated on authority.
+            const trueOrigin = (0, stationResolutionUtils_1.getPhysicalOriginWithConfidence)(num).code;
+            const dbOriginCode = (dbStops[0].Station_Code || '').toUpperCase().trim();
+            const dbOriginSuspect = !!(trueOrigin && dbOriginCode !== trueOrigin && (0, stationAliases_2.areStationsCompatible)(dbOriginCode, trueOrigin));
+            let stops = dbStops;
+            if (dbOriginSuspect) {
+                logger_1.winstonLogger.info(`[SEGMENT_ENGINE] dbOriginSuspect=true for train ${num} (DB:${dbOriginCode} vs registry:${trueOrigin}) — fetching live schedule for same-train rescue hub construction`);
+                try {
+                    const liveInfo = await irctcService_1.irctcService.getTrainInfo(num);
+                    if (liveInfo) {
+                        const liveRoute = liveInfo.route || liveInfo.station_list || liveInfo.stops || liveInfo.stations || liveInfo.trainRoute || liveInfo.stationList || [];
+                        const liveStops = liveRoute.map((s, idx) => ({
+                            Station_Code: (s.stationCode || s.stnCode || s.station_code || s.Station_Code || s.code || '').toUpperCase().trim(),
+                            SN: s.sn || s.SN || s.sequence || (idx + 1),
+                            Station_Name: s.stationName || s.stnName || s.station_name || s.Station_Name || s.name || '',
+                            Arrival_time: s.arrivalTime || s.arrival_time || s.Arrival_time || '--:--',
+                            Departure_Time: s.departureTime || s.departure_time || s.Departure_Time || '--:--'
+                        })).filter((s) => s.Station_Code.length > 0);
+                        if (liveStops.length > 0) {
+                            stops = liveStops;
+                            logger_1.winstonLogger.info(`[SEGMENT_ENGINE] Using authoritative live schedule for train ${num}: ${liveStops.length} stops (replaces suspect DB)`);
+                        }
+                        else {
+                            // Live returned no stops — reject to prevent ghost card from corrupted DB
+                            logger_1.winstonLogger.warn(`[SEGMENT_ENGINE] Live schedule empty for suspect train ${num} — skipping same-train rescue to prevent ghost card`);
+                            this._runB1DualReadCompare(trainNo, srcCode, destCode, [], null);
+                            return [];
+                        }
+                    }
+                    else {
+                        // Live unavailable — reject rather than trust corrupted DB
+                        logger_1.winstonLogger.warn(`[SEGMENT_ENGINE] Live schedule unavailable for suspect train ${num} — skipping same-train rescue to prevent ghost card`);
+                        this._runB1DualReadCompare(trainNo, srcCode, destCode, [], null);
+                        return [];
+                    }
+                }
+                catch (liveErr) {
+                    logger_1.winstonLogger.warn(`[SEGMENT_ENGINE] Live fetch failed for suspect train ${num}: ${liveErr.message} — skipping to prevent ghost card`);
+                    this._runB1DualReadCompare(trainNo, srcCode, destCode, [], null);
+                    return [];
+                }
             }
             // Delegate hub-building to shared helper (also used by injection retry path)
             const hubs = await this._buildHubsFromStops(stops, srcCode, destCode);
@@ -622,6 +706,40 @@ class SegmentAvailabilityEngine {
                 logger_1.winstonLogger.warn(`[SCHEDULE_INJECT] No valid station codes after mapping for train ${trainNo}.`);
                 return false;
             }
+            // PHASE_5B091 — Central Deterministic Integrity Gate
+            const { trainScheduleIntegrityService } = require('./trainScheduleIntegrityService');
+            const integrity = trainScheduleIntegrityService.validateScheduleRows(trainNo, rows);
+            if (integrity.status === 'INVALID') {
+                logger_1.winstonLogger.warn(`[SCHEDULE_INJECT_REJECTED] Train ${trainNo} failed integrity validation: ${integrity.message}`);
+                return false;
+            }
+            // ── PHASE 5B136: LOCAL_E2E_NO_WRITE in-memory hand-off ──────────────
+            // Blocking the upsert alone is not enough: this write is load-bearing for
+            // a later read. _injectScheduleFromIRCTC would return false, getMidpointHubs
+            // would return [] and same-train rescue would silently stop producing
+            // splits — changing route selection rather than just suppressing writes.
+            // So in no-write mode the already-validated rows are handed to
+            // getMidpointHubs in memory: no UPSERT, no orphan DELETE, no DB re-read.
+            // The IRCTC fetch and validateScheduleRows above are untouched.
+            if ((0, supabase_1.isNoWriteMode)()) {
+                const memoryRows = rows
+                    .map((r) => ({
+                    Station_Code: r.Station_Code,
+                    SN: r.SN,
+                    Station_Name: r.Station_Name,
+                    Arrival_time: r.Arrival_time,
+                    Departure_Time: r.Departure_Time,
+                }))
+                    .sort((a, b) => Number(a.SN) - Number(b.SN));
+                if (this.noWriteInjectedSchedules.size >= NO_WRITE_SCHEDULE_HANDOFF_MAX) {
+                    const oldestKey = this.noWriteInjectedSchedules.keys().next().value;
+                    if (oldestKey !== undefined)
+                        this.noWriteInjectedSchedules.delete(oldestKey);
+                }
+                this.noWriteInjectedSchedules.set(trainNo, memoryRows);
+                logger_1.winstonLogger.warn(`[NO_WRITE] Train ${trainNo}: skipped train_schedule UPSERT and orphan DELETE; handing ${memoryRows.length} validated rows to _buildHubsFromStops in memory.`);
+                return true;
+            }
             // Upsert in batches of 100 to stay within Supabase limits
             const BATCH = 100;
             let totalInserted = 0;
@@ -637,6 +755,16 @@ class SegmentAvailabilityEngine {
                     totalInserted += batch.length;
                 }
             }
+            // PHASE_5B091 — Delete orphan stale stops if route shortened
+            try {
+                const maxSN = Math.max(...rows.map((r) => r.SN));
+                await supabase_1.supabase
+                    .from('train_schedule')
+                    .delete()
+                    .eq('Train_No', trainNo)
+                    .gt('SN', maxSN);
+            }
+            catch { /* non-fatal orphan delete failure */ }
             logger_1.winstonLogger.info(`[SCHEDULE_INJECT] Upserted ${totalInserted}/${rows.length} rows for train ${trainNo}.`);
             return totalInserted > 0;
         }

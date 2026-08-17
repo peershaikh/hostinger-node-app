@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.availabilityProvider = exports.AvailabilityProvider = void 0;
 const logger_1 = require("../middleware/logger");
 const providerConfigService_1 = require("./providerConfigService");
+const railProviderResolver_1 = require("./railProviderResolver");
 const trainStationResolver_1 = require("./trainStationResolver");
 class AvailabilityProvider {
     constructor() {
@@ -51,16 +52,20 @@ class AvailabilityProvider {
         const toNorm = resolution.apiTo;
         logger_1.winstonLogger.info(`[AVAIL_PROVIDER_START] train=${params.trainNo} from=${fromNorm} to=${toNorm}`);
         logger_1.winstonLogger.info(`[AVAIL_PROVIDER_PARAMS] train=${params.trainNo} from=${fromNorm} to=${toNorm} date=${params.date} class=${params.classType} quota=${params.quota}`);
-        let irctcData = null;
         let irctcHandledError = null;
-        const irctcGuard = await providerConfigService_1.providerConfigService.isProviderEnabled('IRCTC');
-        if (irctcGuard.enabled) {
+        const availChain = await railProviderResolver_1.railProviderResolver.resolveProviderChain('availability');
+        for (const provider of availChain) {
             try {
-                const { irctcService } = require('./irctcService');
-                const dateToPass = params.date;
-                irctcData = await irctcService.getAvailability(params.trainNo, dateToPass, fromNorm, toNorm, params.classType, params.quota, { bypassCache: true });
-                if (irctcData && typeof irctcData === 'object') {
-                    if (irctcData.success === false) {
+                const provData = await provider.checkAvailability({
+                    trainNo: params.trainNo,
+                    from: fromNorm,
+                    to: toNorm,
+                    date: params.date,
+                    classType: params.classType,
+                    quota: params.quota
+                });
+                if (provData && typeof provData === 'object') {
+                    if (provData.success === false) {
                         let isDateNonRunning = false;
                         try {
                             const { trainOperatesOnDate } = require('../utils/dayUtils');
@@ -71,13 +76,13 @@ class AvailabilityProvider {
                                 isDateNonRunning = true;
                         }
                         catch { /* non-fatal */ }
-                        const providerReason = (0, trainStationResolver_1.mapProviderErrorToReason)(irctcData.error || '', isDateNonRunning);
-                        logger_1.winstonLogger.info(`[AVAIL_PROVIDER_HANDLED_ERROR] train=${params.trainNo} error=${irctcData.error} reason=${providerReason}`);
+                        const providerReason = (0, trainStationResolver_1.mapProviderErrorToReason)(provData.error || '', isDateNonRunning);
+                        logger_1.winstonLogger.info(`[AVAIL_PROVIDER_HANDLED_ERROR] train=${params.trainNo} error=${provData.error} reason=${providerReason}`);
                         const message = providerReason === 'TRAIN_NOT_RUNNING'
                             ? `Train ${params.trainNo} does not run on this date`
                             : providerReason === 'PROVIDER_REQUEST_REJECTED'
                                 ? 'Railway servers rejected availability check for this date/class'
-                                : (irctcData.error || 'Class not available in selected quota/class');
+                                : (provData.error || 'Class not available in selected quota/class');
                         irctcHandledError = {
                             success: false,
                             reason: providerReason,
@@ -85,48 +90,18 @@ class AvailabilityProvider {
                         };
                     }
                     else {
-                        const returnedClasses = Array.isArray(irctcData)
+                        const returnedClasses = Array.isArray(provData)
                             ? ['ARRAY']
-                            : (typeof irctcData === 'object' ? Object.keys(irctcData) : []);
-                        logger_1.winstonLogger.info(`[AVAIL_PROVIDER_CLASSES_RETURNED] train=${params.trainNo} requestedClass=${params.classType} returnedClasses=${returnedClasses.join(',') || 'NONE'} source=IRCTC`);
-                        logger_1.winstonLogger.info(`[AVAIL_PROVIDER_SUCCESS] train=${params.trainNo} source=IRCTC`);
-                        return { success: true, data: irctcData };
+                            : (typeof provData === 'object' ? Object.keys(provData) : []);
+                        logger_1.winstonLogger.info(`[AVAIL_PROVIDER_CLASSES_RETURNED] train=${params.trainNo} requestedClass=${params.classType} returnedClasses=${returnedClasses.join(',') || 'NONE'} source=${provider.providerId}`);
+                        logger_1.winstonLogger.info(`[AVAIL_PROVIDER_SUCCESS] train=${params.trainNo} source=${provider.providerId}`);
+                        return { success: true, data: provData };
                     }
-                }
-                else {
-                    throw new Error(`IRCTC Provider returned empty or failed: ${JSON.stringify(irctcData)}`);
                 }
             }
             catch (err) {
-                logger_1.winstonLogger.warn(`[AVAIL_PROVIDER_FAIL] train=${params.trainNo} error=${err.message} - Trying RailRadar`);
+                logger_1.winstonLogger.warn(`[AVAIL_PROVIDER_FAIL] ${provider.providerId} train=${params.trainNo} error=${err.message}`);
             }
-        }
-        else {
-            const skipLabel = (irctcGuard.reason === 'PROVIDER_UNHEALTHY' || irctcGuard.reason === 'CIRCUIT_BREAKER_BLOCKED')
-                ? '[PROVIDER_SKIPPED_UNHEALTHY]'
-                : '[PROVIDER_SKIPPED_DISABLED]';
-            logger_1.winstonLogger.info(`${skipLabel} IRCTC | Reason: ${irctcGuard.reason}`);
-        }
-        const rrGuard = await providerConfigService_1.providerConfigService.isProviderEnabled('RAILRADAR');
-        if (rrGuard.enabled) {
-            try {
-                const { railRadarService } = require('./railRadarService');
-                const rrData = await railRadarService.getAvailability(params.trainNo, fromNorm, toNorm, params.date, params.classType, params.quota);
-                if (rrData) {
-                    const source = irctcHandledError ? 'RAILRADAR (IRCTC_FALLBACK)' : 'RAILRADAR';
-                    logger_1.winstonLogger.info(`[AVAIL_PROVIDER_SUCCESS] train=${params.trainNo} source=${source}`);
-                    return { success: true, data: rrData };
-                }
-            }
-            catch (rrErr) {
-                logger_1.winstonLogger.warn(`[AVAIL_PROVIDER_RAILRADAR_FAIL] train=${params.trainNo} error=${rrErr.message}`);
-            }
-        }
-        else {
-            const skipLabel = (rrGuard.reason === 'PROVIDER_UNHEALTHY' || rrGuard.reason === 'CIRCUIT_BREAKER_BLOCKED')
-                ? '[PROVIDER_SKIPPED_UNHEALTHY]'
-                : '[PROVIDER_SKIPPED_DISABLED]';
-            logger_1.winstonLogger.info(`${skipLabel} RAILRADAR | Reason: ${rrGuard.reason}`);
         }
         if (irctcHandledError) {
             logger_1.winstonLogger.warn({
@@ -138,7 +113,7 @@ class AvailabilityProvider {
                 date: params.date,
                 classType: params.classType,
                 quota: params.quota,
-                providerStatus: irctcData?.error || 'REJECTED',
+                providerStatus: irctcHandledError.message || 'REJECTED',
                 normalizedReason: irctcHandledError.reason,
             });
             return irctcHandledError;

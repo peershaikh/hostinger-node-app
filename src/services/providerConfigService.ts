@@ -19,6 +19,12 @@ export class ProviderConfigService {
     circuit_recovery_count: 0
   };
 
+  public isCircuitBreakerBlocked(providerName: string): boolean {
+    const nameUpper = providerName.toUpperCase();
+    const now = Date.now();
+    return (this.consecutiveFailures[nameUpper] || 0) >= 3 && now < (this.circuitOpenUntil[nameUpper] || 0);
+  }
+
   /**
    * Checks if a provider is active, healthy, and configured.
    */
@@ -26,12 +32,7 @@ export class ProviderConfigService {
     const nameUpper = providerName.toUpperCase();
     const now = Date.now();
 
-    // 1. Check in-memory circuit-breaker block (intentionally NOT cached — must reflect live failure count)
-    const isCircuitBlocked = (name: string) => {
-      return (this.consecutiveFailures[name] || 0) >= 3 && now < (this.circuitOpenUntil[name] || 0);
-    };
-
-    if (isCircuitBlocked(providerName) || isCircuitBlocked(nameUpper)) {
+    if (this.isCircuitBreakerBlocked(nameUpper)) {
       if (nameUpper === 'IRCTC') {
         return { enabled: true, reason: 'ENV_FALLBACK' };
       }
@@ -276,7 +277,7 @@ export class ProviderConfigService {
     const nameUpper = providerName.toUpperCase();
 
     if (nameUpper === 'IRCTC') {
-      const k = process.env.IRCTC_CONNECT_API_KEY || process.env.IRCTC_API_KEY || process.env.IRCTC_API_KEY_PRIMARY || process.env.RAPIDAPI_KEY || '';
+      const k = process.env.IRCTC_CONNECT_API_KEY || process.env.IRCTC_API_KEY || process.env.IRCTC_API_KEY_PRIMARY || '';
       if (k) keys.push(k.trim());
     } else if (nameUpper === 'RAPIDAPI') {
       // RapidAPI is deprecated. Return empty key set to fail fast without external calls.
@@ -311,16 +312,88 @@ export class ProviderConfigService {
    * Admin utility to clear cache explicitly after updates.
    */
   public flushCache(providerName?: string) {
+    cacheService.del('all_provider_configs');
     if (providerName) {
-      cacheService.del(`provider_keys_${providerName}`);
+      const nameUpper = providerName.toUpperCase().trim();
+      cacheService.del(`provider_keys_${nameUpper}`);
+      cacheService.del(`prov_enabled_${nameUpper}`);
     } else {
       cacheService.del('provider_keys_IRCTC');
       cacheService.del('provider_keys_RAPIDAPI');
       cacheService.del('provider_keys_RAILRADAR');
       cacheService.del('provider_keys_RAILYATRI');
       cacheService.del('provider_keys_CONFIRMTKT');
+      cacheService.del('prov_enabled_IRCTC');
+      cacheService.del('prov_enabled_RAPIDAPI');
+      cacheService.del('prov_enabled_RAILRADAR');
+      cacheService.del('prov_enabled_RAILYATRI');
+      cacheService.del('prov_enabled_CONFIRMTKT');
+      cacheService.del('prov_enabled_DATABASE');
     }
+  }
+
+  /**
+   * Retrieves all provider records from DB (or default fallback) ordered by priority.
+   */
+  public async getProviderConfigs(): Promise<Array<{ provider_name: string; priority: number; enabled: boolean; health_status: string }>> {
+    const cacheKey = 'all_provider_configs';
+    const cached = cacheService.get<any[]>(cacheKey);
+    if (cached) return cached;
+
+    const useDb = process.env.USE_DB_PROVIDERS === 'true';
+    if (useDb) {
+      try {
+        const { data, error } = await supabase
+          .from('api_providers')
+          .select('provider_name, priority, enabled, health_status')
+          .eq('is_deleted', false)
+          .order('priority', { ascending: true });
+
+        if (!error && data && data.length > 0) {
+          const hasAnyLiveEnabled = data.some((r: any) => r.enabled === true && (r.provider_name || '').toUpperCase() !== 'DATABASE');
+          
+          let effectiveData = [...data];
+          if (!hasAnyLiveEnabled) {
+            // Migration safety: If no live provider is enabled in DB, fallback to enabling IRCTC as primary (via .env key)
+            let irctcFound = false;
+            effectiveData = effectiveData.map((r: any) => {
+              if ((r.provider_name || '').toUpperCase() === 'IRCTC') {
+                irctcFound = true;
+                return { ...r, enabled: true, priority: r.priority || 1, health_status: 'ACTIVE' };
+              }
+              return r;
+            });
+            if (!irctcFound) {
+              effectiveData.unshift({ provider_name: 'IRCTC', priority: 1, enabled: true, health_status: 'ACTIVE' });
+            }
+          }
+
+          const hasDb = effectiveData.some((r: any) => (r.provider_name || '').toUpperCase() === 'DATABASE');
+          const finalConfigs = hasDb ? effectiveData : [
+            ...effectiveData,
+            { provider_name: 'DATABASE', priority: 99, enabled: true, health_status: 'ACTIVE' }
+          ];
+          cacheService.set(cacheKey, finalConfigs, 10); // 10s TTL
+          return finalConfigs;
+        }
+      } catch (err: any) {
+        winstonLogger.warn(`[getProviderConfigs] DB fetch failed: ${err.message}. Falling back to defaults.`);
+      }
+    }
+
+    // Default fallback configurations
+    const defaultConfigs = [
+      { provider_name: 'IRCTC', priority: 1, enabled: true, health_status: 'ACTIVE' },
+      { provider_name: 'RAILRADAR', priority: 2, enabled: true, health_status: 'ACTIVE' },
+      { provider_name: 'CONFIRMTKT', priority: 3, enabled: true, health_status: 'ACTIVE' },
+      { provider_name: 'RAILYATRI', priority: 4, enabled: true, health_status: 'ACTIVE' },
+      { provider_name: 'RAPIDAPI', priority: 5, enabled: false, health_status: 'DISABLED' },
+      { provider_name: 'DATABASE', priority: 99, enabled: true, health_status: 'ACTIVE' },
+    ];
+    cacheService.set(cacheKey, defaultConfigs, 10);
+    return defaultConfigs;
   }
 }
 
 export const providerConfigService = new ProviderConfigService();
+

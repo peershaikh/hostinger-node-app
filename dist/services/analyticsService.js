@@ -1,8 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.analyticsService = exports.AnalyticsService = void 0;
+const eventTaxonomy_1 = require("../constants/eventTaxonomy");
 const supabase_1 = require("../config/supabase");
 const logger_1 = require("../middleware/logger");
+const universalEventEmitter_1 = require("./universalEventEmitter");
 class AnalyticsService {
     constructor() {
         this.SEARCH_RPC = 'increment_search_popularity';
@@ -73,6 +75,23 @@ class AnalyticsService {
             return false;
         try {
             const sessionId = (metadata?.session_id || metadata?.sessionId || metadata?.userId || metadata?.user_id || null);
+            // 1. Dual-emit into canonical universal event stream
+            const normalizedName = eventType.toLowerCase().replace(/[\s-]+/g, '_');
+            const canonicalName = eventTaxonomy_1.UNIVERSAL_EVENT_NAME_SET.has(normalizedName)
+                ? normalizedName
+                : eventTaxonomy_1.UniversalEventNames.NOTIFICATION_SENT;
+            universalEventEmitter_1.universalEventEmitter.emit({
+                eventName: canonicalName,
+                guestId: sessionId || undefined,
+                userId: (metadata?.user_id || metadata?.userId || null),
+                mode: 'rail',
+                metadata: {
+                    ...metadata,
+                    original_event_type: eventType,
+                    pnr: pnr || undefined
+                }
+            });
+            // 2. Legacy table write for backward compatibility
             const dbPayload = {
                 event_type: eventType,
                 session_id: sessionId,

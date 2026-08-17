@@ -11,7 +11,7 @@ const PAN_INDIA_CLUSTERS: string[][] = [
   ['SBC', 'YPR', 'SMVB', 'BNC', 'KSR'],
   ['SC', 'HYB', 'KCG'],
   ['PUNE', 'CCH', 'LNL'],
-  ['ADI', 'SBT', 'GNC'],
+  ['ADI', 'SBT', 'SBIB', 'GNC'],
   ['BSB', 'BSBS', 'DDU', 'MUV'],
   ['PRYJ', 'PRRB', 'NYN', 'ALD'],
   ['PNBE', 'PPTA', 'RJPB', 'DNR'],

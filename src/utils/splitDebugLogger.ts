@@ -1,11 +1,12 @@
 import fs from 'fs';
 import path from 'path';
 import { winstonLogger } from '../middleware/logger';
+import { isNoWriteMode, safeAppendFileSync, safeMkdirSync } from '../config/supabase';
 
 // Create logs directory if it doesn't exist
 const logsDir = path.join(__dirname, '../../logs');
-if (!fs.existsSync(logsDir)) {
-    fs.mkdirSync(logsDir, { recursive: true });
+if (!isNoWriteMode() && !fs.existsSync(logsDir)) {
+    safeMkdirSync(logsDir, { recursive: true });
 }
 
 const debugLogPath = path.join(logsDir, 'split-debug.log');
@@ -20,7 +21,7 @@ export interface SplitDebugData {
     rejectedHubs: Array<{ hub: string; reason: string }>;
     rejectionReasons: string[];
     fallbackAttempts: Array<{ hub: string; success: boolean }>;
-    fallbackStrategy?: 'validated' | 'validated-relaxed' | 'corridor' | 'major-corridor' | 'safety-net' | 'raw-safety-net' | 'forced-major-hub' | 'none';
+    fallbackStrategy?: 'validated' | 'validated-relaxed' | 'validated-live' | 'corridor' | 'major-corridor' | 'safety-net' | 'raw-safety-net' | 'forced-major-hub' | 'none';
     deterministicSortApplied?: boolean;
     finalSplitCount: number;
     totalDurationFilter: { before: number; after: number; reason: string };
@@ -38,7 +39,10 @@ export class SplitDebugLogger {
             };
 
             const logLine = JSON.stringify(logEntry) + '\n';
-            fs.appendFileSync(debugLogPath, logLine, 'utf8');
+            if (isNoWriteMode()) {
+                return;
+            }
+            safeAppendFileSync(debugLogPath, logLine, 'utf8');
             winstonLogger.info(`[SPLIT_DEBUG] Logged debug data for ${data.source} → ${data.destination}`);
         } catch (error) {
             winstonLogger.error(`[SPLIT_DEBUG] Failed to write debug log: ${error}`);

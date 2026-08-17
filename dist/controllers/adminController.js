@@ -18,6 +18,8 @@ const aiOperationsService_1 = require("../services/aiOperationsService");
 const incidentDetectionService_1 = require("../services/incidentDetectionService");
 const adminIntelligenceV2Service_1 = require("../services/adminIntelligenceV2Service");
 const productionIncidentService_1 = require("../services/productionIncidentService");
+const signupIntelligenceService_1 = require("../services/signupIntelligenceService");
+const learningObservabilityService_1 = require("../services/learningObservabilityService");
 class AdminController {
     async getAdminAnalytics(req, res) {
         try {
@@ -420,6 +422,27 @@ class AdminController {
         catch (err) {
             logger_1.winstonLogger.error(`[ADMIN_USERS] listUsers error: ${err.message}`);
             res.status(500).json({ success: false, error: 'Failed to fetch users' });
+        }
+    }
+    async getSignupIntelligence(req, res) {
+        try {
+            const days = parseInt(req.query.days, 10) || 7;
+            const data = await signupIntelligenceService_1.signupIntelligenceService.getSignupIntelligence(days);
+            res.json({ success: true, data });
+        }
+        catch (err) {
+            logger_1.winstonLogger.error(`[ADMIN_SIGNUP_INTELLIGENCE] Error: ${err.message}`);
+            res.status(500).json({ success: false, error: 'Failed to compute signup intelligence metrics' });
+        }
+    }
+    async getLearningIntelligence(req, res) {
+        try {
+            const data = await learningObservabilityService_1.learningObservabilityService.getLearningIntelligence();
+            res.json({ success: true, data });
+        }
+        catch (err) {
+            logger_1.winstonLogger.error(`[ADMIN_LEARNING_INTELLIGENCE] Error: ${err.message}`);
+            res.status(500).json({ success: false, error: 'Failed to compute learning intelligence observatory report' });
         }
     }
     async testPushNotification(req, res) {

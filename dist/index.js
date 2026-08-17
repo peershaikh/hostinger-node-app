@@ -112,9 +112,13 @@ app.use(universalInstrumentation_1.universalInstrumentationMiddleware);
 app.use(requestTiming_1.requestTimingMiddleware); // Lightweight structured timing
 global.SYSTEM_MODE = 'MODE_C';
 // ====================== DEPLOYMENT VALIDATION ======================
-const requiredEnvs = ['RAPIDAPI_KEY', 'JWT_SECRET', 'REFRESH_TOKEN_SECRET', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
+const requiredEnvs = ['JWT_SECRET', 'REFRESH_TOKEN_SECRET', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
 if (process.env.USE_DB_PROVIDERS === 'true') {
     requiredEnvs.push('ENCRYPTION_KEY');
+}
+const hasIrctcKey = process.env.IRCTC_CONNECT_API_KEY || process.env.IRCTC_API_KEY || process.env.RAPIDAPI_KEY;
+if (!hasIrctcKey) {
+    logger_1.winstonLogger.warn('[STARTUP] IRCTC_CONNECT_API_KEY is not set. Live availability provider will be disabled.');
 }
 for (const env of requiredEnvs) {
     const val = process.env[env];
@@ -248,114 +252,131 @@ const startServer = async () => {
                     ]);
                 }
                 // Start background services
-                pnrWorker_1.pnrWorker.start();
-                metricsService_1.metricsService.startSnapshotScheduler();
-                alarmWorker_1.alarmWorker.start();
-                (0, eventQueueWorker_1.startEventQueueWorker)();
-                const { alertDispatcher } = require('./workers/alertDispatcher');
-                alertDispatcher.start();
-                const { dailyHealthReportJob } = require('./jobs/dailyHealthReport');
-                dailyHealthReportJob.start();
-                // PHASE_4C750: News refresh job
-                const { newsRefreshJob } = require('./jobs/newsRefreshJob');
-                await newsRefreshJob.start();
-                // PHASE_4C871: Knowledge hub catalog job (no-op when flags OFF)
-                const { hubCatalogRefreshJob } = require('./jobs/hubCatalogRefreshJob');
-                await hubCatalogRefreshJob.start();
-                // â”€â”€â”€ Alarm Lifecycle Crons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-                const scheduleAlarmExpiryCron = () => {
-                    const MS_1_HOUR = 60 * 60 * 1000;
-                    setTimeout(async () => {
-                        try {
-                            const { supabase: sb } = require('./config/supabase');
-                            const { error } = await sb
-                                .from('user_station_alarms')
-                                .update({ enabled: false, updated_at: new Date().toISOString() })
-                                .eq('enabled', true)
-                                .lt('expires_at', new Date().toISOString());
-                            if (error && error.code !== '42P01') {
-                                logger_1.winstonLogger.warn(`[ALARM_CRON_EXPIRY] Failed to disable expired alarms: ${error.message}`);
-                            }
-                            else if (!error) {
-                                logger_1.winstonLogger.info('[ALARM_CRON_EXPIRY] Expired alarm cleanup completed');
-                            }
-                        }
-                        catch (err) {
-                            logger_1.winstonLogger.warn(`[ALARM_CRON_EXPIRY] Exception during expiry cron: ${err.message}`);
-                        }
-                        finally {
-                            scheduleAlarmExpiryCron();
-                        }
-                    }, MS_1_HOUR);
-                };
-                scheduleAlarmExpiryCron();
-                const scheduleAlarmHardDelete = () => {
-                    const MS_24_HOURS = 24 * 60 * 60 * 1000;
-                    setTimeout(async () => {
-                        try {
-                            const { supabase: sb } = require('./config/supabase');
-                            const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-                            const { error } = await sb
-                                .from('user_station_alarms')
-                                .delete()
-                                .lt('created_at', sevenDaysAgo);
-                            if (error && error.code !== '42P01') {
-                                logger_1.winstonLogger.warn(`[ALARM_CRON_PURGE] Failed to purge old alarm records: ${error.message}`);
-                            }
-                            else if (!error) {
-                                logger_1.winstonLogger.info('[ALARM_CRON_PURGE] Old alarm record purge completed (>7 days)');
-                            }
-                        }
-                        catch (err) {
-                            logger_1.winstonLogger.warn(`[ALARM_CRON_PURGE] Exception during hard delete cron: ${err.message}`);
-                        }
-                        finally {
-                            scheduleAlarmHardDelete();
-                        }
-                    }, MS_24_HOURS);
-                };
-                scheduleAlarmHardDelete();
-                // Native daily limits reset scheduler (runs daily at midnight)
-                const scheduleMidnightReset = () => {
-                    const now = new Date();
-                    const nextMidnight = new Date();
-                    nextMidnight.setHours(24, 0, 0, 0);
-                    const msUntilMidnight = nextMidnight.getTime() - now.getTime();
-                    setTimeout(() => {
-                        const resetDbLimits = async () => {
+                // ── PHASE 5B136: LOCAL_E2E_NO_WRITE boot-writer suppression ─────────
+                // Every worker/cron below mutates production Supabase on a timer, with
+                // no incoming request to scope a guard to, so in no-write mode none of
+                // them is started at all. Production startup (flag OFF) takes the else
+                // branch and is completely unaffected.
+                //
+                // The guarded block is intentionally NOT re-indented: that keeps this
+                // change to the handful of lines that add the guard, instead of
+                // re-touching ~110 lines of production boot code in the diff.
+                if ((0, supabase_1.isNoWriteMode)()) {
+                    logger_1.winstonLogger.warn('[NO_WRITE] Boot writers suppressed: pnrWorker, metricsService snapshot scheduler, alarmWorker, event queue worker, alertDispatcher, dailyHealthReportJob, newsRefreshJob, hubCatalogRefreshJob, trainScheduleSyncJob, user_station_alarms expiry UPDATE cron, user_station_alarms hard-delete DELETE cron, users midnight daily-reset UPDATE cron.');
+                }
+                else {
+                    pnrWorker_1.pnrWorker.start();
+                    metricsService_1.metricsService.startSnapshotScheduler();
+                    alarmWorker_1.alarmWorker.start();
+                    (0, eventQueueWorker_1.startEventQueueWorker)();
+                    const { alertDispatcher } = require('./workers/alertDispatcher');
+                    alertDispatcher.start();
+                    const { dailyHealthReportJob } = require('./jobs/dailyHealthReport');
+                    dailyHealthReportJob.start();
+                    // PHASE_4C750: News refresh job
+                    const { newsRefreshJob } = require('./jobs/newsRefreshJob');
+                    await newsRefreshJob.start();
+                    // PHASE_4C871: Knowledge hub catalog job (no-op when flags OFF)
+                    const { hubCatalogRefreshJob } = require('./jobs/hubCatalogRefreshJob');
+                    await hubCatalogRefreshJob.start();
+                    // PHASE_5B030: Nightly train schedule sync (dry-run when ENABLE_TRAIN_SCHEDULE_SYNC != true)
+                    const { trainScheduleSyncJob } = require('./jobs/trainScheduleSyncJob');
+                    await trainScheduleSyncJob.start();
+                    // â”€â”€â”€ Alarm Lifecycle Crons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                    const scheduleAlarmExpiryCron = () => {
+                        const MS_1_HOUR = 60 * 60 * 1000;
+                        setTimeout(async () => {
                             try {
-                                const { validateConnection: vc2, supabase } = require('./config/supabase');
-                                const conn = await vc2();
-                                if (conn) {
-                                    const { error } = await supabase
-                                        .from('users')
-                                        .update({ daily_search_count: 0, daily_pnr_count: 0, daily_live_count: 0, ads_watched_today: 0 })
-                                        .or('daily_search_count.gt.0,daily_pnr_count.gt.0,daily_live_count.gt.0,ads_watched_today.gt.0');
-                                    if (error) {
-                                        logger_1.winstonLogger.error(`[CRON_DATABASE_RESET_ERROR] Failed to reset daily database quotas: ${error.message}`);
-                                    }
-                                    else {
-                                        logger_1.winstonLogger.info('[CRON] Automated daily limits reset executed successfully on database');
-                                        try {
-                                            const { userCache } = require('./cache/userCache');
-                                            await userCache.clear();
-                                            logger_1.winstonLogger.info('[CRON] User cache successfully cleared and PubSub broadcasted post-reset');
-                                        }
-                                        catch (cacheErr) {
-                                            logger_1.winstonLogger.error(`[CRON_CACHE_RESET_ERROR] Failed to clear user cache: ${cacheErr.message}`);
-                                        }
-                                    }
+                                const { supabase: sb } = require('./config/supabase');
+                                const { error } = await sb
+                                    .from('user_station_alarms')
+                                    .update({ enabled: false, updated_at: new Date().toISOString() })
+                                    .eq('enabled', true)
+                                    .lt('expires_at', new Date().toISOString());
+                                if (error && error.code !== '42P01') {
+                                    logger_1.winstonLogger.warn(`[ALARM_CRON_EXPIRY] Failed to disable expired alarms: ${error.message}`);
+                                }
+                                else if (!error) {
+                                    logger_1.winstonLogger.info('[ALARM_CRON_EXPIRY] Expired alarm cleanup completed');
                                 }
                             }
                             catch (err) {
-                                logger_1.winstonLogger.error(`[CRON_EXCEPTION] Database reset task failed: ${err.message}`);
+                                logger_1.winstonLogger.warn(`[ALARM_CRON_EXPIRY] Exception during expiry cron: ${err.message}`);
                             }
-                        };
-                        resetDbLimits();
-                        scheduleMidnightReset();
-                    }, msUntilMidnight);
-                };
-                scheduleMidnightReset();
+                            finally {
+                                scheduleAlarmExpiryCron();
+                            }
+                        }, MS_1_HOUR);
+                    };
+                    scheduleAlarmExpiryCron();
+                    const scheduleAlarmHardDelete = () => {
+                        const MS_24_HOURS = 24 * 60 * 60 * 1000;
+                        setTimeout(async () => {
+                            try {
+                                const { supabase: sb } = require('./config/supabase');
+                                const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+                                const { error } = await sb
+                                    .from('user_station_alarms')
+                                    .delete()
+                                    .lt('created_at', sevenDaysAgo);
+                                if (error && error.code !== '42P01') {
+                                    logger_1.winstonLogger.warn(`[ALARM_CRON_PURGE] Failed to purge old alarm records: ${error.message}`);
+                                }
+                                else if (!error) {
+                                    logger_1.winstonLogger.info('[ALARM_CRON_PURGE] Old alarm record purge completed (>7 days)');
+                                }
+                            }
+                            catch (err) {
+                                logger_1.winstonLogger.warn(`[ALARM_CRON_PURGE] Exception during hard delete cron: ${err.message}`);
+                            }
+                            finally {
+                                scheduleAlarmHardDelete();
+                            }
+                        }, MS_24_HOURS);
+                    };
+                    scheduleAlarmHardDelete();
+                    // Native daily limits reset scheduler (runs daily at midnight)
+                    const scheduleMidnightReset = () => {
+                        const now = new Date();
+                        const nextMidnight = new Date();
+                        nextMidnight.setHours(24, 0, 0, 0);
+                        const msUntilMidnight = nextMidnight.getTime() - now.getTime();
+                        setTimeout(() => {
+                            const resetDbLimits = async () => {
+                                try {
+                                    const { validateConnection: vc2, supabase } = require('./config/supabase');
+                                    const conn = await vc2();
+                                    if (conn) {
+                                        const { error } = await supabase
+                                            .from('users')
+                                            .update({ daily_search_count: 0, daily_pnr_count: 0, daily_live_count: 0, ads_watched_today: 0 })
+                                            .or('daily_search_count.gt.0,daily_pnr_count.gt.0,daily_live_count.gt.0,ads_watched_today.gt.0');
+                                        if (error) {
+                                            logger_1.winstonLogger.error(`[CRON_DATABASE_RESET_ERROR] Failed to reset daily database quotas: ${error.message}`);
+                                        }
+                                        else {
+                                            logger_1.winstonLogger.info('[CRON] Automated daily limits reset executed successfully on database');
+                                            try {
+                                                const { userCache } = require('./cache/userCache');
+                                                await userCache.clear();
+                                                logger_1.winstonLogger.info('[CRON] User cache successfully cleared and PubSub broadcasted post-reset');
+                                            }
+                                            catch (cacheErr) {
+                                                logger_1.winstonLogger.error(`[CRON_CACHE_RESET_ERROR] Failed to clear user cache: ${cacheErr.message}`);
+                                            }
+                                        }
+                                    }
+                                }
+                                catch (err) {
+                                    logger_1.winstonLogger.error(`[CRON_EXCEPTION] Database reset task failed: ${err.message}`);
+                                }
+                            };
+                            resetDbLimits();
+                            scheduleMidnightReset();
+                        }, msUntilMidnight);
+                    };
+                    scheduleMidnightReset();
+                } // ── end PHASE 5B136 boot-writer guard ──────────────────────────────
                 // PHASE_4C814 (now runs in background, no longer blocks listen())
                 const irctcInitStart = Date.now();
                 logger_1.winstonLogger.info('[STARTUP] IRCTC SDK warmup starting in background...');

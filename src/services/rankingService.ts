@@ -1,4 +1,21 @@
 import { winstonLogger } from '../middleware/logger';
+import { trainReliabilityService, TrainReliabilityResult } from './trainReliabilityService';
+
+export interface SmartScoreResult {
+  baseScore: number;
+  reliabilityScore: number;
+  reliabilityConfidence: number;
+  sampleSize: number;
+  reliabilityBonus: number;
+  finalSmartScore: number;
+  rankingReason: string;
+  classification: string;
+}
+
+export interface SmartRankedItem<T = Leg | SplitJourney> {
+  item: T;
+  smartScore: SmartScoreResult;
+}
 
 export interface Leg {
   trainNo: string;
@@ -22,6 +39,21 @@ export interface Leg {
 }
 
 
+export interface TransferMeta {
+  transferType: 'SAME_STATION' | 'INTER_STATION';
+  stationChange: boolean;
+  arrivalStation: { code: string; name: string };
+  boardingStation: { code: string; name: string };
+  distanceKm: number;
+  transitMode: string;
+  estimatedTransferMinutes: number;
+  minimumRequiredBufferMinutes: number;
+  actualBufferMinutes: number;
+  bufferSurplusMinutes: number;
+  transportSuggestion: string;
+}
+
+
 export interface SplitJourney {
   hub: string;
   leg1: Leg;
@@ -42,6 +74,8 @@ export interface SplitJourney {
   ai_insight?: string;
   recommendation_insight?: string;
   delayRisk?: string;
+  /** Inter-station transfer metadata (optional) */
+  transferMeta?: TransferMeta;
   /** On-time percentage based on historical live data (0-100) */
   punctualityScore?: number;
   /** Effective buffer after accounting for historical avg delay of Leg1 */
@@ -113,7 +147,7 @@ export class RankingService {
       const avail2 = getAvailScore(split.leg2.availability);
       score += (avail1 + avail2) / 2;
 
-      // 2. Connection Safety (25%) — delay-aware
+      // 2. Connection Safety (25%) — delay-aware & transfer-aware
       const isSameTrain = split.leg1.trainNo === split.leg2.trainNo;
       split.isSameTrain = isSameTrain;
       if (isSameTrain) {
@@ -126,15 +160,22 @@ export class RankingService {
         // (effectiveBufferMins = scheduledBuffer - historicalAvgDelay of Leg1)
         const effectiveBuf = (split as any).effectiveBufferMins ?? buffer;
 
-        if (effectiveBuf >= 30 && effectiveBuf <= 120) score += 25;       // Optimal wait
-        else if (effectiveBuf > 120 && effectiveBuf <= 180) score += 15;  // Good wait
-        else if (effectiveBuf > 180 && effectiveBuf <= 240) score += 5;   // Acceptable
-        else if (effectiveBuf < 30) score -= 20;                          // Dangerous connection (penalty)
+        const minReqBuf = split.transferMeta?.minimumRequiredBufferMinutes ?? 25;
+        const minOptimal = minReqBuf + 5;     // SAME_STATION (25): 30
+        const maxOptimal = minReqBuf + 95;    // SAME_STATION (25): 120
+        const maxGood = minReqBuf + 155;      // SAME_STATION (25): 180
+        const maxAcceptable = minReqBuf + 215;// SAME_STATION (25): 240
+
+        if (effectiveBuf >= minOptimal && effectiveBuf <= maxOptimal) score += 25;       // Optimal wait
+        else if (effectiveBuf > maxOptimal && effectiveBuf <= maxGood) score += 15;  // Good wait
+        else if (effectiveBuf > maxGood && effectiveBuf <= maxAcceptable) score += 5;   // Acceptable
+        else if (effectiveBuf < minOptimal) score -= 20;                          // Dangerous connection (penalty)
         else score -= 10;                                                  // >240 penalty
 
-        // Populate delayRisk from effective buffer (reflects real connection safety)
-        if (effectiveBuf < 20) split.delayRisk = 'High';
-        else if (effectiveBuf < 60) split.delayRisk = 'Medium';
+        // Populate delayRisk taking minReqBuf into account
+        const surplus = effectiveBuf - minReqBuf;
+        if (surplus < -5) split.delayRisk = 'High';
+        else if (surplus < 35) split.delayRisk = 'Medium';
         else split.delayRisk = 'Low';
       }
 
@@ -174,9 +215,11 @@ export class RankingService {
       else if (split.bufferMinutes <= 240) score += 5;
       else score += 2;
 
-      // 5. Platform Change (5%)
+      // 5. Platform / Transfer Change (5%)
       if (isSameTrain) {
         score += 5;
+      } else if (split.transferMeta?.transferType === 'INTER_STATION') {
+        score -= 5; // Inter-station road transit friction penalty
       }
 
       split.recommendation_insight = this.generateAiInsight(split);
@@ -371,6 +414,213 @@ export class RankingService {
 
   prepareForRanking(item: any): any {
     return item; // Already well structured
+  }
+
+  /**
+   * Calculates the confidence-aware Smart Score incorporating Train Reliability
+   */
+  calculateSmartScore(
+    item: Leg | SplitJourney,
+    reliabilityMap?: Map<string, TrainReliabilityResult>
+  ): SmartScoreResult {
+    const baseScore = this.calculateScore(item);
+
+    if ('leg1' in item && 'leg2' in item) {
+      const split = item as SplitJourney;
+      const t1 = split.leg1?.trainNo ? String(split.leg1.trainNo).trim() : '';
+      const t2 = split.leg2?.trainNo ? String(split.leg2.trainNo).trim() : '';
+
+      const rel1 = t1 && reliabilityMap ? reliabilityMap.get(t1) : null;
+      const rel2 = t2 && reliabilityMap ? reliabilityMap.get(t2) : null;
+
+      let compositeReliability = 70.0;
+      let compositeConfidence = 0;
+      let minSample = 0;
+      let classification = 'UNKNOWN';
+
+      if (rel1 && rel2) {
+        const c1 = rel1.confidenceScore || 0;
+        const c2 = rel2.confidenceScore || 0;
+        if (c1 + c2 > 0) {
+          compositeReliability = Math.round((rel1.reliabilityScore * c1 + rel2.reliabilityScore * c2) / (c1 + c2));
+        } else {
+          compositeReliability = Math.round((rel1.reliabilityScore + rel2.reliabilityScore) / 2);
+        }
+        compositeConfidence = Math.min(c1, c2);
+        minSample = Math.min(rel1.sampleSize || 0, rel2.sampleSize || 0);
+        classification = compositeConfidence >= 50 ? (compositeReliability >= 75 ? 'GOOD' : 'MODERATE') : 'UNKNOWN';
+      } else if (rel1 || rel2) {
+        const activeRel = rel1 || rel2!;
+        compositeReliability = activeRel.reliabilityScore || 70.0;
+        compositeConfidence = Math.round((activeRel.confidenceScore || 0) * 0.5); // Attenuate for missing second leg
+        minSample = activeRel.sampleSize || 0;
+        classification = activeRel.classification || 'UNKNOWN';
+      }
+
+      // Reliability Bonus (bounded: max ±4.5 points on base score)
+      const delta = compositeReliability - 70.0;
+      const confidenceFactor = compositeConfidence / 100;
+      const reliabilityBonus = Math.round(delta * confidenceFactor * 0.15 * 10) / 10;
+      const finalSmartScore = Math.max(0, Math.min(100, Math.round(baseScore + reliabilityBonus)));
+
+      const rankingReason = this.generateSmartSplitReason(baseScore, split, rel1, rel2);
+
+      return {
+        baseScore,
+        reliabilityScore: compositeReliability,
+        reliabilityConfidence: compositeConfidence,
+        sampleSize: minSample,
+        reliabilityBonus,
+        finalSmartScore,
+        rankingReason,
+        classification
+      };
+    } else {
+      const leg = item as Leg;
+      const trainNo = leg.trainNo ? String(leg.trainNo).trim() : '';
+      const rel = trainNo && reliabilityMap ? reliabilityMap.get(trainNo) : null;
+
+      let reliabilityScore = 70.0;
+      let reliabilityConfidence = 0;
+      let sampleSize = 0;
+      let classification = 'UNKNOWN';
+
+      if (rel && rel.sampleSize > 0) {
+        reliabilityScore = rel.reliabilityScore;
+        reliabilityConfidence = rel.confidenceScore;
+        sampleSize = rel.sampleSize;
+        classification = rel.classification;
+      }
+
+      // Reliability Bonus: bounded ±4.5 points
+      const delta = reliabilityScore - 70.0;
+      const confidenceFactor = reliabilityConfidence / 100;
+      const reliabilityBonus = Math.round(delta * confidenceFactor * 0.15 * 10) / 10;
+      const finalSmartScore = Math.max(0, Math.min(100, Math.round(baseScore + reliabilityBonus)));
+
+      const rankingReason = this.generateSmartDirectReason(baseScore, rel, leg);
+
+      return {
+        baseScore,
+        reliabilityScore,
+        reliabilityConfidence,
+        sampleSize,
+        reliabilityBonus,
+        finalSmartScore,
+        rankingReason,
+        classification
+      };
+    }
+  }
+
+  private generateSmartDirectReason(baseScore: number, rel: TrainReliabilityResult | null | undefined, leg: Leg): string {
+    const isAvail = baseScore >= 80;
+    const isWL = baseScore < 80 && baseScore >= 40;
+
+    if (rel && (rel.confidenceScore >= 50 || (rel.feedbackSignal?.feedbackConfidence || 0) >= 50)) {
+      const fb = rel.feedbackSignal;
+      const feedbackClause = fb && fb.feedbackConfidence >= 50 && fb.averageRating
+        ? ` • User satisfaction: ${fb.averageRating}/5`
+        : '';
+
+      if (rel.reliabilityScore >= 85) {
+        return isAvail
+          ? `Strong seat confirmation backed by exceptional historical punctuality (${rel.averageDelayMinutes}m avg delay)${feedbackClause}`
+          : `High historical on-time performance (${Math.round(rel.onTimeRate * 100)}% on-time rate)${feedbackClause}`;
+      } else if (rel.reliabilityScore <= 45) {
+        return isAvail
+          ? `Confirmed seat availability; historical arrival delay averages ${rel.averageDelayMinutes}m${feedbackClause}`
+          : `Frequent historical delay risk (${rel.averageDelayMinutes}m avg delay)${feedbackClause}`;
+      } else {
+        return isAvail
+          ? `Confirmed seat availability with consistent schedule reliability${feedbackClause}`
+          : `Moderate historical punctuality with ${Math.round(rel.onTimeRate * 100)}% on-time rate${feedbackClause}`;
+      }
+    }
+
+    if (isAvail) return 'Confirmed seat availability on primary schedule';
+    if (isWL) return 'Moderate confirmation chance based on waitlist trends';
+    return 'Standard schedule availability';
+  }
+
+  private generateSmartSplitReason(
+    baseScore: number,
+    split: SplitJourney,
+    rel1: TrainReliabilityResult | null | undefined,
+    rel2: TrainReliabilityResult | null | undefined
+  ): string {
+    if (split.isSameTrain) {
+      return 'Seamless same-train journey (no platform switch) with reliable schedule performance';
+    }
+
+    const avgConf = Math.min(rel1?.confidenceScore || 0, rel2?.confidenceScore || 0);
+    const avgRel = Math.round(((rel1?.reliabilityScore || 70) + (rel2?.reliabilityScore || 70)) / 2);
+
+    if (avgConf >= 40) {
+      if (avgRel >= 80) {
+        return `High-confidence connection via ${split.hub} with strong punctuality across both legs`;
+      } else if (avgRel <= 45) {
+        return `Connection via ${split.hub} carries moderate historical delay risk on connecting leg`;
+      }
+    }
+
+    if (split.bufferMinutes >= 60 && split.bufferMinutes <= 150) {
+      return `Comfortable connection buffer (${split.bufferMinutes}m) via ${split.hub}`;
+    }
+    return `Smart split route via ${split.hub}`;
+  }
+
+  /**
+   * Ranks items deterministically by Smart Score (Highest Smart Score first)
+   */
+  rankSmartJourneys<T extends (Leg | SplitJourney)>(
+    items: T[],
+    reliabilityMap?: Map<string, TrainReliabilityResult>
+  ): SmartRankedItem<T>[] {
+    if (!items || items.length === 0) return [];
+
+    const scored = items.map(item => ({
+      item,
+      smartScore: this.calculateSmartScore(item, reliabilityMap)
+    }));
+
+    return scored.sort((a, b) => {
+      const diff = b.smartScore.finalSmartScore - a.smartScore.finalSmartScore;
+      if (diff !== 0) return diff;
+
+      // Tie breaker 1: Base score
+      const baseDiff = b.smartScore.baseScore - a.smartScore.baseScore;
+      if (baseDiff !== 0) return baseDiff;
+
+      // Tie breaker 2: Reliability confidence
+      const confDiff = b.smartScore.reliabilityConfidence - a.smartScore.reliabilityConfidence;
+      if (confDiff !== 0) return confDiff;
+
+      // Tie breaker 3: Deterministic string comparison
+      return JSON.stringify(a.item).localeCompare(JSON.stringify(b.item));
+    });
+  }
+
+  /**
+   * Batch enriches items by pre-fetching train reliability in one batch lookup
+   */
+  async batchEnrichSmartRanking<T extends (Leg | SplitJourney)>(items: T[]): Promise<SmartRankedItem<T>[]> {
+    if (!items || items.length === 0) return [];
+
+    const trainNumbers: string[] = [];
+    items.forEach(item => {
+      if ('leg1' in item && 'leg2' in item) {
+        const split = item as SplitJourney;
+        if (split.leg1?.trainNo) trainNumbers.push(split.leg1.trainNo);
+        if (split.leg2?.trainNo) trainNumbers.push(split.leg2.trainNo);
+      } else {
+        const leg = item as Leg;
+        if (leg.trainNo) trainNumbers.push(leg.trainNo);
+      }
+    });
+
+    const reliabilityMap = await trainReliabilityService.batchGetReliability(trainNumbers);
+    return this.rankSmartJourneys(items, reliabilityMap);
   }
 }
 

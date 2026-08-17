@@ -141,6 +141,31 @@ const piiSanitizerFormat = winston.format((info: any) => {
 
 import DailyRotateFile from 'winston-daily-rotate-file';
 
+// This cannot import config/supabase: that module imports winstonLogger. Read
+// the shell-only flag directly so ordinary E2E request logging stays console
+// only and never creates/rotates local log files.
+const noWriteMode = process.env.LOCAL_E2E_NO_WRITE === 'true';
+const loggerTransports = noWriteMode
+  ? [new winston.transports.Console()]
+  : [
+      new winston.transports.Console(),
+      new DailyRotateFile({
+        filename: 'logs/error-%DATE%.log',
+        datePattern: 'YYYY-MM-DD',
+        zippedArchive: true,
+        maxSize: '20m',
+        maxFiles: '14d',
+        level: 'error'
+      }),
+      new DailyRotateFile({
+        filename: 'logs/combined-%DATE%.log',
+        datePattern: 'YYYY-MM-DD',
+        zippedArchive: true,
+        maxSize: '20m',
+        maxFiles: '14d'
+      })
+    ];
+
 export const winstonLogger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
   format: winston.format.combine(
@@ -149,24 +174,7 @@ export const winstonLogger = winston.createLogger({
     winston.format.timestamp(),
     winston.format.json()
   ),
-  transports: [
-    new winston.transports.Console(),
-    new DailyRotateFile({
-      filename: 'logs/error-%DATE%.log',
-      datePattern: 'YYYY-MM-DD',
-      zippedArchive: true,
-      maxSize: '20m',
-      maxFiles: '14d',
-      level: 'error'
-    }),
-    new DailyRotateFile({
-      filename: 'logs/combined-%DATE%.log',
-      datePattern: 'YYYY-MM-DD',
-      zippedArchive: true,
-      maxSize: '20m',
-      maxFiles: '14d'
-    })
-  ],
+  transports: loggerTransports,
 });
 
 // Add structured logging methods to the winstonLogger instance

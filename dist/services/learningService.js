@@ -11,8 +11,8 @@ const path_1 = __importDefault(require("path"));
 const rateService_1 = require("./rateService");
 // Local fallback if Supabase tables don't exist yet
 const DATA_DIR = path_1.default.join(__dirname, '../../data');
-if (!fs_1.default.existsSync(DATA_DIR)) {
-    fs_1.default.mkdirSync(DATA_DIR, { recursive: true });
+if (!(0, supabase_1.isNoWriteMode)() && !fs_1.default.existsSync(DATA_DIR)) {
+    (0, supabase_1.safeMkdirSync)(DATA_DIR, { recursive: true });
 }
 /**
  * Minimum number of confirmed outcome samples required before a learning aggregate
@@ -25,7 +25,8 @@ function saveLocalFallback(table, data) {
     try {
         const filePath = path_1.default.join(DATA_DIR, `${table}_fallback.jsonl`);
         const line = JSON.stringify({ ...data, _created_at: new Date().toISOString() }) + '\n';
-        fs_1.default.appendFileSync(filePath, line, 'utf8');
+        (0, supabase_1.safeAppendFileSync)(filePath, line, 'utf8');
+        logger_1.winstonLogger.info(`[FALLBACK_ENQUEUE] file=${table}_fallback.jsonl count=1`);
     }
     catch (err) {
         logger_1.winstonLogger.error(`[LEARNING_SERVICE] Local fallback save failed for ${table}`);
@@ -67,7 +68,7 @@ class LearningService {
         }
     }
     // ─── STEP 2: Split Learning ─────────────────────────────────────────────
-    async logSplitRecommendation(source, destination, hub, waitTimeMins, totalDurationMins, successProb) {
+    async logSplitRecommendation(source, destination, hub, waitTimeMins, totalDurationMins, successProb, transferMeta) {
         if (global.SYSTEM_MODE === 'MODE_A')
             return null;
         try {
@@ -81,6 +82,17 @@ class LearningService {
                 user_clicked: false,
                 user_refreshed: false
             };
+            if (transferMeta && transferMeta.transferType === 'INTER_STATION') {
+                payload.transferType = transferMeta.transferType;
+                payload.stationChange = transferMeta.stationChange;
+                payload.arrivalStationCode = transferMeta.arrivalStation?.code;
+                payload.boardingStationCode = transferMeta.boardingStation?.code;
+                payload.distanceKm = transferMeta.distanceKm;
+                payload.transitMode = transferMeta.transitMode;
+                payload.minimumRequiredBufferMinutes = transferMeta.minimumRequiredBufferMinutes;
+                payload.actualBufferMinutes = transferMeta.actualBufferMinutes;
+                payload.bufferSurplusMinutes = transferMeta.bufferSurplusMinutes;
+            }
             // Log transaction cost dynamically (fail-safe)
             rateService_1.rateService.logTransaction('IRCTC', 'split', null).catch(() => { });
             const { data, error } = await supabase_1.supabase.from('split_learning').insert([payload]).select('id').single();
@@ -534,7 +546,7 @@ class LearningService {
             }
             try {
                 const localPath = path_1.default.join(DATA_DIR, 'pnr_learning_aggregates_fallback.json');
-                fs_1.default.writeFileSync(localPath, JSON.stringify(entitiesToUpsert, null, 2), 'utf8');
+                (0, supabase_1.safeWriteFileSync)(localPath, JSON.stringify(entitiesToUpsert, null, 2), 'utf8');
                 logger_1.winstonLogger.info(`[LEARNING_AGGREGATION] Saved aggregates to local fallback: ${localPath}`);
             }
             catch (err) {

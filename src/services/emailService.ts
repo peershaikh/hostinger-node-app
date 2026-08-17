@@ -2,19 +2,11 @@ import { Resend } from 'resend';
 import nodemailer from 'nodemailer';
 import { winstonLogger } from '../middleware/logger';
 
-// Initialize Resend with the provided API key
+// Initialize Resend with the provided API key if present
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
-if (!RESEND_API_KEY) {
-  throw new Error('RESEND_API_KEY is not defined in environment variables.');
-}
-const resend = new Resend(RESEND_API_KEY);
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
 
-const SENDER_EMAIL = process.env.SENDER_EMAIL;
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-if (!SENDER_EMAIL || !EMAIL_REGEX.test(SENDER_EMAIL)) {
-  throw new Error('SENDER_EMAIL is missing or invalid in environment variables.');
-}
+const SENDER_EMAIL = process.env.SENDER_EMAIL || 'support@trayago.in';
 
 // Initialize Nodemailer for Brevo SMTP (Fallback)
 const brevoTransporter = nodemailer.createTransport({
@@ -59,20 +51,28 @@ export class EmailService {
       </div>
     `;
 
-    try {
-      const { error } = await resend.emails.send({
-        from: `Trayago <${SENDER_EMAIL}>`,
-        to: toEmail,
-        subject,
-        html: htmlContent,
-      });
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      winstonLogger.info(`[EMAIL_SUCCESS] OTP sent to ${toEmail} via Resend`);
+    if (!resend && !process.env.BREVO_SMTP_LOGIN) {
+      winstonLogger.info(`[DEV_OTP] Verification code for ${toEmail}: ${otpCode}`);
       return true;
+    }
+
+    try {
+      if (resend) {
+        const { error } = await resend.emails.send({
+          from: `Trayago <${SENDER_EMAIL}>`,
+          to: toEmail,
+          subject,
+          html: htmlContent,
+        });
+
+        if (error) {
+          throw new Error(error.message);
+        }
+
+        winstonLogger.info(`[EMAIL_SUCCESS] OTP sent to ${toEmail} via Resend`);
+        return true;
+      }
+      throw new Error('Resend not configured');
     } catch (err: any) {
       winstonLogger.warn(`[EMAIL_WARN] Resend failed for ${toEmail}: ${err.message}. Falling back to Brevo SMTP...`);
       
@@ -124,20 +124,28 @@ export class EmailService {
       </div>
     `;
 
-    try {
-      const { error } = await resend.emails.send({
-        from: `Trayago <${SENDER_EMAIL}>`,
-        to: toEmail,
-        subject,
-        html: htmlContent,
-      });
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      winstonLogger.info(`[EMAIL_SUCCESS] Password reset OTP sent to ${toEmail} via Resend`);
+    if (!resend && !process.env.BREVO_SMTP_LOGIN) {
+      winstonLogger.info(`[DEV_PASSWORD_RESET_OTP] Reset code for ${toEmail}: ${otpCode}`);
       return true;
+    }
+
+    try {
+      if (resend) {
+        const { error } = await resend.emails.send({
+          from: `Trayago <${SENDER_EMAIL}>`,
+          to: toEmail,
+          subject,
+          html: htmlContent,
+        });
+
+        if (error) {
+          throw new Error(error.message);
+        }
+
+        winstonLogger.info(`[EMAIL_SUCCESS] Password reset OTP sent to ${toEmail} via Resend`);
+        return true;
+      }
+      throw new Error('Resend not configured');
     } catch (err: any) {
       winstonLogger.warn(`[EMAIL_WARN] Resend failed for ${toEmail}: ${err.message}. Falling back to Brevo SMTP...`);
       
@@ -158,24 +166,32 @@ export class EmailService {
   }
 
   async sendAlertEmail(toEmail: string, alertTitle: string, alertMessage: string): Promise<boolean> {
+    if (!resend && !process.env.BREVO_SMTP_LOGIN) {
+      winstonLogger.info(`[DEV_ALERT] Alert for ${toEmail}: ${alertTitle}`);
+      return true;
+    }
+
     try {
-      const { error } = await resend.emails.send({
-        from: `Trayago Alerts <${SENDER_EMAIL}>`,
-        to: toEmail,
-        subject: alertTitle,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
-            <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-              <h2 style="color: #ef4444; margin-top: 0;">${alertTitle}</h2>
-              <p style="color: #555; font-size: 16px; line-height: 1.5;">
-                ${alertMessage}
-              </p>
+      if (resend) {
+        const { error } = await resend.emails.send({
+          from: `Trayago Alerts <${SENDER_EMAIL}>`,
+          to: toEmail,
+          subject: alertTitle,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
+              <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <h2 style="color: #ef4444; margin-top: 0;">${alertTitle}</h2>
+                <p style="color: #555; font-size: 16px; line-height: 1.5;">
+                  ${alertMessage}
+                </p>
+              </div>
             </div>
-          </div>
-        `,
-      });
-      if (error) {
-        throw new Error(error.message);
+          `,
+        });
+        if (error) {
+          throw new Error(error.message);
+        }
+        return true;
       }
       return true;
     } catch (err: any) {
@@ -185,15 +201,23 @@ export class EmailService {
   }
 
   async sendHealthReportEmail(toEmail: string | string[], subject: string, htmlContent: string): Promise<boolean> {
+    if (!resend && !process.env.BREVO_SMTP_LOGIN) {
+      winstonLogger.info(`[DEV_HEALTH_REPORT] Health report for ${toEmail}: ${subject}`);
+      return true;
+    }
+
     try {
-      const { error } = await resend.emails.send({
-        from: `Trayago Monitor <${SENDER_EMAIL}>`,
-        to: toEmail,
-        subject: subject,
-        html: htmlContent,
-      });
-      if (error) {
-        throw new Error(error.message);
+      if (resend) {
+        const { error } = await resend.emails.send({
+          from: `Trayago Monitor <${SENDER_EMAIL}>`,
+          to: toEmail,
+          subject: subject,
+          html: htmlContent,
+        });
+        if (error) {
+          throw new Error(error.message);
+        }
+        return true;
       }
       return true;
     } catch (err: any) {

@@ -1,7 +1,7 @@
 import dbTrains from "../data/dbTrains.json";
 import { winstonLogger } from '../middleware/logger';
 import { fetchWithPriority } from '../utils/apiPriority';
-import { isDayActive, normalizeRunningDays } from '../utils/dayUtils';
+import { isDayActive, isSpecialTrainNumber, normalizeRunningDays, trainOperatesOnDate } from '../utils/dayUtils';
 import { getValidViaStations, sortViaByDetourScore, STATIONS as ROUTE_STATIONS } from '../utils/routeEngine';
 import { SplitDebugData, SplitDebugLogger } from '../utils/splitDebugLogger';
 import { analyticsService } from './analyticsService';
@@ -13,6 +13,8 @@ import { rapidApiService } from './rapidApiService';
 import { Leg, rankingService, SplitJourney } from './rankingService';
 import { availabilityProvider } from './availabilityProvider';
 import { stationService } from './stationService';
+import { providerConfigService } from './providerConfigService';
+import transferDistancesData from '../data/transferDistances.json';
 import { normalizeTrainNumber } from '../utils/availabilityCacheKeys';
 
 // ——— Extended Leg with source/destination codes ——————————————————————————————
@@ -25,6 +27,169 @@ interface RichLeg extends Leg {
   journeyDate?: string;
   travelDate?: string;
   depDay?: number;
+  running_days?: string;
+  runningDays?: string;
+  train_status?: string;
+  status?: string;
+  is_cancelled?: boolean;
+  isCancelled?: boolean;
+  validFrom?: string | null;
+  validTo?: string | null;
+  runningDaysAuthoritative?: boolean;
+  dayOffset?: number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PHASE_5B109 — COMMON POST-MERGE PHYSICAL TRUST GATE
+//
+// Every split candidate — regardless of which producer built it (hub search,
+// same-train segment scan, or fallback) — must clear one physical-schedule gate
+// before it can reach ranking, learning, cache, or the API response.
+//
+// The gate owns no schedule-fetch logic of its own. It delegates entirely to
+// validateLegAndCorrectAsync(), which already implements the resolved-schedule
+// cache, stale-origin eviction, DB lookup, dbOriginSuspect live override and
+// fail-closed rejection. The gate adds only the structural segment check
+// (trainScheduleIntegrityService.validateSegmentOnSchedule) and the physical
+// station identity rewrite.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type TrustGateMode = 'off' | 'shadow' | 'enforce';
+
+/**
+ * Bumped whenever gate semantics change. Cached split payloads carry this
+ * marker; entries without the current marker are treated as cache misses so
+ * pre-gate (poisoned) results can never be served once the gate is active.
+ */
+// PHASE_5B167 — bumped so every split result cached before service-date truth
+// and generic cancellation validation existed is treated as a MISS and recomputed.
+const TRUST_GATE_VERSION = '5B167.3';
+
+function resolveTrustGateMode(): TrustGateMode {
+  const raw = String(process.env.SPLIT_TRUST_GATE || '').toLowerCase().trim();
+  if (raw === 'off' || raw === 'enforce' || raw === 'shadow') return raw as TrustGateMode;
+  return 'shadow'; // default — observe and protect sinks, do not drop candidates
+}
+
+/**
+ * Mirrors the waitlist classification already used by checkSplitRecommendation()
+ * so the direct-redundancy rule can tell a bookable direct from a waitlisted one.
+ * Duplicated deliberately: checkSplitRecommendation() feeds recommendation
+ * scoring and is left untouched.
+ */
+const DIRECT_BOOKABLE_WL_PATTERNS = /^WL|^REGRET|^AVAILABLE ON WAITLIST|NO SEATS|FULLY SOLD/i;
+
+interface TrustGateOutcome {
+  mode: TrustGateMode;
+  /** What the API response should use (never unverified candidates). */
+  forApi: SplitJourney[];
+  /** Sink-safe subset: corrected + validated. Used for cache and learning in every mode but 'off'. */
+  trusted: SplitJourney[];
+  rejected: number;
+  corrected: number;
+}
+
+/**
+ * PHASE_5B109 — provenance derived from the typed `ResolvedSegment.source`
+ * discriminator returned by resolveSegmentForAvailability().
+ *
+ * Rules:
+ *  - any leg with NO schedule behind it ('none') -> DB_UNVERIFIED
+ *  - any leg resolved against a live provider schedule -> LIVE_VERIFIED
+ *  - every leg resolved against `train_schedule` -> DB_VERIFIED
+ *
+ * A DB schedule is never reported as live. `train_schedule` is a shared,
+ * multi-writer surface (sync job, Gemini when enabled, ad-hoc backfills) with no
+ * provenance column, so 'db' means "structurally checked", not "authoritative".
+ */
+type SplitProvenance = 'LIVE_VERIFIED' | 'DB_VERIFIED' | 'DB_UNVERIFIED';
+
+function deriveProvenance(
+  ...sources: Array<'db' | 'irctc' | 'none' | undefined>
+): SplitProvenance {
+  if (sources.some(s => s === 'none' || s === undefined)) return 'DB_UNVERIFIED';
+  if (sources.some(s => s === 'irctc')) return 'LIVE_VERIFIED';
+  return 'DB_VERIFIED';
+}
+
+/**
+ * PHASE_5B109 — split-cache generation check.
+ *
+ * Cache entries carry the trust-gate revision that produced them. Anything
+ * written before this gate existed, or by an older revision, is treated as a
+ * cache MISS so it gets recomputed and re-validated instead of replayed.
+ * Deliberately a payload marker rather than a change to
+ * `cacheService.generateSplitKey()` — the key format is shared with other
+ * consumers and that file is outside this change's scope. TTLs are untouched.
+ */
+/**
+ * PHASE_5B169 — generic cancellation truth from structured fields only.
+ *
+ * Only consumes real structured cancellation/status fields from the IRCTC/live
+ * response surface. The `trains` table has NO status/is_cancelled columns, so it
+ * must never be treated as a cancellation source. A present, non-cancelled
+ * status is an explicit ACTIVE signal; a missing status is UNKNOWN, never an
+ * implicit ACTIVE, and never inferred from a train number or name.
+ */
+function classifyCancellationState(leg: any): 'CANCELLED' | 'ACTIVE' | 'UNKNOWN' {
+  if (!leg || typeof leg !== 'object') return 'UNKNOWN';
+
+  // Explicit structured cancellation boolean
+  if (leg.is_cancelled === true || leg.isCancelled === true || leg.cancelled === true) {
+    return 'CANCELLED';
+  }
+
+  const status = String(leg.train_status || leg.status || leg.trainStatus || '').trim().toLowerCase();
+  if (status) {
+    if (status.includes('cancel') || status.includes('suspend') || status.includes('permanently')) {
+      return 'CANCELLED';
+    }
+    return 'ACTIVE';
+  }
+
+  // No authoritative cancellation field present.
+  return 'UNKNOWN';
+}
+
+function isTrainCancelled(leg: any): boolean {
+  return classifyCancellationState(leg) === 'CANCELLED';
+}
+
+function isTrustGatedPayload(payload: unknown): boolean {
+  if (!payload || typeof payload !== 'object') return false;
+  const splits = (payload as any).split;
+  // An empty split list carries no candidate that could have been poisoned.
+  if (Array.isArray(splits) && splits.length === 0) return true;
+  return (payload as any)._trustGateVersion === TRUST_GATE_VERSION;
+}
+
+/** Declared provenance of a resolved stop array. Never sniffed from contents. */
+type ResolvedScheduleSource = 'db' | 'irctc' | 'none';
+
+/**
+ * PHASE_5B122 — RESOLVED-SCHEDULE CACHE PROVENANCE.
+ *
+ * `train_schedule_resolved_${num}` is written by TWO paths with very different
+ * authority: validateLegAndCorrectAsync (DB, live override, or plain live) and
+ * isProvenReverseScheduleSegment (DB only). Neither recorded which one it was, and
+ * filterProvenReverseTrains runs BEFORE validateLegAndCorrectAsync — so a DB-only
+ * payload could sit in the shared key for the full 7200s TTL and then satisfy the
+ * origin-critical read as if it were a live schedule.
+ *
+ * Provenance now travels inside the payload, mirroring the `_trustGateVersion`
+ * pattern above: the cache KEY is unchanged (shared with other consumers, and
+ * cacheService.ts is out of scope), TTLs are untouched, and pre-5B122 payloads
+ * simply resolve to 'none'. Those old entries stay perfectly usable for the
+ * reverse-SN comparison that never needed provenance — they just cannot confer
+ * authoritative origin trust.
+ */
+const SCHEDULE_PROVENANCE_VERSION = '5B122.1';
+
+function readCachedScheduleSource(payload: unknown): ResolvedScheduleSource {
+  if (!payload || typeof payload !== 'object') return 'none';
+  const p = payload as any;
+  if (p._scheduleProvenanceVersion !== SCHEDULE_PROVENANCE_VERSION) return 'none';
+  return p.source === 'db' || p.source === 'irctc' ? p.source : 'none';
 }
 
 /** PHASE_4C868 — optional class/quota for same-train segment scan inside findCombinedRoutes */
@@ -1081,9 +1246,21 @@ export const split_analytics = new SplitAnalyticsMonitor();
 
 // —— STEP 1 — FREEZE WORKING CONFIG ——
 const MAX_SPLIT_RESULTS = 3;
+// PHASE_5B182 — internal candidate pool. The engine must carry enough validated
+// candidates into the downstream ranking/hub-cap/excludeVia pipeline so that
+// "Generate New Alternative Routes" can surface a different hub. This is NOT the
+// final API result count — the response sanitizer still caps regular/same-train
+// output below.
+const MAX_CANDIDATE_POOL_SPLITS = 12;
 const MAX_WAIT_MINS = 720;
 const MIN_WAIT_MINS = 30;
 const MAX_TOTAL_MINS = 1800;
+// PHASE_5B187 — progressive search envelopes (minutes). Tier 1 is the tightest
+// connection window; later tiers widen only when Tier 1 did not yield enough
+// validated candidates. These are search-envelope caps, not final API limits.
+const TIER_1_TOTAL_MINS = 16 * 60;
+const TIER_2_TOTAL_MINS = 24 * 60;
+const TIER_3_TOTAL_MINS = MAX_TOTAL_MINS;
 
 export class SplitJourneyEngine {
   private readonly MAX_HUBS = 8; // PHASE_4C990: raised from 5 to 8 for Pan-India coverage — more hubs = better alternatives
@@ -1310,22 +1487,24 @@ export class SplitJourneyEngine {
           }
 
           // ── PRIORITY 2: SAFE VALIDATION ──
-          // Running Day Check — ALWAYS enforce, even in relaxed mode
+          // Cancellation Check
+          if (classifyCancellationState(t) === 'CANCELLED') {
+            winstonLogger.debug(`[TRAIN_REJECTED_CANCELLED] ${num}`);
+            return false;
+          }
+
+          // Service Date Truth Check — UNKNOWN fails closed, never allowed by default
+          const trainDate = t.journeyDate || t.travelDate || t.departureDate || date;
           const rDays = t.runningDays || t.validDays || t.scheduleDays || t.travelDays || t.running_days;
-          const binaryArray = normalizeRunningDays(rDays);
-          
-          if (binaryArray) {
-            // Use the train's specific date if available, otherwise fallback to the primary journey date
-            // IMPORTANT: leg2 travelDate is correctly set to date+1 (or date+2) for overnight/long-haul
-            // trains — always use the leg-specific date, not the journey start date.
-            const trainDate = t.journeyDate || t.travelDate || t.departureDate || date;
-            if (!isDayActive(binaryArray, trainDate)) {
-              winstonLogger.debug(`[TRAIN_REJECTED_NOT_RUNNING] ${num} does not run on ${trainDate}`);
-              return false;
-            }
-          } else {
-            // Metadata missing — ALLOW train (safe default)
-            winstonLogger.debug(`[TRAIN_ALLOWED_METADATA_MISSING] ${num} — no running day data, allowing by default`);
+          const verdict = trainOperatesOnDate(trainDate, rDays, {
+            validFrom: t.validFrom,
+            validTo: t.validTo,
+            runningDaysAuthoritative: t.runningDaysAuthoritative === true,
+            dayOffset: t.dayOffset || 0,
+          });
+          if (verdict !== 'YES') {
+            winstonLogger.debug(`[TRAIN_REJECTED_SERVICE_DATE] ${num} verdict=${verdict} on ${trainDate}`);
+            return false;
           }
 
           // PATCH_4C922_B: Reject Duronto trains in all split proposals.
@@ -1336,55 +1515,6 @@ export class SplitJourneyEngine {
           if (name.includes('DURONTO')) {
             winstonLogger.debug(`[TRAIN_REJECTED_DURONTO] ${num} — Duronto trains cannot be used in split journey segments`);
             return false;
-          }
-
-          const status = (t.status || t.train_status || '').toUpperCase();
-          if (status === 'CANCELLED' || status === 'PERMANENTLY SUSPENDED' || status.includes('SUSPENDED')) {
-            winstonLogger.debug(`[TRAIN_REJECTED_CANCELLED] ${num}`);
-            return false;
-          }
-
-          if (t.isHistorical || t.historical || t.is_historical || t.is_historic) {
-            winstonLogger.debug(`[TRAIN_REJECTED_HISTORICAL] ${num}`);
-            return false;
-          }
-
-          if (t.archived || t.is_archived) {
-            winstonLogger.debug(`[TRAIN_REJECTED_HISTORICAL] ${num} (archived)`);
-            return false;
-          }
-
-          // Only reject explicit all-zeros — missing/empty metadata is ALLOWED
-          if (t.runningDays === '0000000' || t.validDays === 0) {
-            winstonLogger.debug(`[TRAIN_REJECTED_CANCELLED] ${num} (No running days)`);
-            return false;
-          }
-
-          // ── PRIORITY 2: SAFE VALIDATION — skip in relaxed mode ──
-          if (!relaxedMode) {
-            // Running Day Check — ONLY reject on confirmed mismatch
-            const rDays = t.runningDays || t.validDays || t.scheduleDays || t.travelDays || t.running_days;
-            const binaryArray = normalizeRunningDays(rDays);
-            
-            if (binaryArray) {
-              // Use the train's specific date if available, otherwise fallback to the primary journey date
-              // IMPORTANT: leg2 travelDate is correctly set to date+1 (or date+2) for overnight/long-haul
-              // trains — always use the leg-specific date, not the journey start date.
-              const trainDate = t.journeyDate || t.travelDate || t.departureDate || date;
-              if (!isDayActive(binaryArray, trainDate)) {
-                winstonLogger.debug(`[TRAIN_REJECTED_NOT_RUNNING] ${num} does not run on ${trainDate}`);
-                return false;
-              }
-            } else {
-              // Metadata missing — ALLOW train (safe default)
-              winstonLogger.debug(`[TRAIN_ALLOWED_METADATA_MISSING] ${num} — no running day data, allowing by default`);
-            }
-            // NOTE: Removed the old travelDate !== date rejection guard.
-            // That check incorrectly blocked all leg2 trains for overnight splits where
-            // leg2.travelDate = date+1 (correct behaviour). isDayActive above already
-            // validates the running schedule against the correct leg-specific date.
-          } else {
-            winstonLogger.debug(`[SAFE_VALIDATION_MODE] ${num} — relaxed mode, skipping running-day check`);
           }
 
           return true;
@@ -1508,12 +1638,16 @@ export class SplitJourneyEngine {
       let filteredRegular = excludeVias.length > 0
         ? dedupedRegular.filter((s: any) => !excludeVias.includes(s.hub))
         : dedupedRegular;
+      let filteredSameTrain = excludeVias.length > 0
+        ? dedupedSameTrain.filter((s: any) => !excludeVias.includes(s.hub))
+        : dedupedSameTrain;
 
       // FAIL-SAFE: If excludeVias filtered out ALL available routes because no other hub exists for this corridor,
       // relax the hub exclusion so users still get valid alternative split routes.
-      if (filteredRegular.length === 0 && dedupedRegular.length > 0) {
-        winstonLogger.info(`[HUB_FILTER_RELAXED] excludeVias (${excludeVias.join(',')}) removed all ${dedupedRegular.length} routes. Falling back to all regular routes.`);
+      if (filteredRegular.length === 0 && filteredSameTrain.length === 0 && (dedupedRegular.length > 0 || dedupedSameTrain.length > 0)) {
+        winstonLogger.info(`[HUB_FILTER_RELAXED] excludeVias (${excludeVias.join(',')}) removed all routes. Falling back to all routes.`);
         filteredRegular = dedupedRegular;
+        filteredSameTrain = dedupedSameTrain;
       }
 
       // ── PER-HUB CAP: max 2 results per hub for variety (e.g. KOTA showing 4x → cap to 2)
@@ -1537,7 +1671,7 @@ export class SplitJourneyEngine {
       winstonLogger.info(`[HUB_CAP] filtered: ${filteredRegular.length}→capped: ${hubCappedRegular.length}`);
 
       const topRegular = hubCappedRegular.slice(0, 6);
-      const top2SameTrain = dedupedSameTrain.slice(0, 2);
+      const top2SameTrain = filteredSameTrain.slice(0, 2);
       const combinedSplits = [...topRegular, ...top2SameTrain];
 
       // ── PHASE_4C970: Apply premium gate (output transform only, no algo changes)
@@ -1667,40 +1801,115 @@ export class SplitJourneyEngine {
 
     const classType = (options?.classType || 'SL').toUpperCase().trim();
     const quota = (options?.quota || 'GN').toUpperCase().trim();
+    const excludeVia = Array.isArray((options as any)?.excludeVia)
+      ? (options as any).excludeVia.map((v: any) => String(v).toUpperCase().trim()).filter(Boolean)
+      : [];
+
+    // PHASE_5B190 — excludeVia requests represent a different search intent than a
+    // normal cached result (the cached result contains the very hubs being excluded).
+    // Force fresh computation whenever excludeVia is non-empty so tiered hub
+    // discovery and the provider/trust gates can actually find a different hub.
+    const bypassSplitCacheForExcludeVia = excludeVia.length > 0;
 
     // —— SPLIT CACHE CHECK ————————————————————————————————————————————————————
     // Key includes source + destination + date + includeSplit flag + classType + quota.
-    const cached = cacheService.getCachedSplit(source, destination, date, true, classType, quota);
-    if (cached) {
-      winstonLogger.info(`[SPLIT_ENGINE] 📦 Returning cached split result for ${source}→${destination} on ${date}`);
-      const cachedResult = cached as SplitEngineResult;
-      (cachedResult as any)._isCacheHit = true;
-      winstonLogger.info(`[SPLIT_ENGINE_TRACE] CACHE_HIT: source=${source}, destination=${destination}, date=${date}, direct_count=${cachedResult.direct?.length || 0}, split_count=${cachedResult.split?.length || 0}`);
-      return cachedResult;
+    // PHASE_5B109 — a cache entry is only honoured if it was produced by the
+    // current trust gate. Entries written before the gate existed (or by an older
+    // gate revision) are treated as a MISS and recomputed. TTLs are unchanged;
+    // this is a payload-level version check, not a TTL or key-format change.
+    //
+    // PHASE_5B167 — every cached leg is re-validated generically (service-date
+    // truth + cancellation). Unknown service-date truth fails closed, so a stale
+    // or missing running_days / cancellation field forces a fresh computation.
+
+    /**
+     * Generic cached-payload revalidation. Every leg must:
+     *  - carry a service date,
+     *  - resolve trainOperatesOnDate() to YES (UNKNOWN fails closed), and
+     *  - not be cancelled (UNKNOWN cancellation fails closed).
+     * Physical SN invariants are not re-asserted here: the trust gate already
+     * rewrote station identity before caching, and the version bump ensures old
+     * payloads never reach this branch.
+     */
+    const cachedResultNeedsRevalidation = (result: SplitEngineResult): boolean => {
+      const allLegs = (result.split || []).flatMap((s: any) => s.legs || [s.leg1, s.leg2].filter(Boolean));
+      for (const leg of allLegs) {
+        const trainNo = String(leg.trainNo || leg.number || '').trim();
+        const serviceDate = leg.travelDate || leg.journeyDate || leg.departureDate || undefined;
+        const runningDays = leg.running_days || leg.runningDays || undefined;
+
+        if (!trainNo || !serviceDate) return true;
+
+        if (classifyCancellationState(leg) === 'CANCELLED') {
+          winstonLogger.warn(`[CACHE_REVALIDATION_MISS] ${source}→${destination}/${date} leg ${trainNo} cancelled — forcing fresh computation`);
+          return true;
+        }
+
+        const operates = trainOperatesOnDate(serviceDate, runningDays, {
+          validFrom: leg.validFrom,
+          validTo: leg.validTo,
+          runningDaysAuthoritative: true, // verified trust-gated payload
+          dayOffset: leg.dayOffset || 0,
+        });
+        if (operates !== 'YES') {
+          winstonLogger.warn(`[CACHE_REVALIDATION_MISS] ${source}→${destination}/${date} leg ${trainNo} service-date=${operates} — forcing fresh computation`);
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const cached = bypassSplitCacheForExcludeVia
+      ? null
+      : cacheService.getCachedSplit(source, destination, date, true, classType, quota);
+    if (bypassSplitCacheForExcludeVia) {
+      winstonLogger.info(`[SPLIT_ENGINE] 🔀 Bypassing split cache for excludeVia request (${excludeVia.join(',')})`);
+    } else if (cached && !isTrustGatedPayload(cached)) {
+      winstonLogger.warn(`[TRUST_GATE_STALE_CACHE] Discarding pre-gate L1 split cache entry for ${source}→${destination} on ${date}`);
+    } else if (cached) {
+      if (cachedResultNeedsRevalidation(cached as SplitEngineResult)) {
+        winstonLogger.warn(`[CACHE_REVALIDATION] L1 cache miss for ${source}→${destination} on ${date}`);
+        cacheService.del(cacheService.generateSplitKey(source, destination, date, true, classType, quota));
+      } else {
+        winstonLogger.info(`[SPLIT_ENGINE] 📦 Returning cached split result for ${source}→${destination} on ${date}`);
+        const cachedResult = cached as SplitEngineResult;
+        (cachedResult as any)._isCacheHit = true;
+        winstonLogger.info(`[SPLIT_ENGINE_TRACE] CACHE_HIT: source=${source}, destination=${destination}, date=${date}, direct_count=${cachedResult.direct?.length || 0}, split_count=${cachedResult.split?.length || 0}`);
+        return cachedResult;
+      }
     }
 
     // Check database-level cache as second-tier cache
-    try {
-      const { supabase } = await import('../config/supabase');
-      const dbKey = `split_${source.toUpperCase().trim()}_${destination.toUpperCase().trim()}_${date}_${classType}_${quota}`;
-      const { data, error } = await supabase
-        .from('api_search_cache')
-        .select('response, expires_at')
-        .eq('route_key', dbKey)
-        .single();
+    if (!bypassSplitCacheForExcludeVia) {
+      try {
+        const { supabase } = await import('../config/supabase');
+        const dbKey = `split_${source.toUpperCase().trim()}_${destination.toUpperCase().trim()}_${date}_${classType}_${quota}`;
+        const { data, error } = await supabase
+          .from('api_search_cache')
+          .select('response, expires_at')
+          .eq('route_key', dbKey)
+          .single();
 
-      if (!error && data) {
-        if (new Date(data.expires_at) >= new Date()) {
-          const parsed = JSON.parse(data.response) as SplitEngineResult;
-          winstonLogger.info(`[SPLIT_ENGINE] 🗄️ Returning DB cached split result for ${source}→${destination} on ${date}`);
-          (parsed as any)._isCacheHit = true;
-          // Store it in in-memory cache
-          cacheService.cacheSplit(source, destination, date, parsed, true, classType, quota);
-          return parsed;
+        if (!error && data) {
+          if (new Date(data.expires_at) >= new Date()) {
+            const parsed = JSON.parse(data.response) as SplitEngineResult;
+            // PHASE_5B109 — same version check on L3.
+            if (!isTrustGatedPayload(parsed)) {
+              winstonLogger.warn(`[TRUST_GATE_STALE_CACHE] Discarding pre-gate DB split cache entry for ${source}→${destination} on ${date}`);
+            } else if (cachedResultNeedsRevalidation(parsed)) {
+              winstonLogger.warn(`[CACHE_REVALIDATION] DB cache miss for ${source}→${destination} on ${date}`);
+            } else {
+              winstonLogger.info(`[SPLIT_ENGINE] 🗄️ Returning DB cached split result for ${source}→${destination} on ${date}`);
+              (parsed as any)._isCacheHit = true;
+              // Store it in in-memory cache
+              cacheService.cacheSplit(source, destination, date, parsed, true, classType, quota);
+              return parsed;
+            }
+          }
         }
+      } catch (e: any) {
+        winstonLogger.warn(`[SPLIT_DB_CACHE] Read failed for ${source}→${destination}: ${e.message}`);
       }
-    } catch (e: any) {
-      winstonLogger.warn(`[SPLIT_DB_CACHE] Read failed for ${source}→${destination}: ${e.message}`);
     }
 
     // —— Resolve city → all station codes ——————————————————————————————————————
@@ -1981,9 +2190,18 @@ export class SplitJourneyEngine {
     // Merge same-train splits with regular splits
     const mergedSplits = [...sameTrainSplits, ...safeSplits];
 
+    // —— PHASE_5B109 COMMON PHYSICAL TRUST GATE ————————————————————————————
+    // Single choke point for EVERY producer (hub search + same-train segment
+    // scan + fallbacks). Candidates are validated against the physical schedule
+    // of each leg's own train and their station identity is rewritten from the
+    // matched schedule rows. Sinks (cache + learning) always receive only the
+    // trusted subset; in shadow mode the API response is left untouched.
+    const gate = await this.candidateTrustGate(mergedSplits, directTrains, sCodes, dCodes, date, classType, quota);
+    const trustedSplits = gate.trusted;
+
     // Re-rank the merged list to ensure optimal ordering
     const { rankingService } = await import('./rankingService');
-    const rankedSplits = rankingService.rankTrains(mergedSplits);
+    const rankedSplits = rankingService.rankTrains(gate.forApi);
     safeSplits = rankedSplits;
 
     message = safeSplits.length > 0
@@ -1991,12 +2209,26 @@ export class SplitJourneyEngine {
       : 'No good split options found';
 
     // —— ROUTE MEMORY LEARNING ————————————————————————————————————————————————
-    safeSplits.forEach(split => {
+    // PHASE_5B091 — Only learn from verified routes (LIVE_VERIFIED / DB_VERIFIED)
+    // PHASE_5B109 — Learning now reads the TRUST-GATED subset, never the raw
+    // merged list. This holds in shadow mode too: sinks stay fail-closed even
+    // while the API response is left unchanged for observation.
+    trustedSplits.forEach(split => {
       const hCode = (split.leg1 as any)?.toCode || (split.leg2 as any)?.fromCode || split.hub;
-      if (hCode && split.bufferMinutes !== undefined && split.totalDuration !== undefined) {
+      const prov = (split as any)._provenance || 'DB_UNVERIFIED';
+      if (hCode && split.bufferMinutes !== undefined && split.totalDuration !== undefined && (prov === 'LIVE_VERIFIED' || prov === 'DB_VERIFIED')) {
         successful_route_memory.learn(sName, dName, hCode, split.bufferMinutes, split.totalDuration);
+      } else {
+        winstonLogger.debug(`[LEARNING_GATE_SKIPPED] Split for hub ${hCode} with provenance ${prov} skipped from route_memory`);
       }
     });
+
+    // —— PERSISTENT SPLIT LEARNING (POST-GATE — PHASE_5B109) ————————————————————
+    // Relocated from findSplitJourneys(), where it ran on the top *raw* candidate
+    // before any validation. It now records only a trust-gated candidate, and the
+    // returned telemetry id is stamped back onto the response so click-through
+    // attribution keeps working.
+    await this.persistSplitLearning(sCode, dCode, trustedSplits, safeSplits);
 
     winstonLogger.info(`[SPLIT_ENGINE] FINAL SUMMARY: direct=${directTrains.length} split=${safeSplits.length}`);
 
@@ -2008,13 +2240,36 @@ export class SplitJourneyEngine {
       message
     };
 
+    // —— PHASE_5B109 CACHE PAYLOAD (TRUST-GATED) ——————————————————————————————
+    // The cache is a SINK, and sinks are fail-closed regardless of gate mode.
+    // In `enforce` mode this is identical to `result`. In `shadow`/`off` mode the
+    // live response may still carry unproven candidates for observation, but a
+    // rejected candidate must never be written to L1/L3 and served back later as
+    // if it had been validated. `_trustGateVersion` lets the read path reject
+    // entries produced before this gate existed (cacheService.ts is out of scope
+    // for key changes, so the marker travels inside the payload instead).
+    const trustedRanked = trustedSplits.length > 0
+      ? rankingService.rankTrains(trustedSplits)
+      : [];
+    const cacheableResult = {
+      direct: directTrains,
+      split: trustedRanked,
+      smart_routes: trustedRanked,
+      split_recommended: trustedRanked.length > 0 && shouldRecommendSplit,
+      message,
+      _trustGateVersion: TRUST_GATE_VERSION
+    };
+
     // —— SPLIT CACHE STORE ————————————————————————————————————————————————————
     // DO NOT cache "No Split Routes Found" (split.length === 0)
-    // This allows the engine to retry and recover on subsequent requests
-    const shouldCache = safeSplits.length > 0;
+    // This allows the engine to retry and recover on subsequent requests.
+    // PHASE_5B190 — also do not cache excludeVia results: their hub set is a
+    // filtered subset of the full candidate pool and must not poison the normal
+    // (no-excludeVia) cache entry.
+    const shouldCache = trustedRanked.length > 0 && !bypassSplitCacheForExcludeVia;
     if (shouldCache) {
-      cacheService.cacheSplit(source, destination, date, result, true, classType, quota);
-      winstonLogger.info(`[SPLIT_ENGINE] ✅ Cached result: ${safeSplits.length} splits for ${source}→${destination}`);
+      cacheService.cacheSplit(source, destination, date, cacheableResult, true, classType, quota);
+      winstonLogger.info(`[SPLIT_ENGINE] ✅ Cached result: ${trustedRanked.length} trust-gated splits for ${source}→${destination}`);
 
       // Persist to database cache
       try {
@@ -2032,7 +2287,8 @@ export class SplitJourneyEngine {
 
         const cachePayload = {
           route_key: dbKey,
-          response: JSON.stringify(result),
+          // PHASE_5B109 — persist the trust-gated payload, not the raw response.
+          response: JSON.stringify(cacheableResult),
           expires_at: expiryDate.toISOString(),
           created_at: new Date().toISOString(),
           api_used: 'split_engine'
@@ -2065,8 +2321,10 @@ export class SplitJourneyEngine {
       
       for (const adjDate of [prevDate, nextDate]) {
         // 1. Check in-memory cache
+        // PHASE_5B109 — adjacent-date fallback replays a cached payload under a
+        // different date, so it must respect the same generation check.
         let adjCached = cacheService.getCachedSplit(source, destination, adjDate, true, classType, quota);
-        if (adjCached && (adjCached as any).split?.length > 0) {
+        if (adjCached && (adjCached as any).split?.length > 0 && isTrustGatedPayload(adjCached)) {
           winstonLogger.info(`[SPLIT_ENGINE] 🔄 Fallback hit in-memory cache for adjacent date: ${adjDate}`);
           const shifted = this.shiftSplitDates(adjCached as SplitEngineResult, date, adjDate);
           return {
@@ -2075,7 +2333,7 @@ export class SplitJourneyEngine {
             message: `Result from adjacent date ${adjDate} (fallback)`
           };
         }
-        
+
         // 2. Check DB cache
         try {
           const { supabase } = await import('../config/supabase');
@@ -2089,7 +2347,7 @@ export class SplitJourneyEngine {
           if (!error && data) {
             if (new Date(data.expires_at) >= new Date()) {
               let parsed = JSON.parse(data.response) as SplitEngineResult;
-              if (parsed.split && parsed.split.length > 0) {
+              if (parsed.split && parsed.split.length > 0 && isTrustGatedPayload(parsed)) {
                 winstonLogger.info(`[SPLIT_ENGINE] 🔄 Fallback hit DB cache for adjacent date: ${adjDate}`);
                 parsed = this.shiftSplitDates(parsed, date, adjDate);
                 parsed.fallback = true;
@@ -2544,24 +2802,40 @@ export class SplitJourneyEngine {
         finalHubs.push(hub);
       }
     }
-    hubs = finalHubs.slice(0, this.MAX_HUBS);
+    // PHASE_5B192 — do NOT truncate to MAX_HUBS before validation. Keep the full
+    // ranked hub list so bounded chunked search can reach the tail. MAX_HUBS stays
+    // as the per-chunk governor in the pairing loop below.
+    hubs = finalHubs;
 
     winstonLogger.debug(`[SPLIT_TRACE] Total candidate hubs after all filters: ${hubs.length} → [${hubs.join(', ')}]`);
     
-    winstonLogger.info(`[SPLIT_ENGINE] Final hub pool (${hubs.length}): ${hubs.join(', ')}`);
+    winstonLogger.info(`[SPLIT_ENGINE] Ranked hub list (${hubs.length}): ${hubs.slice(0, 30).join(', ')}${hubs.length > 30 ? '...' : ''}`);
 
     const allCombinations: SplitJourney[] = [];
     const seenCombos = new Set<string>();
 
     // —— PHASE 1: Parallel-fetch leg1 for ALL candidate hubs —————————————————
-    const hubPool = hubs.slice(0, this.MAX_HUBS);
+    // PHASE_5B192 — bounded chunked hub search. Search the full ranked list in
+    // MAX_HUBS-sized chunks; after each chunk, the pairing/validation loop runs
+    // and the engine stops once enough valid candidates exist. Governors are
+    // enforced before every chunk. Tier 2/3 widen the envelope by continuing the
+    // NEXT chunk instead of re-filtering already-generated candidates.
+    const hubPool = hubs;
 
-    winstonLogger.info(`[SPLIT_ENGINE] Phase 1: ${hubPool.length} hubs × ${sCodes.length} source stations (batched DB-first)`);
+    winstonLogger.info(`[SPLIT_ENGINE] Phase 1: up to ${hubPool.length} ranked hubs (chunk=${this.MAX_HUBS}, batch=2)`);
 
     // —— Fix E: Process hubs in batches of 2 to cap parallel concurrency ——
     const leg1Results: any[] = [];
     const BATCH_SIZE = 2;
     for (let i = 0; i < hubPool.length; i += BATCH_SIZE) {
+      if (Date.now() - startTime > this.MAX_ENGINE_TIME_MS) {
+        winstonLogger.info('[SPLIT_ENGINE] Phase 1 time governor reached');
+        break;
+      }
+      if (this.apiCallCount >= this.MAX_TOTAL_CALLS) {
+        winstonLogger.info(`[SPLIT_ENGINE] Phase 1 API call governor reached (${this.apiCallCount})`);
+        break;
+      }
       const batch = hubPool.slice(i, i + BATCH_SIZE);
       const batchResults = await Promise.all(
         batch.map(async (hub) => {
@@ -2640,13 +2914,28 @@ export class SplitJourneyEngine {
     // —— Fix E: Process Phase 2 leg searches in batches of 3 to cap parallel concurrency ——
     const LEG2_BATCH_SIZE = 3;
     for (let i = 0; i < leg2KeysToFetch.length; i += LEG2_BATCH_SIZE) {
+      if (Date.now() - startTime > this.MAX_ENGINE_TIME_MS || this.apiCallCount >= this.MAX_TOTAL_CALLS) {
+        winstonLogger.info(`[SPLIT_ENGINE] Phase 2 governor reached (time=${Date.now() - startTime}ms calls=${this.apiCallCount})`);
+        break;
+      }
       const batch = leg2KeysToFetch.slice(i, i + LEG2_BATCH_SIZE);
       await Promise.all(
         batch.map(async ({ hCode, dC, dt, key }) => {
           try {
             this.apiCallCount++;
             const r = await this.searchLeg(hCode, dC, dt);
-            leg2Cache.set(key, Array.isArray(r) ? r : []);
+            // PHASE_5B099: Inject _fromCode into every leg2 result, mirroring the leg1
+            // injection at Phase 1. The provider may return fromStationCode equal to
+            // the actual physical boarding station (e.g. SBIB for 19031) rather than
+            // the hub alias (ADI). Preserving it here ensures mapToRichLeg uses the
+            // real physical station code instead of falling back to hCode.
+            const tagged = Array.isArray(r)
+              ? r.map((t: any) => ({
+                  ...t,
+                  _fromCode: t.fromStationCode || t.from_station_code || t.from_stn_code || t.fromCode || t.from || hCode,
+                }))
+              : [];
+            leg2Cache.set(key, tagged);
           } catch {
             leg2Cache.set(key, []);
           }
@@ -2727,6 +3016,10 @@ export class SplitJourneyEngine {
     for (const { hCode, hName, trains: leg1Raw } of viableHubs) {
       if (Date.now() - startTime > this.MAX_ENGINE_TIME_MS) {
         winstonLogger.info('[SPLIT_ENGINE] Time limit reached during pairing');
+        break;
+      }
+      if (this.apiCallCount >= this.MAX_TOTAL_CALLS) {
+        winstonLogger.info('[SPLIT_ENGINE] API call budget reached during pairing');
         break;
       }
 
@@ -2854,11 +3147,20 @@ export class SplitJourneyEngine {
 
             const waitMins = Math.round((adjustedDep2Ms - leg1ArrivalMs) / 60000);
 
-            // —— VALIDATION: Wait time bounds (25 min – 14 hours) ——————————————
-            
-            if (waitMins < 25 || waitMins > 840) {
-              rejectionStats.wait_time_invalid++;
-              continue;
+            // —— VALIDATION: Wait time bounds & Inter-Station transfer validation ——————————————
+            let transferMetaObj: any = null;
+            if (providerConfigService.isInterStationTransfersEnabled()) {
+              const metaRes = this.calculateTransferMeta(l1, l2, waitMins);
+              if (!metaRes.isValid) {
+                rejectionStats.wait_time_invalid++;
+                continue;
+              }
+              transferMetaObj = metaRes.transferMeta;
+            } else {
+              if (waitMins < 25 || waitMins > 840) {
+                rejectionStats.wait_time_invalid++;
+                continue;
+              }
             }
 
             if (process.env.NODE_ENV !== 'production') console.log(`[REAL_AUDIT] COMBO_CREATED | Hub: ${hCode} | Leg1: ${l1.trainNo} | Leg2: ${l2.trainNo} | Wait: ${waitMins}m`);
@@ -2938,6 +3240,7 @@ export class SplitJourneyEngine {
               hub: hName,
               leg1: clonedL1,
               leg2: clonedL2,
+              ...(transferMetaObj ? { transferMeta: transferMetaObj } : {}),
               bufferMinutes: waitMins,
               totalDuration: totalMins,
               leg1Duration,
@@ -2962,12 +3265,53 @@ export class SplitJourneyEngine {
                 // FIX(4C402): guard against "Board undefined" if name field missing
                 `Board ${l1.trainName || l1.name || 'Train ' + l1.trainNo} (${l1.trainNo}) from ${sName} at ${l1.departure}`,
                 `Arrive ${hName} at ${l1.arrival} — wait ${waitHours}h for connection`,
-                `Board ${l2.trainName || l2.name || 'Train ' + l2.trainNo} (${l2.trainNo}) from ${hName} at ${l2.departure}`,
+                // PHASE_5B099: use l2's physical boarding station name/code, not hub alias name
+                `Board ${l2.trainName || l2.name || 'Train ' + l2.trainNo} (${l2.trainNo}) from ${l2.fromName || l2.fromCode || hName} at ${l2.departure}`,
                 `Arrive ${dName} at ${l2.arrival}`
               ]
             } as SplitJourney;
 
             combo.score = rankingService.calculateScore(combo);
+
+            // PHASE_5B091 — SPLIT ENGINE PHYSICAL STOP + SERVICE-DATE TRUST GATE.
+            // resolveSegmentForAvailability owns trainOperatesOnDate() and physical
+            // SN/stop validation (UNKNOWN fails closed). Cancellation is checked
+            // generically from the raw fields propagated by mapToRichLeg; only an
+            // explicit CANCELLED signal rejects here because live IRCTC search rows
+            // are already date-filtered to operating trains.
+            const l1Cancellation = classifyCancellationState(l1);
+            const l2Cancellation = classifyCancellationState(l2);
+            if (l1Cancellation === 'CANCELLED') {
+              winstonLogger.info(`[SPLIT_CANCELLATION_GATE_REJECTED] Leg1 ${l1.trainNo} (${l1.fromCode}->${l1.toCode}): cancellation=${l1Cancellation}`);
+              continue;
+            }
+            if (l2Cancellation === 'CANCELLED') {
+              winstonLogger.info(`[SPLIT_CANCELLATION_GATE_REJECTED] Leg2 ${l2.trainNo} (${l2.fromCode}->${l2.toCode}): cancellation=${l2Cancellation}`);
+              continue;
+            }
+
+            const { resolveSegmentForAvailability } = await import('./trainStationResolver');
+            const [v1, v2] = await Promise.all([
+              resolveSegmentForAvailability(l1.trainNo, l1.fromCode, l1.toCode, date),
+              resolveSegmentForAvailability(l2.trainNo, l2.fromCode, l2.toCode, leg2DepDateStr)
+            ]);
+
+            if (!v1.success) {
+              winstonLogger.info(`[SPLIT_PHYSICAL_STOP_GATE_REJECTED] Leg1 ${l1.trainNo} (${l1.fromCode}->${l1.toCode}): ${v1.reason} - ${v1.message}`);
+              continue;
+            }
+
+            if (!v2.success) {
+              winstonLogger.info(`[SPLIT_PHYSICAL_STOP_GATE_REJECTED] Leg2 ${l2.trainNo} (${l2.fromCode}->${l2.toCode}): ${v2.reason} - ${v2.message}`);
+              continue;
+            }
+
+            // PHASE_5B109 — provenance now reads the TYPED `source` discriminator
+            // returned by resolveSegmentForAvailability (no `as any`). A segment
+            // resolved with source 'none' had no schedule at all behind it, so it
+            // is tagged UNVERIFIED and can never reach route memory. The common
+            // trust gate rejects it outright in enforce mode.
+            (combo as any)._provenance = deriveProvenance(v1.source, v2.source);
 
             allCombinations.push(combo);
             combosThisHub++;
@@ -2999,21 +3343,17 @@ export class SplitJourneyEngine {
     
 
     // —— Step 4: Remove useless splits ———————————————————————————————————————
-    const filteredCombinations = allCombinations.filter(split => {
-      // Guard: totalDuration cannot be less than 65% of direct travel time
-      if (directTime !== Infinity && split.totalDuration < directTime * 0.65) {
-        return false;
-      }
-      // Guard: wait time bounds
-      if ((split.bufferMinutes || 0) > MAX_WAIT_MINS) {
-        return false;
-      }
-      // Guard: total limit (1440 or direct + 360)
-      const durationLimit = directTime !== Infinity ? Math.max(MAX_TOTAL_MINS, directTime + 360) : 4320;
-      if (split.totalDuration > durationLimit) {
-        return false;
-      }
-      // Guard: detour ratio (MAX_DETOUR_RATIO = 1.30)
+    // PHASE_5B187 — progressive search envelopes. Tier 1 (<=16h) is tried first;
+    // if it does not produce enough candidates, the envelope widens to Tier 2
+    // (<=24h) and then Tier 3 (<=30h). This is a search envelope, not a final API
+    // result cap: downstream ranking/trust/excludeVia still decide what surfaces.
+    const baseDurationLimit = directTime !== Infinity ? Math.max(MAX_TOTAL_MINS, directTime + 360) : 4320;
+
+    const passesBaseFilter = (split: SplitJourney): boolean => {
+      if (directTime !== Infinity && split.totalDuration < directTime * 0.65) return false;
+      if ((split.bufferMinutes || 0) > MAX_WAIT_MINS) return false;
+      if (split.totalDuration > baseDurationLimit) return false;
+
       const hubCode = (split.leg1 as any)?.toCode || (split.leg2 as any)?.fromCode || '';
       const srcCoord = preloadedCoords.get(sCode) || getCoordsFallbackLocal(sCode);
       const destCoord = preloadedCoords.get(dCode) || getCoordsFallbackLocal(dCode);
@@ -3022,21 +3362,34 @@ export class SplitJourneyEngine {
         const directDist = this._calculateHaversine(srcCoord.lat, srcCoord.lon, destCoord.lat, destCoord.lon);
         const splitDist = this._calculateHaversine(srcCoord.lat, srcCoord.lon, hubCoord.lat, hubCoord.lon) +
                           this._calculateHaversine(hubCoord.lat, hubCoord.lon, destCoord.lat, destCoord.lon);
-        if (directDist > 0 && (splitDist / directDist) > 1.30) {
-          return false;
-        }
+        if (directDist > 0 && (splitDist / directDist) > 1.30) return false;
       }
       return true;
-    });
+    };
 
-    // Relaxed fallback pool — even more lenient (direct + 24h)
+    const buildFilteredByEnvelope = (maxTotalMins: number): SplitJourney[] => {
+      return allCombinations.filter(split => passesBaseFilter(split) && split.totalDuration <= maxTotalMins);
+    };
+
+    const MIN_TIER_RESULTS = MAX_SPLIT_RESULTS;
+    let filteredCombinations = buildFilteredByEnvelope(TIER_1_TOTAL_MINS);
+    let activeTier = 1;
+    if (filteredCombinations.length < MIN_TIER_RESULTS) {
+      filteredCombinations = buildFilteredByEnvelope(TIER_2_TOTAL_MINS);
+      activeTier = 2;
+    }
+    if (filteredCombinations.length < MIN_TIER_RESULTS) {
+      filteredCombinations = buildFilteredByEnvelope(TIER_3_TOTAL_MINS);
+      activeTier = 3;
+    }
+    winstonLogger.info(`[SPLIT_ENGINE] Progressive envelope: tier=${activeTier} candidates=${filteredCombinations.length} (allCombos=${allCombinations.length})`);
+
+    // Relaxed fallback pool — even more lenient (base + 2h)
     const relaxedCombinations = allCombinations.filter(split => {
       if (directTime !== Infinity && split.totalDuration < directTime * 0.60) return false;
       if ((split.bufferMinutes || 0) > MAX_WAIT_MINS) return false;
-      const durationLimit = directTime !== Infinity ? Math.max(MAX_TOTAL_MINS, directTime + 360) : 4320;
-      if (split.totalDuration > durationLimit + 120) return false;
-      
-      // Guard: detour ratio (MAX_DETOUR_RATIO = 1.30)
+      if (split.totalDuration > baseDurationLimit + 120) return false;
+
       const hubCode = (split.leg1 as any)?.toCode || (split.leg2 as any)?.fromCode || '';
       const srcCoord = preloadedCoords.get(sCode) || getCoordsFallbackLocal(sCode);
       const destCoord = preloadedCoords.get(dCode) || getCoordsFallbackLocal(dCode);
@@ -3045,9 +3398,7 @@ export class SplitJourneyEngine {
         const directDist = this._calculateHaversine(srcCoord.lat, srcCoord.lon, destCoord.lat, destCoord.lon);
         const splitDist = this._calculateHaversine(srcCoord.lat, srcCoord.lon, hubCoord.lat, hubCoord.lon) +
                           this._calculateHaversine(hubCoord.lat, hubCoord.lon, destCoord.lat, destCoord.lon);
-        if (directDist > 0 && (splitDist / directDist) > 1.30) {
-          return false;
-        }
+        if (directDist > 0 && (splitDist / directDist) > 1.30) return false;
       }
       return true;
     });
@@ -3288,7 +3639,7 @@ export class SplitJourneyEngine {
       hubCount.set(h, cnt + 1);
       const { _rankScore, ...clean } = c as any;
       finalSplits.push(clean);
-      if (finalSplits.length >= MAX_SPLIT_RESULTS) break;
+      if (finalSplits.length >= MAX_CANDIDATE_POOL_SPLITS) break;
     }
 
     // Process suggestions AFTER sorting to check against best score
@@ -3422,7 +3773,11 @@ export class SplitJourneyEngine {
       winstonLogger.warn('[SPLIT_ENGINE] ⚠️  Zero splits after filtering — checking validated fallback first');
       winstonLogger.debug(`[SPLIT_TRACE] FALLBACK_START: allCombinations=${allCombinations.length} filteredCombinations=${filteredCombinations.length} relaxedCombinations=${relaxedCombinations.length}`);
 
-      const validatedFallbackSource = filteredCombinations.length > 0 ? filteredCombinations : relaxedCombinations;
+      // PHASE_5B172 — the "validated fallback" must only reuse candidates that
+      // already cleared the SAME authoritative live service-date/cancellation gate
+      // (STEP 7.5). `filteredCombinations`/`relaxedCombinations` were captured
+      // BEFORE that gate, so they must never be restored as fallbacks.
+      const validatedFallbackSource = liveValidatedCombos;
       const validatedFallback = validatedFallbackSource
         .filter(split => {
           if (!split.legs || split.legs.length !== 2) return false;
@@ -3445,7 +3800,7 @@ export class SplitJourneyEngine {
       if (validatedFallback.length > 0) {
         winstonLogger.warn(`[SPLIT_ENGINE] ✅ Using validated fallback combos (${validatedFallback.length})`);
         winstonLogger.debug(`[SPLIT_TRACE] FALLBACK: validated fallback found ${validatedFallback.length} combos`);
-        debugData.fallbackStrategy = filteredCombinations.length > 0 ? 'validated' : 'validated-relaxed';
+        debugData.fallbackStrategy = 'validated-live';
         filteredSplits = [...validatedFallback.slice(0, 20)];
       } else {
         // We do NOT use allCombinations as a safety net anymore.
@@ -3597,27 +3952,20 @@ export class SplitJourneyEngine {
     );
 
     // Save split learning data
+    // PHASE_5B109 — `logSplitRecommendation` used to run HERE, on the top raw
+    // candidate, before the validation ladder and before the common trust gate.
+    // A physically impossible hub could therefore be written to `split_learning`
+    // permanently even when it was later dropped from the response. The call now
+    // lives in `getSmartRoutes()` immediately after the trust gate
+    // (`persistSplitLearning`). `trackApiUsage` stays put: it counts API usage,
+    // not route memory, and is unaffected by candidate validity.
     try {
       if (normalizedSplits.length > 0) {
         const { learningService } = require('./learningService');
-        const topSplit = normalizedSplits[0];
-        if (topSplit.hub) {
-          const telemetryId = await learningService.logSplitRecommendation(
-            sCode,
-            dCode,
-            topSplit.hub,
-            topSplit.bufferMinutes || 0,
-            topSplit.totalDuration || 0,
-            topSplit.success_percent || 0
-          );
-          if (telemetryId) {
-            normalizedSplits.forEach((s: any) => s.recommendation_id = telemetryId);
-          }
-        }
         await learningService.trackApiUsage('split');
       }
     } catch (saveError: any) {
-      winstonLogger.error(`[SPLIT_LEARNING] Failed to save learning data: ${saveError.message}`);
+      winstonLogger.error(`[SPLIT_LEARNING] Failed to track api usage: ${saveError.message}`);
     }
 
     winstonLogger.info(`[SPLIT_ENGINE] Final normalized split count: ${normalizedSplits.length}`);
@@ -3800,6 +4148,386 @@ export class SplitJourneyEngine {
   }
 
   // ── PRIVATE ASYNC VALIDATION AND TERMINAL CORRECTION LAYER ──
+  // ─────────────────────────────────────────────────────────────────────────
+  // PHASE_5B109 — COMMON POST-MERGE PHYSICAL TRUST GATE
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Validate one candidate's legs against the physical schedule of each leg's
+   * own train, and rewrite station identity from the matched schedule rows.
+   *
+   * Invariants enforced (all delegated to existing machinery):
+   *   A/B  from + to physically exist on that train's schedule
+   *   C    from SN < to SN
+   *   D    schedule is resolved from the leg's own trainNo
+   *   E    exact physical codes only — no alias substitution at identity time
+   *   F    leg2 boarding comes from the connecting train's own schedule row
+   *   G    hub aliases never become the final physical boarding station
+   *   H    same-train candidates take this identical path
+   *   I    cached schedules are validated at use time, not at cache time
+   */
+  private async validateCandidateAgainstSchedule(
+    split: any,
+    sCodes: string[],
+    dCodes: string[],
+    date: string,
+    scheduleMemo: Map<string, { isValid: boolean; correctedLeg?: any; reason?: string }>,
+    providerMemo: Map<string, boolean>,
+    classType: string,
+    quota: string
+  ): Promise<{ ok: boolean; corrected?: any; reason?: string; changed: boolean }> {
+    const legs: any[] = Array.isArray(split?.legs) && split.legs.length > 0
+      ? split.legs
+      : [split?.leg1, split?.leg2].filter(Boolean);
+
+    if (legs.length === 0) {
+      return { ok: false, reason: 'NO_LEGS', changed: false };
+    }
+
+    const correctedLegs: any[] = [];
+    let changed = false;
+
+    for (let i = 0; i < legs.length; i++) {
+      const leg = legs[i];
+      const isFirst = i === 0;
+
+      // Invariant D — schedule must belong to this leg's own train.
+      const legTrainNo = normalizeTrainNumber(String(leg?.trainNo || leg?.number || '').trim());
+      if (!legTrainNo || legTrainNo === '00000') {
+        return { ok: false, reason: 'INVALID_TRAIN_NO', changed };
+      }
+
+      const currentFrom = String(leg?.fromCode || leg?.from || '').toUpperCase().trim();
+      const currentTo = String(leg?.toCode || leg?.to || '').toUpperCase().trim();
+      if (!currentFrom || !currentTo) {
+        return { ok: false, reason: 'MISSING_LEG_ENDPOINTS', changed };
+      }
+
+      // Leg 1 boards within the user's source cluster. Leg 2 boards wherever the
+      // connecting train physically stops — its own current code is the only
+      // admissible hint, never the hub code. This is invariants F + G.
+      const clusterHint = isFirst ? sCodes : [currentFrom];
+      const legDate = leg?.travelDate || (isFirst ? date : (split?.leg2Date || date));
+
+      // Invariant I + STEP 9 — memoise by train + endpoints + date so repeated
+      // candidates over the same train never re-trigger provider calls.
+      const memoKey = `${legTrainNo}|${currentFrom}|${currentTo}|${legDate}`;
+      let res = scheduleMemo.get(memoKey);
+      if (!res) {
+        res = await this.validateLegAndCorrectAsync(leg, clusterHint, isFirst ? 'leg1' : 'leg2', legDate);
+        scheduleMemo.set(memoKey, res);
+      }
+
+      if (!res.isValid || !res.correctedLeg) {
+        return { ok: false, reason: res.reason || 'LEG_REJECTED', changed };
+      }
+
+      const corrected = res.correctedLeg;
+
+      // Invariants A/B/C — structural segment check against the resolved stops.
+      // validateLegAndCorrectAsync already proved both stops exist and SN order
+      // holds; this re-asserts it on the corrected identity via the dedicated
+      // validator so the check is explicit and centrally owned.
+      const stops: any[] = Array.isArray(corrected._resolvedStops) ? corrected._resolvedStops : [];
+      if (stops.length > 0) {
+        const { trainScheduleIntegrityService } = require('./trainScheduleIntegrityService');
+        const segment = trainScheduleIntegrityService.validateSegmentOnSchedule(
+          legTrainNo,
+          stops,
+          String(corrected.fromCode || '').toUpperCase().trim(),
+          String(corrected.toCode || '').toUpperCase().trim()
+        );
+        if (segment.status === 'INVALID') {
+          return { ok: false, reason: segment.reasons?.[0] || 'SEGMENT_INVALID', changed };
+        }
+      }
+
+      if (corrected.fromCode !== currentFrom || corrected.toCode !== currentTo) {
+        changed = true;
+      }
+
+      // PHASE_5B180 — PAN-INDIA PROVIDER TRUST CHECK.
+      // Only when structured cancellation truth is UNKNOWN, confirm the leg is
+      // not explicitly unavailable for THIS segment/date via the existing
+      // single-flighted, canonical-keyed availability path. A provider
+      // timeout/error remains UNKNOWN (inconclusive) and never becomes CANCELLED.
+      const structuredCancellation = classifyCancellationState(corrected);
+      if (structuredCancellation === 'UNKNOWN') {
+        const providerKey = `${legTrainNo}|${corrected.fromCode}|${corrected.toCode}|${legDate}|${classType}|${quota}`;
+        let providerUnavailable = providerMemo.get(providerKey);
+        if (providerUnavailable === undefined) {
+          providerUnavailable = await this.isSegmentExplicitlyUnavailable(
+            legTrainNo,
+            corrected.fromCode,
+            corrected.toCode,
+            legDate,
+            classType,
+            quota
+          );
+          providerMemo.set(providerKey, providerUnavailable);
+        }
+        if (providerUnavailable) {
+          return { ok: false, reason: 'PROVIDER_UNAVAILABLE_SEGMENT', changed };
+        }
+      }
+
+      // Preserve every field the producer set (availability, pricing, timings,
+      // metadata); only physical identity is overwritten.
+      correctedLegs.push({ ...leg, ...corrected });
+    }
+
+    // Rebuild the candidate without disturbing ranking inputs or metadata.
+    const out: any = { ...split, legs: correctedLegs };
+    if (correctedLegs[0]) out.leg1 = { ...(split.leg1 || {}), ...correctedLegs[0] };
+    if (correctedLegs[1]) out.leg2 = { ...(split.leg2 || {}), ...correctedLegs[1] };
+
+    return { ok: true, corrected: out, changed };
+  }
+
+  /**
+   * STEP 7 — generic direct-redundancy rule (no train numbers anywhere).
+   *
+   * A split is redundant when the connecting (final) leg's train physically
+   * serves the user's original source station ahead of that leg's alighting
+   * point AND a direct end-to-end option on that same train is actually
+   * bookable. A waitlisted direct is NOT bookable, so genuine Same Train
+   * Rescue candidates survive.
+   *
+   * PHASE_5B115 — tri-state. Previously every unknown (no availability text, no
+   * resolved stops, unresolved source/alighting stop) returned `false`, which the
+   * caller read as a confident "not redundant" and published the split. That fails
+   * OPEN: a split can be shown as a workaround for a direct train we never actually
+   * checked. The three unknown paths now return 'unknown' so the caller can decide,
+   * and only genuinely-evaluated candidates return 'not-redundant'.
+   */
+  private isRedundantAgainstDirect(
+    split: any,
+    directTrains: any[],
+    sCodes: string[]
+  ): 'redundant' | 'not-redundant' | 'unknown' {
+    // No directs offered at all — nothing to be redundant against. This is a real
+    // answer, not an unknown: the split stands on its own.
+    if (!Array.isArray(directTrains) || directTrains.length === 0) return 'not-redundant';
+
+    const legs: any[] = Array.isArray(split?.legs) && split.legs.length > 0
+      ? split.legs
+      : [split?.leg1, split?.leg2].filter(Boolean);
+    const finalLeg = legs[legs.length - 1];
+    if (!finalLeg) return 'unknown';
+
+    const finalTrainNo = normalizeTrainNumber(String(finalLeg.trainNo || finalLeg.number || '').trim());
+    if (!finalTrainNo || finalTrainNo === '00000') return 'unknown';
+
+    // Is there a bookable direct on this very train?
+    let sawUnknownAvailability = false;
+    const bookableDirect = directTrains.find((t: any) => {
+      const tNo = normalizeTrainNumber(String(t?.trainNo || t?.number || t?.train_number || '').trim());
+      if (tNo !== finalTrainNo) return false;
+      const availText = String(
+        t?.availability?.status || t?.availability?.current_status || t?.availabilityStatus || ''
+      ).trim();
+      if (!availText) {
+        // Same train is offered as a direct but its availability never resolved —
+        // we cannot tell whether the split is a genuine workaround or a duplicate.
+        sawUnknownAvailability = true;
+        return false;
+      }
+      return !DIRECT_BOOKABLE_WL_PATTERNS.test(availText);
+    });
+    if (!bookableDirect) {
+      return sawUnknownAvailability ? 'unknown' : 'not-redundant';
+    }
+
+    // Does that train physically serve the user's source before the final
+    // leg's alighting station? Uses the schedule already resolved by the gate.
+    const stops: any[] = Array.isArray(finalLeg._resolvedStops) ? finalLeg._resolvedStops : [];
+    if (stops.length === 0) return 'unknown';
+
+    const wanted = new Set(sCodes.map(c => String(c).toUpperCase().trim()));
+    const srcStop = stops.find((s: any) => wanted.has(String(s.Station_Code || '').toUpperCase().trim()));
+    const toStop = stops.find(
+      (s: any) => String(s.Station_Code || '').toUpperCase().trim() === String(finalLeg.toCode || '').toUpperCase().trim()
+    );
+    // A bookable direct exists on this train but we could not locate the boarding or
+    // alighting point on its schedule — the comparison is inconclusive, not negative.
+    if (!srcStop || !toStop) return 'unknown';
+
+    return Number(srcStop.SN) < Number(toStop.SN) ? 'redundant' : 'not-redundant';
+  }
+
+  /**
+   * PHASE_5B109 - post-gate persistent split learning.
+   *
+   * Writes the top trust-gated candidate to `split_learning` for long-term
+   * preference tracking. Relocated from `findSplitJourneys()`, where it ran
+   * before any validation. The telemetry id is stamped back onto the API
+   * response for click-through attribution.
+   */
+  private async persistSplitLearning(
+    sCode: string,
+    dCode: string,
+    trustedSplits: SplitJourney[],
+    apiSplits: SplitJourney[]
+  ): Promise<void> {
+    if (trustedSplits.length === 0) return;
+
+    try {
+      const { learningService } = require('./learningService');
+      const topTrusted = trustedSplits[0];
+      if (!topTrusted.hub) return;
+
+      const telemetryId = await learningService.logSplitRecommendation(
+        sCode,
+        dCode,
+        topTrusted.hub,
+        topTrusted.bufferMinutes || 0,
+        topTrusted.totalDuration || 0,
+        topTrusted.success_percent || 0,
+        topTrusted.transferMeta
+      );
+
+      if (telemetryId) {
+        // Stamp the id onto both the trusted set and the API list (which may
+        // differ in shadow mode). The controller reads `recommendation_id` for
+        // click attribution; the id must appear on whichever set the user sees.
+        trustedSplits.forEach((s: any) => s.recommendation_id = telemetryId);
+        apiSplits.forEach((s: any) => s.recommendation_id = telemetryId);
+      }
+    } catch (err: any) {
+      winstonLogger.error(`[SPLIT_LEARNING] logSplitRecommendation failed: ${err.message}`);
+    }
+  }
+
+  /**
+   * The gate. Runs once, immediately after the producers are merged and before
+   * ranking / learning / cache / API.
+   */
+  private async candidateTrustGate(
+    candidates: SplitJourney[],
+    directTrains: any[],
+    sCodes: string[],
+    dCodes: string[],
+    date: string,
+    classType: string,
+    quota: string
+  ): Promise<TrustGateOutcome> {
+    const mode = resolveTrustGateMode();
+
+    if (mode === 'off' || !Array.isArray(candidates) || candidates.length === 0) {
+      return { mode, forApi: candidates || [], trusted: candidates || [], rejected: 0, corrected: 0 };
+    }
+
+    const scheduleMemo = new Map<string, { isValid: boolean; correctedLeg?: any; reason?: string }>();
+    const providerMemo = new Map<string, boolean>();
+    const trusted: SplitJourney[] = [];
+    let rejected = 0;
+    let corrected = 0;
+
+    for (const split of candidates as any[]) {
+      const tag = (split?.rescueType === 'SAME_TRAIN_SEGMENT' || split?.isSameTrain) ? 'SAME_TRAIN' : 'HUB';
+      const legs: any[] = Array.isArray(split?.legs) && split.legs.length > 0
+        ? split.legs
+        : [split?.leg1, split?.leg2].filter(Boolean);
+      const idTrain = legs[0]?.trainNo || split?.trainNo || 'unknown';
+      const idFrom = legs[0]?.fromCode || legs[0]?.from || '?';
+      const idTo = legs[legs.length - 1]?.toCode || legs[legs.length - 1]?.to || '?';
+
+      let outcome: { ok: boolean; corrected?: any; reason?: string; changed: boolean };
+      try {
+        outcome = await this.validateCandidateAgainstSchedule(split, sCodes, dCodes, date, scheduleMemo, providerMemo, classType, quota);
+      } catch (err: any) {
+        // Fail closed: an error in validation must never mint trust.
+        outcome = { ok: false, reason: `GATE_ERROR:${err?.message || 'unknown'}`, changed: false };
+      }
+
+      if (!outcome.ok) {
+        rejected++;
+        winstonLogger.warn(
+          `[TRUST_GATE_${mode === 'enforce' ? 'REJECT' : 'WOULD_REJECT'}] type=${tag} trainNo=${idTrain} from=${idFrom} to=${idTo} reason=${outcome.reason}`
+        );
+        continue; // excluded from `trusted` in every mode — sinks stay fail-closed
+      }
+
+      const candidate = outcome.corrected;
+
+      // PHASE_5B115 — 'unknown' is handled conservatively: a candidate we could not
+      // prove non-redundant never earns trust, so it is kept out of the cache, the
+      // learning sinks and (in enforce mode) the API response. In shadow mode
+      // `forApi` still carries every candidate, so this cannot silently suppress a
+      // valid route while availability is temporarily unresolved — it only stops the
+      // unverified candidate becoming durable shared state.
+      const redundancy = this.isRedundantAgainstDirect(candidate, directTrains, sCodes);
+      if (redundancy === 'redundant' || redundancy === 'unknown') {
+        rejected++;
+        const reason = redundancy === 'redundant'
+          ? 'REDUNDANT_WITH_BOOKABLE_DIRECT'
+          : 'REDUNDANCY_UNVERIFIABLE';
+        winstonLogger.warn(
+          `[TRUST_GATE_${mode === 'enforce' ? 'REJECT' : 'WOULD_REJECT'}] type=${tag} trainNo=${idTrain} from=${idFrom} to=${idTo} reason=${reason}`
+        );
+        continue;
+      }
+
+      if (outcome.changed) {
+        corrected++;
+        const cLegs: any[] = candidate.legs || [];
+        winstonLogger.info(
+          `[TRUST_GATE_CORRECT] type=${tag} trainNo=${idTrain} from=${idFrom}->${cLegs[0]?.fromCode || idFrom} to=${idTo}->${cLegs[cLegs.length - 1]?.toCode || idTo} reason=PHYSICAL_STOP_IDENTITY`
+        );
+      }
+
+      trusted.push(candidate as SplitJourney);
+    }
+
+    if (rejected > 0 || corrected > 0) {
+      winstonLogger.info(
+        `[TRUST_GATE] mode=${mode} in=${candidates.length} trusted=${trusted.length} rejected=${rejected} corrected=${corrected}`
+      );
+    }
+
+    // In every active mode, forApi receives only validated and non-cancelled candidates.
+    return {
+      mode,
+      forApi: trusted,
+      trusted,
+      rejected,
+      corrected,
+    };
+  }
+
+  private async isSegmentExplicitlyUnavailable(
+    trainNo: string,
+    from: string,
+    to: string,
+    date: string,
+    classType: string,
+    quota: string
+  ): Promise<boolean> {
+    const { smartAvailabilityService } = await import('./smartAvailabilityService');
+    const result = await smartAvailabilityService.getAvailability({
+      trainNo,
+      from,
+      to,
+      date,
+      classType: classType || 'SL',
+      quota: quota || 'GN',
+    });
+
+    if (result?.success === false) {
+      const reason = String(result.reason || '').toUpperCase();
+      if (
+        reason === 'TRAIN_NOT_RUNNING' ||
+        reason === 'SEGMENT_NOT_BOOKABLE' ||
+        reason === 'CLASS_NOT_AVAILABLE' ||
+        reason === 'TRAIN_CANCELLED'
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   private async validateLegAndCorrectAsync(
     leg: any,
     cityCodes: string[],
@@ -3809,6 +4537,11 @@ export class SplitJourneyEngine {
     if (!leg) return { isValid: false, reason: 'missing leg' };
     const num = normalizeTrainNumber(String(leg.trainNo || leg.number || '').trim());
     if (!num || num === '00000') return { isValid: false, reason: 'invalid trainNo' };
+
+    // Cancellation check
+    if (isTrainCancelled(leg)) {
+      return { isValid: false, reason: `Train ${num} is cancelled` };
+    }
 
     // 1. Booking date eligibility check (ARP <= 120 days)
     const travelDateStr = leg.travelDate || date;
@@ -3820,17 +4553,64 @@ export class SplitJourneyEngine {
     }
 
     // 2. Fetch train schedule
-    let stops: Array<{ Station_Code: string; SN: number; Station_Name?: string }> = [];
-    let runningDaysPattern = '1111111';
+    let stops: Array<{ Station_Code: string; SN: number; Station_Name?: string; _snProvided?: boolean }> = [];
+    let runningDaysPattern: string | null = null;
+    let runningDaysAuthoritative = false;
+    let validFrom: string | null = leg.validFrom || null;
+    let validTo: string | null = leg.validTo || null;
+
+    // PHASE_5B122 — declared provenance of `stops`. Set at each acquisition site from
+    // WHERE the data came from, never inferred from what it contains: a DB row set and
+    // a live payload are shape-identical by this point, which is exactly how the two
+    // got conflated. Only 'db' and 'irctc' can back an authoritative origin.
+    let stopsSource: ResolvedScheduleSource = 'none';
+
+    // PHASE_5B122 — canonical stop-sequence normalizer, used by both live mappers below.
+    // Required once at function scope because the two mapper sites sit in different blocks.
+    const { normalizeStopSN } = require('./stationResolutionUtils');
 
     const scheduleCacheKey = `train_schedule_resolved_${num}`;
     const cachedSchedule = cacheService.get<{ stops: any[]; runningDaysPattern: string }>(scheduleCacheKey);
 
     if (cachedSchedule) {
-      stops = cachedSchedule.stops;
-      runningDaysPattern = cachedSchedule.runningDaysPattern;
-      winstonLogger.debug(`[validateLegAndCorrectAsync] Resolved schedule cache hit for train ${num}`);
-    } else {
+      // PHASE_5B086: Verify cached stops are not starting from a suspect DB origin.
+      // If the registry marks this train with a true physical origin and the cached stops
+      // start from a different but cluster-compatible station, the cached schedule may be stale
+      // (written before the 5B086 fix). Invalidate and re-run to prevent ghost cards.
+      let cacheValid = true;
+      {
+        // PHASE_5B129 — compile-only change (wrapper retired). Eviction behaviour is
+        // INTENTIONALLY unchanged and still fires on an `inferred` origin: discarding a
+        // possibly-stale cache entry is cheap and self-correcting, and the entry may have
+        // been written by a pre-fix build that did rewrite the origin. Narrowing this to
+        // authoritative-only would leave exactly those poisoned entries in place.
+        // Deliberately NOT gated on isAuthoritativeOrigin().
+        const { getPhysicalOriginWithConfidence } = require('./stationResolutionUtils');
+        const { areStationsCompatible } = require('./stationAliases');
+        const trueOrig = getPhysicalOriginWithConfidence(num).code;
+        if (trueOrig && cachedSchedule.stops.length > 0) {
+          const cachedOrigin = (cachedSchedule.stops[0].Station_Code || '').toUpperCase().trim();
+          if (cachedOrigin !== trueOrig && areStationsCompatible(cachedOrigin, trueOrig)) {
+            // Cached origin is a cluster alias of the suspect DB origin — evict stale cache
+            winstonLogger.warn(`[validateLegAndCorrectAsync] Stale/corrupted schedule cache for ${num}: cached origin ${cachedOrigin} ≠ true origin ${trueOrig} — evicting and re-validating`);
+            cacheService.del(scheduleCacheKey);
+            cacheValid = false;
+          }
+        }
+      }
+      if (cacheValid) {
+        stops = cachedSchedule.stops;
+        runningDaysPattern = (cachedSchedule as any).runningDaysPattern ?? null;
+        runningDaysAuthoritative = readCachedScheduleSource(cachedSchedule) === 'irctc';
+        // PHASE_5B122 — a cached payload is authoritative for ORIGIN only if it recorded
+        // where it came from. Pre-5B122 entries and DB-only reverse-SN writes resolve to
+        // 'none': still fine for the ordering comparisons below, never enough to let the
+        // terminal-correction guard fire on a schedule of unknown provenance.
+        stopsSource = readCachedScheduleSource(cachedSchedule);
+        winstonLogger.debug(`[validateLegAndCorrectAsync] Resolved schedule cache hit for train ${num} (source=${stopsSource})`);
+      }
+    }
+    if (stops.length === 0) {
       try {
         const { supabase } = await import('../config/supabase');
         // DB check
@@ -3841,13 +4621,13 @@ export class SplitJourneyEngine {
           .order('SN', { ascending: true });
 
         if (!dbErr && dbStops && dbStops.length > 0) {
-          // Only trust DB stops if they actually contain a station from the boarding city cluster.
-          // If not, the DB schedule is for a different segment of the train (incomplete data).
+          // Check if DB stops contain a station from the boarding city cluster.
           const boardingInDb = cityCodes.some(c =>
             (dbStops as any[]).some((s: any) => (s.Station_Code || '').toUpperCase().trim() === c.toUpperCase().trim())
           );
           if (boardingInDb) {
             stops = dbStops as any[];
+            stopsSource = 'db';
             const { data: meta } = await supabase
               .from('trains')
               .select('running_days')
@@ -3855,6 +4635,110 @@ export class SplitJourneyEngine {
               .maybeSingle();
             if (meta?.running_days) {
               runningDaysPattern = meta.running_days;
+              runningDaysAuthoritative = false;
+            }
+
+            // Generic Pan-India Physical-Stop Verification:
+            // If DB schedule origin (SN=1) was synthetically overwritten by legacy search logging
+            // (e.g. SN=1 ADI in DB for train 19411 whose true origin is GNC), correct SN=1 to true physical origin.
+            // PHASE_5B129 — detection and mutation are now separate concerns.
+            // `trueOrigin` keeps its previous value at ANY confidence, because it feeds
+            // both the mismatch detection here and the live-origin trust check below
+            // (liveOrigin === trueOrigin). Only the REWRITE of stops[0].Station_Code is
+            // gated on authority: an `inferred` first-word-of-train-name guess may raise
+            // dbOriginSuspect (cheap, triggers live re-validation) but must never change
+            // physical station identity.
+            const { getPhysicalOriginWithConfidence, isAuthoritativeOrigin } = require('./stationResolutionUtils');
+            const { areStationsCompatible } = require('./stationAliases');
+            const originResult = getPhysicalOriginWithConfidence(num);
+            const trueOrigin = originResult.code;
+            const mayRewriteOrigin = isAuthoritativeOrigin(originResult);
+            let dbOriginSuspect = false;
+            let suspectDbOriginCode = ''; // track the suspect DB origin for live verification
+            if (trueOrigin && stops.length > 0) {
+              const currentDbOrigin = (stops[0].Station_Code || '').toUpperCase().trim();
+              if (currentDbOrigin !== trueOrigin && areStationsCompatible(currentDbOrigin, trueOrigin)) {
+                if (mayRewriteOrigin) {
+                  stops[0] = { ...stops[0], Station_Code: trueOrigin };
+                } else {
+                  winstonLogger.info(`[validateLegAndCorrectAsync] DB origin mismatch for ${num} (db=${currentDbOrigin} registry=${trueOrigin} confidence=${originResult.confidence}) — rewrite SUPPRESSED (non-authoritative); still marking suspect for live validation`);
+                }
+                // MUST remain outside the authority gate — this is the sole trigger for the
+                // authoritative live fetch below, and the leg is rejected outright if that
+                // fetch fails. Clearing it here would serve the corrupt DB schedule instead.
+                dbOriginSuspect = true;
+                suspectDbOriginCode = currentDbOrigin; // e.g. 'ADI' for train 19407
+              }
+            }
+            // PHASE_5B084 + 5B085: When DB SN:1 was synthetically different from the known physical origin,
+            // the DB schedule may contain other corrupted stops (e.g. AII at SN:8 for train 19407,
+            // which does not exist on its authoritative live route SBIB→LGH). Fetch the live route
+            // and use it as the authoritative physical-stop list for this validation, overriding DB.
+            // This mirrors the dbOriginSuspect fix in trainStationResolver.ts (Phase 5B081) and
+            // closes PATH B — the split card generation path that bypassed the resolver.
+            // Live fetch is triggered ONLY when dbOriginSuspect=true (known DB corruption signal).
+            // PHASE_5B085 critical: track whether the live override actually succeeded. If the circuit
+            // breaker is open or live API returns null/empty, we MUST NOT fall through to validate
+            // against the corrupted DB — that would produce ghost cards. Reject the leg instead.
+            let liveOverrideSucceeded = false;
+            if (dbOriginSuspect) {
+              winstonLogger.info(`[validateLegAndCorrectAsync] dbOriginSuspect=true for ${num} — fetching authoritative live route for physical-stop validation`);
+              try {
+                const liveInfo = await irctcService.getTrainInfo(num);
+                if (liveInfo) {
+                  const liveRoute = liveInfo.route || liveInfo.station_list || liveInfo.stops || liveInfo.stations || liveInfo.trainRoute || liveInfo.stationList || [];
+                  const liveStops = (liveRoute as any[]).map((s: any, idx: number) => {
+                    // PHASE_5B122 — canonical SN normalization (serialNo → sn → SN).
+                    // `sequence` and positional fallback are no longer treated as provider
+                    // evidence. The positional value is still emitted so the SN ordering
+                    // comparison further down behaves exactly as before, but `_snProvided`
+                    // records that it was synthesised, so origin derivation cannot mistake
+                    // array position for a real stop sequence.
+                    const normalized = normalizeStopSN(s);
+                    const snProvided = normalized.status === 'valid';
+                    return {
+                      Station_Code: (s.stationCode || s.stnCode || s.station_code || s.Station_Code || s.code || '').toUpperCase().trim(),
+                      SN: snProvided ? (normalized.value as number) : (idx + 1),
+                      _snProvided: snProvided,
+                      Station_Name: s.stationName || s.stnName || s.station_name || s.Station_Name || s.name || ''
+                    };
+                  }).filter((s: any) => s.Station_Code.length > 0);
+                  if (liveStops.length > 0) {
+                    // PHASE_5B086: Verify live API's first stop is the true physical origin.
+                    // If the live API echoes the same corrupted DB origin (e.g., IRCTC returns ADI for
+                    // train 19407 instead of SBIB), the live data is also corrupted. Reject in that case.
+                    // A live origin is trusted only if it equals the true physical origin, OR if it is
+                    // NOT compatible with the suspect DB origin (meaning it's a genuinely different station,
+                    // not just an alias of the suspect code).
+                    const liveOrigin = liveStops[0].Station_Code;
+                    const liveOriginIsSuspect = suspectDbOriginCode && areStationsCompatible(liveOrigin, suspectDbOriginCode);
+                    const liveOriginTrusted = liveOrigin === trueOrigin || !liveOriginIsSuspect;
+                    if (!liveOriginTrusted) {
+                      winstonLogger.warn(`[validateLegAndCorrectAsync] Live API also returns suspect origin ${liveOrigin} for ${num} (expected ${trueOrigin}, suspect DB had ${suspectDbOriginCode}) — both DB and live are corrupted. Rejecting leg.`);
+                      // Do not set liveOverrideSucceeded — will be rejected below
+                    } else {
+                      stops = liveStops;
+                      stopsSource = 'irctc';
+                      liveOverrideSucceeded = true;
+                      const liveRunning = liveInfo.trainInfo?.running_days || liveInfo.running_days || null;
+                      if (liveRunning) {
+                        runningDaysPattern = liveRunning;
+                        runningDaysAuthoritative = true;
+                      }
+                      winstonLogger.info(`[validateLegAndCorrectAsync] Authoritative live schedule for ${num}: ${liveStops.length} stops, origin=${liveOrigin} (replaces suspect DB schedule)`);
+                    }
+                  }
+                }
+              } catch (liveErr: any) {
+                winstonLogger.warn(`[validateLegAndCorrectAsync] Live fallback failed for ${num}: ${liveErr.message} — rejecting leg (suspect DB must not be used)`);
+              }
+              // PHASE_5B085+5B086: If live override did not succeed (circuit breaker open, API null,
+              // empty stops, or live API also echoing corrupted origin), do NOT validate against the
+              // corrupted DB schedule. Reject the leg.
+              if (!liveOverrideSucceeded) {
+                winstonLogger.warn(`[validateLegAndCorrectAsync] dbOriginSuspect=true but live fetch unavailable or also corrupted for ${num} — rejecting leg to prevent ghost card`);
+                return { isValid: false, reason: `Schedule suspect for train ${num} — live validation unavailable or corrupted` };
+              }
             }
           } else {
             winstonLogger.warn(`[SCHED_INCOMPLETE] Train ${num}: DB has ${(dbStops as any[]).length} stops but boarding cluster not found — falling through to live API.`);
@@ -3866,13 +4750,23 @@ export class SplitJourneyEngine {
           winstonLogger.info(`[getTrainInfo_LIVE] Fetching route schedule for train ${num}`);
           const liveInfo = await irctcService.getTrainInfo(num);
           if (liveInfo) {
-            runningDaysPattern = liveInfo.trainInfo?.running_days || liveInfo.running_days || '1111111';
+            runningDaysPattern = liveInfo.trainInfo?.running_days || liveInfo.running_days || null;
+            runningDaysAuthoritative = !!runningDaysPattern;
             const route = liveInfo.route || liveInfo.station_list || liveInfo.stops || liveInfo.stations || liveInfo.trainRoute || liveInfo.stationList || [];
-            stops = route.map((s: any, idx: number) => ({
-              Station_Code: (s.stationCode || s.stnCode || s.station_code || s.Station_Code || s.code || '').toUpperCase().trim(),
-              SN: s.sn || s.SN || s.sequence || (idx + 1),
-              Station_Name: s.stationName || s.stnName || s.station_name || s.Station_Name || s.name || ''
-            }));
+            stops = route.map((s: any, idx: number) => {
+              // PHASE_5B122 — canonical SN normalization; see the suspect-path mapper above.
+              const normalized = normalizeStopSN(s);
+              const snProvided = normalized.status === 'valid';
+              return {
+                Station_Code: (s.stationCode || s.stnCode || s.station_code || s.Station_Code || s.code || '').toUpperCase().trim(),
+                SN: snProvided ? (normalized.value as number) : (idx + 1),
+                _snProvided: snProvided,
+                Station_Name: s.stationName || s.stnName || s.station_name || s.Station_Name || s.name || ''
+              };
+            });
+            if (stops.length > 0) {
+              stopsSource = 'irctc';
+            }
 
             // Only save to DB when we have valid station codes
             if (stops.length > 0 && stops.some(s => s.Station_Code.length > 0)) {
@@ -3891,9 +4785,20 @@ export class SplitJourneyEngine {
           }
         } // end if (stops.length === 0)
 
-        // Cache the resolved schedule if stops found
+        // Cache the resolved schedule if stops found.
+        // PHASE_5B122 — record the ACTUAL provenance alongside the stops so a later read
+        // can tell a live schedule from a DB row set. Same key, same TTL.
         if (stops.length > 0) {
-          cacheService.set(scheduleCacheKey, { stops, runningDaysPattern }, 7200);
+          cacheService.set(
+            scheduleCacheKey,
+            {
+              stops,
+              runningDaysPattern,
+              source: stopsSource,
+              _scheduleProvenanceVersion: SCHEDULE_PROVENANCE_VERSION,
+            },
+            7200
+          );
         }
       } catch (err: any) {
         winstonLogger.warn(`[validateLegAndCorrectAsync] Schedule fetch failed: ${err.message}`);
@@ -3901,30 +4806,140 @@ export class SplitJourneyEngine {
     }
 
     if (stops.length === 0) {
-      winstonLogger.warn(`[validateLegAndCorrectAsync] Route missing for ${num} — bypassing schedule check`);
-      return { isValid: true, correctedLeg: leg };
+      winstonLogger.warn(`[validateLegAndCorrectAsync] Route missing for ${num} — rejecting leg (schedule sync active)`);
+      return { isValid: false, reason: `Schedule unavailable for train ${num}` };
     }
 
-    // 3. Running Day check
-    const binary = normalizeRunningDays(runningDaysPattern);
-    if (binary && !isDayActive(binary, travelDateStr)) {
-      return { isValid: false, reason: `Train ${num} does not run on date/weekday of ${travelDateStr}` };
+    // Ingest authoritative service window / running days if DB had placeholder
+    const runningDaysLower = String(runningDaysPattern || '').toLowerCase().trim();
+    const isPlaceholder =
+      !runningDaysPattern ||
+      runningDaysLower === 'daily' ||
+      runningDaysLower === 'all days' ||
+      runningDaysLower === '0,1,2,3,4,5,6' ||
+      runningDaysLower === '1111111' ||
+      runningDaysLower.includes('all') ||
+      isSpecialTrainNumber(num);
+
+    if ((isPlaceholder || !runningDaysAuthoritative) && stops.length > 0) {
+      try {
+        const info = await irctcService.getTrainInfo(num);
+        if (info) {
+          const inner = info.trainInfo || info;
+          const liveRunningDays =
+            inner?.running_days || inner?.runningDays || info?.running_days || info?.runningDays || null;
+          const liveValidFrom =
+            inner?.validFrom || inner?.valid_from || info?.validFrom || info?.valid_from || null;
+          const liveValidTo =
+            inner?.validTo || inner?.valid_to || info?.validTo || info?.valid_to || null;
+          const liveStatus =
+            inner?.train_status || inner?.status || info?.train_status || info?.status || null;
+          const liveCancelled =
+            inner?.is_cancelled === true || inner?.isCancelled === true || info?.is_cancelled === true || info?.isCancelled === true ||
+            (liveStatus && (liveStatus.toLowerCase().includes('cancel') || liveStatus.toLowerCase().includes('suspend')))
+              ? true
+              : (inner?.is_cancelled === false || inner?.isCancelled === false ? false : undefined);
+
+          if (liveCancelled) {
+            return { isValid: false, reason: `Train ${num} is cancelled` };
+          }
+          if (liveValidFrom) validFrom = liveValidFrom;
+          if (liveValidTo) validTo = liveValidTo;
+          if (liveRunningDays) {
+            runningDaysPattern = liveRunningDays;
+            runningDaysAuthoritative = true;
+          }
+        }
+      } catch (e: any) {
+        winstonLogger.warn(`[validateLegAndCorrectAsync] Live service window fetch failed for ${num}: ${e.message}`);
+      }
     }
 
-    // 4. Intermediate station check and terminal correction
+    // 3. Service-date truth — UNKNOWN must fail closed.
     const currentFrom = (leg.fromCode || leg.from || '').toUpperCase().trim();
     const currentTo = (leg.toCode || leg.to || '').toUpperCase().trim();
 
     let fromStop = stops.find(s => s.Station_Code === currentFrom);
     let toStop = stops.find(s => s.Station_Code === currentTo);
 
+    const { getDayOffsetForStop } = require('./trainStationResolver');
+    const dayOffset = fromStop ? getDayOffsetForStop(stops, fromStop) : 0;
+
+    const serviceVerdict = trainOperatesOnDate(travelDateStr, runningDaysPattern, {
+      validFrom,
+      validTo,
+      runningDaysAuthoritative,
+      dayOffset,
+    });
+    if (serviceVerdict !== 'YES') {
+      const reason = serviceVerdict === 'NO'
+        ? `Train ${num} does not operate on ${travelDateStr}`
+        : `Service-date truth unknown for train ${num} on ${travelDateStr}`;
+      return { isValid: false, reason };
+    }
+
     // Terminal correction for boarding station
+    //
+    // PHASE_5B115 — VERIFIED-ORIGIN GUARD.
+    // Historically this block substituted the FIRST city-cluster code that happened
+    // to appear on the schedule, with no reference to the train's real origin. Because
+    // ADI/SBT/SBIB/GNC are one cluster, a leg boarding at SBIB (19031) or GNC (19411)
+    // could silently become ADI — a ghost boarding station the passenger cannot use.
+    //
+    // When the registry holds a HAND-VERIFIED origin for this train (not a name-parsed
+    // guess), that origin is authoritative: a different cluster alias must never be
+    // substituted for it. Such candidates are rejected through the existing
+    // `Source station ... not found` failure path below — no new response shape.
+    //
+    // `inferred` (name-parsed) origins carry no authority and are deliberately ignored
+    // here, so trains like 12833 (name-parsed "ADI") behave exactly as before.
+    //
+    // PHASE_5B122 — GENERALISED TO THE AUTHORITATIVE TIER.
+    // The guard above protected only the 8 trains in EXPLICIT_TRAIN_ORIGINS out of a
+    // 10632-train registry. It now also engages when the origin was DERIVED from the
+    // authoritative schedule this validation actually ran against — 'live' (provider
+    // fetch this request) or 'db-validated' (structurally validated train_schedule
+    // rows). That makes the protection pan-India without hardcoding a single train
+    // number: any train whose real schedule we hold gets the same treatment 19031 and
+    // 19411 get from the hand-verified table.
+    //
+    // The authority decision is centralised in isAuthoritativeOrigin(); `inferred` and
+    // `unknown` still confer nothing, so 12833's name-parsed "ADI" remains inert unless
+    // a real schedule backs it. Everything below this point — areStationsCompatible,
+    // blockedAlias, the candidate scan, TERMINAL_CORRECTION_BLOCKED — is unchanged.
     if (!fromStop) {
-      const matchingFrom = cityCodes.find(code => stops.some(s => s.Station_Code === code.toUpperCase().trim()));
+      const { resolvePhysicalOrigin, isAuthoritativeOrigin } = require('./stationResolutionUtils');
+      const { areStationsCompatible } = require('./stationAliases');
+      // `stopsSource` is the DECLARED provenance of the stops array this validation ran
+      // against, set at each acquisition site — never sniffed from the contents.
+      const originInfo = resolvePhysicalOrigin(num, stops, stopsSource);
+      const verifiedOrigin: string | null =
+        isAuthoritativeOrigin(originInfo) && originInfo.code
+          ? String(originInfo.code).toUpperCase().trim()
+          : null;
+
+      let blockedAlias = '';
+      const matchingFrom = cityCodes.find(code => {
+        const c = code.toUpperCase().trim();
+        if (!stops.some(s => s.Station_Code === c)) return false;
+        // A sibling of the verified origin may not stand in for it. Codes outside that
+        // cluster are genuine mid-route boarding points and stay allowed.
+        if (verifiedOrigin && c !== verifiedOrigin && areStationsCompatible(c, verifiedOrigin)) {
+          blockedAlias = c;
+          return false;
+        }
+        return true;
+      });
+
       if (matchingFrom) {
         const matchedCode = matchingFrom.toUpperCase().trim();
         fromStop = stops.find(s => s.Station_Code === matchedCode);
         winstonLogger.info(`[TERMINAL_CORRECTION] Corrected Leg fromCode for train ${num}: ${currentFrom} -> ${matchedCode}`);
+      } else if (blockedAlias) {
+        winstonLogger.warn(
+          `[TERMINAL_CORRECTION_BLOCKED] train ${num}: refused to substitute cluster alias ${blockedAlias} ` +
+          `for ${currentFrom} — ${originInfo.confidence} physical origin is ${verifiedOrigin} and is absent from this schedule`
+        );
       }
     }
 
@@ -3953,6 +4968,10 @@ export class SplitJourneyEngine {
     }
 
     // Return corrected leg
+    // PHASE_5B109: `_resolvedStops` exposes the authoritative stop list this
+    // validation actually ran against (DB, live override, or cache) so the
+    // common trust gate can re-assert the segment structurally and evaluate
+    // direct-redundancy without issuing a second schedule fetch.
     const correctedLeg = {
       ...leg,
       fromCode: fromStop.Station_Code,
@@ -3961,7 +4980,18 @@ export class SplitJourneyEngine {
       toCode: toStop.Station_Code,
       to: toStop.Station_Code,
       toName: toStop.Station_Name || leg.toName,
+      running_days: runningDaysPattern || leg.running_days,
+      runningDays: runningDaysPattern || leg.runningDays,
+      validFrom: validFrom || leg.validFrom,
+      validTo: validTo || leg.validTo,
+      runningDaysAuthoritative,
+      dayOffset,
+      _resolvedStops: stops,
     };
+
+    if (isTrainCancelled(correctedLeg)) {
+      return { isValid: false, reason: `Train ${num} is cancelled` };
+    }
 
     return { isValid: true, correctedLeg };
   }
@@ -4035,6 +5065,11 @@ export class SplitJourneyEngine {
       travelDate: safe(leg.travelDate || leg.journeyDate, undefined),
       availability: leg.availability || this.parseAvailability(undefined),
       type: leg.type || 'Express',
+      running_days: leg.running_days,
+      runningDays: leg.runningDays,
+      train_status: leg.train_status,
+      status: leg.status,
+      is_cancelled: leg.is_cancelled,
     };
   }
 
@@ -4064,7 +5099,23 @@ export class SplitJourneyEngine {
           .order('SN', { ascending: true });
         if (error || !dbStops?.length) return false;
         stops = dbStops as Array<{ Station_Code: string; SN: number }>;
-        cacheService.set(scheduleCacheKey, { stops, runningDaysPattern: '1111111' }, 7200);
+        // PHASE_5B122 — this DB-only write is exactly what used to contaminate the shared
+        // key: filterProvenReverseTrains runs BEFORE validateLegAndCorrectAsync, and a
+        // payload written here without provenance could satisfy that origin-critical read
+        // for the full 7200s TTL. `source: 'db'` + the provenance version now make the
+        // payload readable as a DB schedule — and deliberately nothing stronger.
+        // PHASE_5B167 — runningDaysPattern is null here so a DB-only reverse-SN write can
+        // never mint daily service-date truth; UNKNOWN fails closed downstream.
+        cacheService.set(
+          scheduleCacheKey,
+          {
+            stops,
+            runningDaysPattern: null,
+            source: 'db',
+            _scheduleProvenanceVersion: SCHEDULE_PROVENANCE_VERSION,
+          },
+          7200
+        );
       } catch {
         return false;
       }
@@ -4111,6 +5162,10 @@ export class SplitJourneyEngine {
       const status = String(t.train_status || t.status || '').toLowerCase();
       if (status.includes('cancel') || status.includes('suspend')) {
         winstonLogger.debug(`[TRAIN_REJECTED_LIVE] ${num} - explicitly ${status}`);
+        return false;
+      }
+      if (t.is_cancelled === true || t.isCancelled === true) {
+        winstonLogger.debug(`[TRAIN_REJECTED_LIVE] ${num} - explicitly cancelled`);
         return false;
       }
       return true;
@@ -4421,8 +5476,17 @@ export class SplitJourneyEngine {
       depDay: depDay || 1,
       durationMins: durationMins || 0,
       availability: this.parseAvailability(raw.availability),
-      travelDate: raw.travelDate || raw.date,
-      journeyDate: raw.journeyDate || raw.travelDate
+      travelDate: raw.travelDate || raw.date || raw.journeyDate,
+      journeyDate: raw.journeyDate || raw.travelDate || raw.date,
+      running_days: raw.running_days || raw.runningDays || raw.running_days_pattern || raw.runningDaysPattern,
+      runningDays: raw.runningDays || raw.running_days || raw.runningDaysPattern || raw.running_days_pattern,
+      train_status: raw.train_status || raw.trainStatus || raw.status,
+      status: raw.status || raw.train_status || raw.trainStatus,
+      is_cancelled: raw.is_cancelled ?? raw.isCancelled ?? raw.cancelled,
+      isCancelled: raw.isCancelled ?? raw.is_cancelled ?? raw.cancelled,
+      validFrom: raw.validFrom || raw.valid_from,
+      validTo: raw.validTo || raw.valid_to,
+      runningDaysAuthoritative: raw.runningDaysAuthoritative ?? false,
     };
   }
 
@@ -4521,6 +5585,113 @@ export class SplitJourneyEngine {
     const a = code1.toUpperCase().trim();
     const b = code2.toUpperCase().trim();
     return a === b || a.startsWith(b) || b.startsWith(a);
+  }
+
+  /**
+   * Helper to resolve physical inter-station distance in km.
+   * Checks transferDistances.json matrix first, falls back to default distance 7.5km.
+   */
+  private getInterStationDistance(code1: string, code2: string): number {
+    const c1 = (code1 || '').toUpperCase().trim();
+    const c2 = (code2 || '').toUpperCase().trim();
+    if (!c1 || !c2 || c1 === c2) return 0;
+
+    const key = `${c1}-${c2}`;
+    const reverseKey = `${c2}-${c1}`;
+
+    const distances = (transferDistancesData as any)?.distances || {};
+    if (distances[key]?.distanceKm !== undefined) {
+      return distances[key].distanceKm;
+    }
+    if (distances[reverseKey]?.distanceKm !== undefined) {
+      return distances[reverseKey].distanceKm;
+    }
+
+    return 7.5;
+  }
+
+  /**
+   * PHASE 4C: Pure helper to compute inter-station transfer metadata and validation.
+   * Does NOT call external APIs, mutate input legs, or change legacy behavior when flag is false.
+   */
+  private calculateTransferMeta(
+    l1: RichLeg,
+    l2: RichLeg,
+    waitMins: number
+  ): { isValid: boolean; transferMeta?: any; reason?: string } {
+    const fromCode = (l1.toCode || '').toUpperCase().trim();
+    const toCode = (l2.fromCode || '').toUpperCase().trim();
+
+    const isSameStation = fromCode === toCode;
+
+    if (isSameStation) {
+      if (waitMins < 25 || waitMins > 840) {
+        return { isValid: false, reason: 'Layover bounds (25m - 840m) violated' };
+      }
+      return {
+        isValid: true,
+        transferMeta: {
+          transferType: 'SAME_STATION',
+          stationChange: false,
+          arrivalStation: { code: fromCode, name: l1.toName || fromCode },
+          boardingStation: { code: toCode, name: l2.fromName || toCode },
+          distanceKm: 0,
+          transitMode: 'WALK',
+          estimatedTransferMinutes: 10,
+          minimumRequiredBufferMinutes: 25,
+          actualBufferMinutes: waitMins,
+          bufferSurplusMinutes: waitMins - 25,
+          transportSuggestion: 'Walk to departure platform'
+        }
+      };
+    }
+
+    // Inter-Station Transfer
+    const distanceKm = this.getInterStationDistance(fromCode, toCode);
+    let requiredMinBuffer = 35;
+    let estimatedTransitMins = 20;
+    let transport = 'Auto / Cab (~15-20 min ride)';
+    let transitMode = 'ROAD_CAB';
+
+    if (distanceKm <= 5.0) {
+      requiredMinBuffer = 35;
+      estimatedTransitMins = 20;
+      transport = 'Auto / Cab (~15-20 min ride)';
+      transitMode = 'ROAD_CAB';
+    } else if (distanceKm <= 15.0) {
+      requiredMinBuffer = 45;
+      estimatedTransitMins = 30;
+      transport = 'Taxi / Auto / Metro (~25-35 min ride)';
+      transitMode = 'ROAD_CAB';
+    } else if (distanceKm <= 30.0) {
+      requiredMinBuffer = 90;
+      estimatedTransitMins = 60;
+      transport = 'Taxi / Metro Line (~50-60 min ride)';
+      transitMode = 'ROAD_HIGHWAY';
+    } else {
+      return { isValid: false, reason: `Inter-station transfer distance (${distanceKm}km) exceeds 30km safety limit` };
+    }
+
+    if (waitMins < requiredMinBuffer || waitMins > 840) {
+      return { isValid: false, reason: `Layover (${waitMins}m) outside allowed buffer range (${requiredMinBuffer}m - 840m) for ${distanceKm}km transfer` };
+    }
+
+    return {
+      isValid: true,
+      transferMeta: {
+        transferType: 'INTER_STATION',
+        stationChange: true,
+        arrivalStation: { code: fromCode, name: l1.toName || fromCode },
+        boardingStation: { code: toCode, name: l2.fromName || toCode },
+        distanceKm,
+        transitMode,
+        estimatedTransferMinutes: estimatedTransitMins,
+        minimumRequiredBufferMinutes: requiredMinBuffer,
+        actualBufferMinutes: waitMins,
+        bufferSurplusMinutes: waitMins - requiredMinBuffer,
+        transportSuggestion: transport
+      }
+    };
   }
 
   /** Build a natural-language AI explanation for the split journey */
@@ -4869,6 +6040,38 @@ export class SplitJourneyEngine {
           };
 
           combo.score = rankingService.calculateScore(combo);
+
+          // PHASE_5B091 — SPLIT ENGINE PHYSICAL STOP + SERVICE-DATE TRUST GATE
+          const l1Cancellation = classifyCancellationState(l1);
+          const l2Cancellation = classifyCancellationState(l2);
+          if (l1Cancellation === 'CANCELLED') {
+            winstonLogger.info(`[SPLIT_CANCELLATION_GATE_REJECTED] Hub Fallback Leg1 ${l1.trainNo} (${l1.fromCode}->${l1.toCode}): cancellation=${l1Cancellation}`);
+            continue;
+          }
+          if (l2Cancellation === 'CANCELLED') {
+            winstonLogger.info(`[SPLIT_CANCELLATION_GATE_REJECTED] Hub Fallback Leg2 ${l2.trainNo} (${l2.fromCode}->${l2.toCode}): cancellation=${l2Cancellation}`);
+            continue;
+          }
+
+          const { resolveSegmentForAvailability } = await import('./trainStationResolver');
+          const [v1, v2] = await Promise.all([
+            resolveSegmentForAvailability(l1.trainNo, l1.fromCode, l1.toCode, date),
+            resolveSegmentForAvailability(l2.trainNo, l2.fromCode, l2.toCode, leg2DepDateStr)
+          ]);
+
+          if (!v1.success) {
+            winstonLogger.info(`[SPLIT_PHYSICAL_STOP_GATE_REJECTED] Hub Fallback Leg1 ${l1.trainNo} (${l1.fromCode}->${l1.toCode}): ${v1.reason}`);
+            continue;
+          }
+
+          if (!v2.success) {
+            winstonLogger.info(`[SPLIT_PHYSICAL_STOP_GATE_REJECTED] Hub Fallback Leg2 ${l2.trainNo} (${l2.fromCode}->${l2.toCode}): ${v2.reason}`);
+            continue;
+          }
+
+          // PHASE_5B109 — typed provenance (see deriveProvenance).
+          (combo as any)._provenance = deriveProvenance(v1.source, v2.source);
+
           splits.push(combo);
         }
       }

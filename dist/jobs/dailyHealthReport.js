@@ -96,7 +96,11 @@ class DailyHealthReportJob {
             priority_summary: aiReport?.priority_summary ?? null,
         };
         // ── Step 3: Render HTML from digestPayload ──────────────────────
-        const adminEmail = process.env.ADMIN_EMAIL || 'admin@trayago.in';
+        // Support multiple recipients: ADMIN_EMAILS=a@b.com,c@d.com
+        // Falls back to legacy ADMIN_EMAIL for single-email setups (mirrors authService.ts pattern).
+        const rawAdminEmails = process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || 'admin@trayago.in';
+        const adminEmailList = rawAdminEmails.split(',').map((e) => e.trim()).filter(Boolean);
+        const adminEmail = adminEmailList.length === 1 ? adminEmailList[0] : adminEmailList;
         const healthColor = digestPayload.system.health === 'OPTIMAL' ? '#16a34a'
             : digestPayload.system.health === 'DEGRADED' ? '#d97706'
                 : '#dc2626';

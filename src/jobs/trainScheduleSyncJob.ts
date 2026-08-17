@@ -24,7 +24,7 @@
  *   Dry-run mode     — when ENABLE_TRAIN_SCHEDULE_SYNC != true, validates but performs no writes
  *
  * Cache invalidation (per train, after write):
- *   Clears train_schedule_resolved_{num}, sched_ctx_v2_{num}, traininfo_{num} from NodeCache.
+ *   Clears train_schedule_resolved_{num}, sched_ctx_v4_{num}, traininfo_{num} from NodeCache.
  *   Hub keys (hubs_{num}_*) expire naturally via 24h TTL (known limitation - see cache_audit.md S5).
  *
  * Rollback:
@@ -499,6 +499,16 @@ export class TrainScheduleSyncJob {
       return 'skipped';
     }
 
+    // PHASE_5B091 — Central Deterministic Integrity Gate
+    const { trainScheduleIntegrityService } = require('../services/trainScheduleIntegrityService');
+    const integrity = trainScheduleIntegrityService.validateScheduleRows(trainNo, rows);
+    if (integrity.status === 'INVALID') {
+      winstonLogger.warn(
+        `[SCHEDULE_SYNC] TRAIN_REJECTED trainNo=${trainNo} reason=INTEGRITY_FAILED msg=${integrity.message}`
+      );
+      return 'failed';
+    }
+
     const maxLiveSN = Math.max(...rows.map(r => r.SN));
 
     // Step 5: UPSERT in batches of 100 rows
@@ -549,7 +559,7 @@ export class TrainScheduleSyncJob {
     // they expire naturally via their 24h TTL. See cache_audit.md section 5.
     try {
       cacheService.del(`train_schedule_resolved_${trainNo}`); // C1 — splitJourneyEngine (2h TTL)
-      cacheService.del(`sched_ctx_v2_${trainNo}`);            // C3 — trainStationResolver (2h TTL)
+      cacheService.del(`sched_ctx_v4_${trainNo}`);            // C3 — trainStationResolver (2h TTL, key version bumped in PHASE_5B161)
       cacheService.del(`traininfo_${trainNo}`);               // C4 — irctcService (2h TTL)
     } catch (cacheErr: any) {
       // Non-fatal: cache will expire via TTL

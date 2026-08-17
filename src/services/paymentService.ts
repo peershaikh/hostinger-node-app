@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import { authService } from './authService';
 import { attributePurchase } from './referralService';
 import Razorpay from 'razorpay';
-import { supabase, isSupabaseConfigured } from '../config/supabase';
+import { supabase, isSupabaseConfigured, safeWriteFileSync } from '../config/supabase';
 import { PaymentProviderFactory } from '../payments/providers/PaymentProviderFactory';
 
 const TXN_FILE = path.join(__dirname, '../../data/transactions.json');
@@ -52,7 +52,7 @@ class PaymentService {
 
     private saveTransactions() {
         try {
-            fs.writeFileSync(TXN_FILE, JSON.stringify(this.transactions, null, 2));
+            safeWriteFileSync(TXN_FILE, JSON.stringify(this.transactions, null, 2));
         } catch (e) {
             winstonLogger.error("Error saving transactions:", e);
         }

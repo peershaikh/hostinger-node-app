@@ -25,8 +25,24 @@ function normalizeRunningDays(days) {
         input.includes('all')) {
         return [1, 1, 1, 1, 1, 1, 1];
     }
-    // 2. Numeric format (0,1,2,3,4,5,6)
-    const numericParts = input.split(',').map(p => p.trim());
+    // 2. Binary string format (1010101) — MUST run before numeric parsing so '0000001'
+    // (Sunday only) is not parsed as single number 1 (Monday).
+    const cleanInput = input.replace(/\s+/g, '').replace(/,/g, '');
+    if (cleanInput.match(/^[01]{7}$/)) {
+        const raw = cleanInput.split('').map(Number);
+        // IRCTC gives [Mon, Tue, Wed, Thu, Fri, Sat, Sun]
+        // We need [Sun, Mon, Tue, Wed, Thu, Fri, Sat]
+        return [raw[6], raw[0], raw[1], raw[2], raw[3], raw[4], raw[5]];
+    }
+    // 3. Y/N format (YYNYNNN)
+    if (cleanInput.match(/^[yn]{7}$/)) {
+        const raw = cleanInput.split('').map(char => char === 'y' ? 1 : 0);
+        // IRCTC gives [Mon, Tue, Wed, Thu, Fri, Sat, Sun]
+        // We need [Sun, Mon, Tue, Wed, Thu, Fri, Sat]
+        return [raw[6], raw[0], raw[1], raw[2], raw[3], raw[4], raw[5]];
+    }
+    // 4. Numeric format (0,1,2,3,4,5,6 or 1, 2, 3)
+    const numericParts = input.includes(',') ? input.split(',').map(p => p.trim()) : (input.length === 1 ? [input] : []);
     let foundNumeric = false;
     for (const part of numericParts) {
         const num = parseInt(part, 10);
@@ -38,7 +54,7 @@ function normalizeRunningDays(days) {
     if (foundNumeric) {
         return binary;
     }
-    // 3. Text format (Mon, Tue, Wed, Sun, etc.)
+    // 5. Text format (Mon, Tue, Wed, Sun, etc.)
     const dayMap = {
         'sun': 0, 'sunday': 0,
         'mon': 1, 'monday': 1,
@@ -63,21 +79,6 @@ function normalizeRunningDays(days) {
     }
     if (foundText)
         return binary;
-    // 4. Binary string format (1010101)
-    const cleanInput = input.replace(/\s+/g, '').replace(/,/g, '');
-    if (cleanInput.match(/^[01]{7}$/)) {
-        const raw = cleanInput.split('').map(Number);
-        // IRCTC gives [Mon, Tue, Wed, Thu, Fri, Sat, Sun]
-        // We need [Sun, Mon, Tue, Wed, Thu, Fri, Sat]
-        return [raw[6], raw[0], raw[1], raw[2], raw[3], raw[4], raw[5]];
-    }
-    // 5. Y/N format (YYNYNNN)
-    if (cleanInput.match(/^[yn]{7}$/)) {
-        const raw = cleanInput.split('').map(char => char === 'y' ? 1 : 0);
-        // IRCTC gives [Mon, Tue, Wed, Thu, Fri, Sat, Sun]
-        // We need [Sun, Mon, Tue, Wed, Thu, Fri, Sat]
-        return [raw[6], raw[0], raw[1], raw[2], raw[3], raw[4], raw[5]];
-    }
     return null;
 }
 /**
@@ -226,10 +227,11 @@ function trainOperatesOnDate(serviceDate, runningDays, options = {}) {
     const isDailyPlaceholder = lower === 'daily' ||
         lower === 'all days' ||
         lower === '0,1,2,3,4,5,6' ||
+        lower === '1111111' ||
         lower.includes('all');
     if (isDailyPlaceholder && options.runningDaysAuthoritative === false) {
         // A window already authorises the date when present; otherwise a stale
-        // 'Daily' placeholder proves nothing and must not become YES.
+        // 'Daily' / all-days placeholder proves nothing and must not become YES.
         return windowFrom && windowTo ? 'YES' : 'UNKNOWN';
     }
     const binary = normalizeRunningDays(rd);

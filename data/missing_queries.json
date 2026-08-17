@@ -92,27 +92,27 @@
     "created_at": "2026-06-14T09:03:15.900955+00:00"
   },
   {
-    "id": "edaf6ccb-79dc-41ad-a305-027b6b9fe1fd",
+    "id": "b629bb1f-0fc0-4436-a2e4-a9748cc42130",
     "source": "BCT",
-    "destination": "AII",
-    "date": "60720-02-20",
-    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
-    "count": 1,
-    "last_seen": "2026-06-15T05:48:17.312+00:00",
+    "destination": "HWH",
+    "date": "2026-07-14",
+    "user_id": "646baefd-79e3-49cc-9b8a-2597f177b4ab",
+    "count": 2,
+    "last_seen": "2026-08-08T06:21:16.175+00:00",
     "gpt_suggestion": {
-      "reason": "The route from BCT to AII requires a split journey via KYN, which is a major junction that connects various routes. Train 12903 (Mumbai to Jaipur) and Train 12904 (Jaipur to Mumbai) can be utilized for this journey, providing a feasible connection between the two stations.",
+      "reason": "The route from BCT (Bandra Terminus) to HWH (Howrah) can be effectively served by splitting the journey at KYN (Kalyan Junction), which is a major junction with multiple connecting trains. The suggested train numbers provide a feasible connection between these stations, ensuring a smooth transit.",
       "trainNos": [
-        "12903",
-        "12904"
+        "12951",
+        "12345"
       ],
-      "confidence": "MEDIUM",
-      "trainAlias": "AII",
+      "confidence": "HIGH",
+      "trainAlias": "N/A",
       "candidateHub": "KYN",
-      "stationAlias": "AII",
-      "candidateRoute": "BCT -> KYN -> AII"
+      "stationAlias": "BCT",
+      "candidateRoute": "BCT -> KYN -> HWH"
     },
     "status": "pending",
-    "created_at": "2026-06-15T05:48:17.350415+00:00"
+    "created_at": "2026-07-02T16:27:43.753279+00:00"
   },
   {
     "id": "7f28996d-1e98-4ded-9f4d-696d1ecee18d",
@@ -184,27 +184,27 @@
     "created_at": "2026-07-02T16:27:34.671317+00:00"
   },
   {
-    "id": "b629bb1f-0fc0-4436-a2e4-a9748cc42130",
+    "id": "edaf6ccb-79dc-41ad-a305-027b6b9fe1fd",
     "source": "BCT",
-    "destination": "HWH",
-    "date": "2026-07-14",
-    "user_id": "646baefd-79e3-49cc-9b8a-2597f177b4ab",
-    "count": 1,
-    "last_seen": "2026-07-02T16:27:42.909+00:00",
+    "destination": "AII",
+    "date": "60720-02-20",
+    "user_id": "087df692-d510-4c38-9d95-d2d8e0f9cad4",
+    "count": 3,
+    "last_seen": "2026-08-08T06:35:38.63+00:00",
     "gpt_suggestion": {
-      "reason": "The route from BCT (Bandra Terminus) to HWH (Howrah) can be effectively served by splitting the journey at KYN (Kalyan Junction), which is a major junction with multiple connecting trains. The suggested train numbers provide a feasible connection between these stations, ensuring a smooth transit.",
+      "reason": "The route from BCT to AII requires a split journey via KYN, which is a major junction that connects various routes. Train 12903 (Mumbai to Jaipur) and Train 12904 (Jaipur to Mumbai) can be utilized for this journey, providing a feasible connection between the two stations.",
       "trainNos": [
-        "12951",
-        "12345"
+        "12903",
+        "12904"
       ],
-      "confidence": "HIGH",
-      "trainAlias": "N/A",
+      "confidence": "MEDIUM",
+      "trainAlias": "AII",
       "candidateHub": "KYN",
-      "stationAlias": "BCT",
-      "candidateRoute": "BCT -> KYN -> HWH"
+      "stationAlias": "AII",
+      "candidateRoute": "BCT -> KYN -> AII"
     },
     "status": "pending",
-    "created_at": "2026-07-02T16:27:43.753279+00:00"
+    "created_at": "2026-06-15T05:48:17.350415+00:00"
   },
   {
     "id": "92f92e9e-d8c2-4503-854d-670ba5da9363",
@@ -368,6 +368,42 @@
     "created_at": "2026-07-07T05:16:17.357982+00:00"
   },
   {
+    "id": "19deead2-3fed-4f2f-8e46-57e244e2b2d4",
+    "source": "LTT",
+    "destination": "TEN",
+    "date": "2026-08-17",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-08-08T06:21:18.234+00:00",
+    "gpt_suggestion": null,
+    "status": "pending",
+    "created_at": "2026-08-08T06:21:16.242898+00:00"
+  },
+  {
+    "id": "54959ba6-6c1e-4ebf-9803-de4830c71461",
+    "source": "CSMT",
+    "destination": "AII",
+    "date": "2026-08-19",
+    "user_id": null,
+    "count": 3,
+    "last_seen": "2026-08-08T06:41:01.764+00:00",
+    "gpt_suggestion": null,
+    "status": "pending",
+    "created_at": "2026-08-04T06:24:09.644208+00:00"
+  },
+  {
+    "id": "ac9c03e2-938c-4ac7-9f81-61e2dedeeec4",
+    "source": "MUMBAI CSMT",
+    "destination": "AJMER",
+    "date": "2026-08-17",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-08-13T16:52:58.477+00:00",
+    "gpt_suggestion": null,
+    "status": "pending",
+    "created_at": "2026-08-13T16:52:59.607824+00:00"
+  },
+  {
     "id": "86c29d51-6cbd-475a-af75-b602d4fdbd62",
     "source": "CSMT",
     "destination": "GOA",
@@ -436,5 +472,89 @@
     "gpt_suggestion": null,
     "status": "pending",
     "created_at": "2026-07-14T07:06:06.59458+00:00"
+  },
+  {
+    "id": "284786a5-393c-4e49-b32b-99ceef80aa37",
+    "source": "PUNE",
+    "destination": "JODH",
+    "date": "2026-07-23",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-21T11:54:19.974+00:00",
+    "gpt_suggestion": null,
+    "status": "pending",
+    "created_at": "2026-07-21T11:54:19.984765+00:00"
+  },
+  {
+    "id": "ef69969e-7074-4016-a999-25e86981c4e7",
+    "source": "LANSDOWNE",
+    "destination": "FIROZABAD (FZD)",
+    "date": "2026-07-25",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-07-24T12:45:35.67+00:00",
+    "gpt_suggestion": null,
+    "status": "pending",
+    "created_at": "2026-07-24T12:45:35.668414+00:00"
+  },
+  {
+    "id": "00b91a15-d228-4907-acd3-1ade5a327368",
+    "source": "INDO",
+    "destination": "SEC",
+    "date": "2026-08-15",
+    "user_id": null,
+    "count": 2,
+    "last_seen": "2026-07-26T10:00:12.381+00:00",
+    "gpt_suggestion": null,
+    "status": "pending",
+    "created_at": "2026-07-25T17:38:02.340621+00:00"
+  },
+  {
+    "id": "dbd30a83-9fbc-4172-8b7e-be7d6a81b270",
+    "source": "BCT",
+    "destination": "JP",
+    "date": "2026-08-17",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-08-08T06:20:56.608+00:00",
+    "gpt_suggestion": null,
+    "status": "pending",
+    "created_at": "2026-08-08T06:20:54.613405+00:00"
+  },
+  {
+    "id": "4742b4ae-2a57-4046-8d5c-f2c7cca576c2",
+    "source": "BCT",
+    "destination": "HW",
+    "date": "2026-08-17",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-08-08T06:21:15.632+00:00",
+    "gpt_suggestion": null,
+    "status": "pending",
+    "created_at": "2026-08-08T06:21:13.676951+00:00"
+  },
+  {
+    "id": "bc9d0d9e-efca-4493-ada0-f8e5876bf596",
+    "source": "BENG",
+    "destination": "NDLS",
+    "date": "2026-08-17",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-08-14T07:09:20.212+00:00",
+    "gpt_suggestion": null,
+    "status": "pending",
+    "created_at": "2026-08-14T07:09:20.216634+00:00"
+  },
+  {
+    "id": "bc0fae0e-bb4a-4647-b79a-793ef77b7ea2",
+    "source": "TESTSRC",
+    "destination": "TESTDEST",
+    "date": "2026-08-20",
+    "user_id": null,
+    "count": 1,
+    "last_seen": "2026-08-16T05:12:05.397+00:00",
+    "gpt_suggestion": null,
+    "status": "pending",
+    "created_at": "2026-08-16T05:12:04.461509+00:00"
   }
 ]

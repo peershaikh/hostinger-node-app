@@ -7,6 +7,7 @@ import { railRadarService } from './railRadarService';
 import { rankingService } from './rankingService';
 import { rapidApiService } from './rapidApiService';
 import { providerConfigService } from './providerConfigService';
+import { railProviderResolver } from './railProviderResolver';
 import { stationService } from './stationService';
 import { cacheService } from './cacheService';
 
@@ -51,18 +52,10 @@ class TrainService {
       };
     }
 
-    // Pre-warm provider enable cache (10s TTL) before sequential fallback chain
-    await Promise.all([
-      providerConfigService.isProviderEnabled('IRCTC'),
-      providerConfigService.isProviderEnabled('RAILRADAR'),
-      providerConfigService.isProviderEnabled('RAPIDAPI'),
-    ]);
-
     let sourceUsed = 'DB';
     let apiUsed = 'DB';
     let dataSource = 'DATABASE';
     let directResults: any[] = [];
-    // PHASE_4C931 TASK 2: track whether any live provider was attempted and succeeded
     let anyProviderAttempted = false;
     let anyProviderSucceeded = false;
     const providerAttempted: string[] = [];
@@ -88,47 +81,26 @@ class TrainService {
     // Fire DB search concurrently to use as a baseline for detecting cancelled trains
     const dbPromise = withTimeout(dbService.searchTrains(sCode, dCode, searchDate), 5000).catch(() => []);
 
-    // 1. IRCTC primary
-    const irctcGuard = await providerConfigService.isProviderEnabled('IRCTC');
-    if (irctcGuard.enabled) {
-      anyProviderAttempted = true;
-      providerAttempted.push('IRCTC');
-      const irctcResult = await tryFetch('IRCTC', async () => irctcService.search(sCode, dCode, searchDate));
-      if (irctcResult) {
-        winstonLogger.info('[TRAIN_SERVICE] IRCTC returned results');
-        sourceUsed = 'IRCTC';
-        apiUsed = 'IRCTC';
-        dataSource = 'LIVE';
-        directResults = irctcResult as any[];
-        anyProviderSucceeded = true;
-      }
-    } else {
-      const skipLabel = (irctcGuard.reason === 'PROVIDER_UNHEALTHY' || irctcGuard.reason === 'CIRCUIT_BREAKER_BLOCKED')
-        ? '[PROVIDER_SKIPPED_UNHEALTHY]'
-        : '[PROVIDER_SKIPPED_DISABLED]';
-      winstonLogger.info(`${skipLabel} IRCTC | Reason: ${irctcGuard.reason}`);
-    }
+    // Resolve active candidate search providers dynamically based on Admin configuration and capabilities
+    const searchChain = await railProviderResolver.resolveProviderChain('search');
 
-    // 2. RailRadar fallback
-    if (!directResults.length) {
-      const rrGuard = await providerConfigService.isProviderEnabled('RAILRADAR');
-      if (rrGuard.enabled) {
-        anyProviderAttempted = true;
-        providerAttempted.push('RAILRADAR');
-        const railRadarResult = await tryFetch('RailRadar', async () => railRadarService.search(sCode, dCode, searchDate));
-        if (railRadarResult) {
-          winstonLogger.info('[TRAIN_SERVICE] RailRadar returned results');
-          sourceUsed = 'RAILRADAR';
-          apiUsed = 'RAILRADAR';
-          dataSource = 'LIVE';
-          directResults = railRadarResult as any[];
-          anyProviderSucceeded = true;
-        }
-      } else {
-        const skipLabel = (rrGuard.reason === 'PROVIDER_UNHEALTHY' || rrGuard.reason === 'CIRCUIT_BREAKER_BLOCKED')
-          ? '[PROVIDER_SKIPPED_UNHEALTHY]'
-          : '[PROVIDER_SKIPPED_DISABLED]';
-        winstonLogger.info(`${skipLabel} RAILRADAR | Reason: ${rrGuard.reason}`);
+    for (const provider of searchChain) {
+      if (provider.providerId === 'DATABASE') continue; // Database is handled in the terminal fallback step
+
+      anyProviderAttempted = true;
+      providerAttempted.push(provider.providerId);
+      const provResult = await tryFetch(provider.providerId, async () => 
+        provider.searchTrains({ from: sCode, to: dCode, date: searchDate })
+      );
+
+      if (provResult && provResult.length > 0) {
+        winstonLogger.info(`[TRAIN_SERVICE] ${provider.providerId} returned results`);
+        sourceUsed = provider.providerId;
+        apiUsed = provider.providerId;
+        dataSource = 'LIVE';
+        directResults = provResult as any[];
+        anyProviderSucceeded = true;
+        break;
       }
     }
 

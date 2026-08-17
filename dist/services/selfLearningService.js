@@ -33,7 +33,7 @@ class SelfLearningService {
     }
     ensureDataDir() {
         if (!fs_1.default.existsSync(DATA_DIR)) {
-            fs_1.default.mkdirSync(DATA_DIR, { recursive: true });
+            (0, supabase_1.safeMkdirSync)(DATA_DIR, { recursive: true });
         }
     }
     getFilePath(filename) {
@@ -70,7 +70,8 @@ class SelfLearningService {
     saveLocalData(filename, data) {
         try {
             const filePath = this.getFilePath(filename);
-            fs_1.default.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+            // PHASE 5B136: suppressed when LOCAL_E2E_NO_WRITE=true (existing file untouched)
+            (0, supabase_1.safeWriteFileSync)(filePath, JSON.stringify(data, null, 2), 'utf8');
         }
         catch (err) {
             logger_1.winstonLogger.error(`[SELF_LEARNING] Failed to save local file ${filename}: ${err.message}`);
@@ -218,6 +219,22 @@ class SelfLearningService {
             this.missingQueries.push(existing);
         }
         this.saveLocalData('missing_queries.json', this.missingQueries);
+        // Telemetry Integration
+        try {
+            const { universalEventEmitter } = require('./universalEventEmitter');
+            const { UniversalEventNames } = require('../constants/eventTaxonomy');
+            universalEventEmitter.emit({
+                eventName: UniversalEventNames.MISSING_ROUTE_DETECTED,
+                searchId: dbId,
+                userId: userId || undefined,
+                mode: 'rail',
+                route: `${cleanSource}-${cleanDestination}`,
+                metadata: { source: cleanSource, destination: cleanDestination, date, query_id: dbId }
+            });
+        }
+        catch {
+            // Non-blocking telemetry
+        }
         // Supabase Dual Write
         if ((0, supabase_1.isSupabaseConfigured)()) {
             try {
@@ -304,6 +321,22 @@ class SelfLearningService {
             this.missingRoutes.push(existing);
         }
         this.saveLocalData('missing_routes.json', this.missingRoutes);
+        // Telemetry Integration
+        try {
+            const { universalEventEmitter } = require('./universalEventEmitter');
+            const { UniversalEventNames } = require('../constants/eventTaxonomy');
+            universalEventEmitter.emit({
+                eventName: UniversalEventNames.MISSING_ROUTE_DETECTED,
+                searchId: dbId,
+                userId: userId || undefined,
+                mode: 'rail',
+                route: `${cleanSource}-${cleanDestination}`,
+                metadata: { source: cleanSource, destination: cleanDestination, query_id: dbId }
+            });
+        }
+        catch {
+            // Non-blocking telemetry
+        }
         if ((0, supabase_1.isSupabaseConfigured)()) {
             try {
                 const { data, error } = await supabase_1.supabase
@@ -418,6 +451,21 @@ class SelfLearningService {
             this.missingStations.push(existing);
         }
         this.saveLocalData('missing_stations.json', this.missingStations);
+        // Telemetry Integration
+        try {
+            const { universalEventEmitter } = require('./universalEventEmitter');
+            const { UniversalEventNames } = require('../constants/eventTaxonomy');
+            universalEventEmitter.emit({
+                eventName: UniversalEventNames.MISSING_STATION_DETECTED,
+                searchId: dbId,
+                userId: userId || undefined,
+                mode: 'rail',
+                metadata: { query: cleanQuery, query_id: dbId }
+            });
+        }
+        catch {
+            // Non-blocking telemetry
+        }
         if ((0, supabase_1.isSupabaseConfigured)()) {
             try {
                 const { data, error } = await supabase_1.supabase
@@ -460,7 +508,7 @@ class SelfLearningService {
         try {
             const pnrFailuresFile = this.getFilePath('pnr_failures.jsonl');
             const logEntry = JSON.stringify({ pnr: cleanPnr, user_id: userId, timestamp }) + '\n';
-            fs_1.default.appendFileSync(pnrFailuresFile, logEntry, 'utf8');
+            (0, supabase_1.safeAppendFileSync)(pnrFailuresFile, logEntry, 'utf8');
             logger_1.winstonLogger.info(`[SELF_LEARNING] Logged failed PNR lookup: ${cleanPnr}`);
         }
         catch (err) {

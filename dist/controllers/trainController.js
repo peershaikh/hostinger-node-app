@@ -16,6 +16,8 @@ const selfLearningService_1 = require("../services/selfLearningService");
 const knowledgeMetricsService_1 = require("../services/knowledgeMetricsService");
 const rankingService_1 = require("../services/rankingService");
 const segmentAvailabilityEngine_1 = require("../services/segmentAvailabilityEngine");
+const providerConfigService_1 = require("../services/providerConfigService");
+const booking_1 = require("../services/booking");
 class TrainController {
     constructor() {
         /**
@@ -87,14 +89,30 @@ class TrainController {
                     knowledgeMetricsService_1.knowledgeMetricsService.recordDuplicateSplitPrevented();
                     const rawSplits = results.split || results.smart_routes || [];
                     const mergedSplits = rawSplits;
-                    // Deduplicate splits
+                    // Deduplicate splits using full route identity so distinct dates,
+                    // endpoints, and times never collapse into one candidate.
                     const seen = new Set();
                     const uniqueSplits = mergedSplits.filter((s) => {
                         if (!s)
                             return false;
-                        const leg1No = s.leg1?.trainNo || s.legs?.[0]?.trainNo || '';
-                        const leg2No = s.leg2?.trainNo || s.legs?.[1]?.trainNo || '';
-                        const key = `${s.hub}_${leg1No}_${leg2No}_${s.leg1?.departure || ''}`;
+                        const leg1 = s.leg1 || s.legs?.[0] || {};
+                        const leg2 = s.leg2 || s.legs?.[1] || {};
+                        const hub = s.hub || s.via || '';
+                        const key = [
+                            hub,
+                            leg1.trainNo || '',
+                            leg1.fromCode || leg1.from || '',
+                            leg1.toCode || leg1.to || '',
+                            leg1.travelDate || leg1.journeyDate || '',
+                            leg1.departure || '',
+                            leg1.arrival || '',
+                            leg2.trainNo || '',
+                            leg2.fromCode || leg2.from || '',
+                            leg2.toCode || leg2.to || '',
+                            leg2.travelDate || leg2.journeyDate || '',
+                            leg2.departure || '',
+                            leg2.arrival || '',
+                        ].join('|');
                         if (seen.has(key))
                             return false;
                         seen.add(key);
@@ -102,6 +120,9 @@ class TrainController {
                     });
                     const rankedSplits = rankingService_1.rankingService.rankTrains(uniqueSplits);
                     finalSplits = rankedSplits.slice(0, 5); // NEVER more than 5
+                    if (!providerConfigService_1.providerConfigService.isInterStationTransfersEnabled()) {
+                        finalSplits = finalSplits.map(({ transferMeta, ...rest }) => rest);
+                    }
                     logger_1.winstonLogger.info(`[CONTROLLER] Split results: ${finalSplits.length}`);
                     knowledgeMetricsService_1.knowledgeMetricsService.endSearchContext();
                 }
@@ -260,14 +281,30 @@ class TrainController {
                         ? splitResult
                         : (splitResult?.split || splitResult?.smart_routes || []);
                     const mergedSplits = rawSplits;
-                    // Deduplicate splits
+                    // Deduplicate splits using full route identity so distinct dates,
+                    // endpoints, and times never collapse into one candidate.
                     const seen = new Set();
                     const uniqueSplits = mergedSplits.filter((s) => {
                         if (!s)
                             return false;
-                        const leg1No = s.leg1?.trainNo || s.legs?.[0]?.trainNo || '';
-                        const leg2No = s.leg2?.trainNo || s.legs?.[1]?.trainNo || '';
-                        const key = `${s.hub}_${leg1No}_${leg2No}_${s.leg1?.departure || ''}`;
+                        const leg1 = s.leg1 || s.legs?.[0] || {};
+                        const leg2 = s.leg2 || s.legs?.[1] || {};
+                        const hub = s.hub || s.via || '';
+                        const key = [
+                            hub,
+                            leg1.trainNo || '',
+                            leg1.fromCode || leg1.from || '',
+                            leg1.toCode || leg1.to || '',
+                            leg1.travelDate || leg1.journeyDate || '',
+                            leg1.departure || '',
+                            leg1.arrival || '',
+                            leg2.trainNo || '',
+                            leg2.fromCode || leg2.from || '',
+                            leg2.toCode || leg2.to || '',
+                            leg2.travelDate || leg2.journeyDate || '',
+                            leg2.departure || '',
+                            leg2.arrival || '',
+                        ].join('|');
                         if (seen.has(key))
                             return false;
                         seen.add(key);
@@ -304,6 +341,9 @@ class TrainController {
                     }
                     else {
                         finalSplits = slicedSplits;
+                    }
+                    if (!providerConfigService_1.providerConfigService.isInterStationTransfersEnabled()) {
+                        finalSplits = finalSplits.map(({ transferMeta, ...rest }) => rest);
                     }
                     const execTime = Date.now() - execStart;
                     knowledgeMetricsService_1.knowledgeMetricsService.recordSearchLatency(execTime, `${source}→${destination}`);
@@ -585,7 +625,7 @@ class TrainController {
                     const deviceId = req.headers['x-device-id'] || 'anonymous';
                     await learningService.logSearch(source.toUpperCase().trim(), destination.toUpperCase().trim(), journeyDate, deviceId, userId, rescueOptions.length, Date.now() - startTime);
                     for (const option of rescueOptions) {
-                        const recId = await learningService.logSplitRecommendation(source.toUpperCase().trim(), destination.toUpperCase().trim(), option.hub, option.bufferMinutes || 0, option.totalDuration || 0, option.score || 95);
+                        const recId = await learningService.logSplitRecommendation(source.toUpperCase().trim(), destination.toUpperCase().trim(), option.hub, option.bufferMinutes || 0, option.totalDuration || 0, option.score || 95, option.transferMeta);
                         if (recId) {
                             option.recommendation_id = recId;
                         }
@@ -693,24 +733,19 @@ class TrainController {
                         logger_1.winstonLogger.error(`[RESCUE_REDIRECT] Failed to update telemetry for id ${id}: ${dbErr.message}`);
                     }
                 }
-                // Construct target IRCTC URL
-                let irctcUrl = `https://www.irctc.co.in/nget/train-search?fromStation=${encodeURIComponent(fromStation)}&toStation=${encodeURIComponent(toStation)}&trainNo=${encodeURIComponent(trainNo)}&journeyDate=${encodeURIComponent(journeyDate)}`;
-                // PHASE_4C823 — Partner Attribution (feature-flagged, additive only)
-                if (featureFlags_1.featureFlags.partnerAttribution) {
-                    const partnerId = req.query.partnerId;
-                    const campaignId = req.query.campaignId;
-                    const utmSource = req.query.source;
-                    const utmMedium = req.query.medium;
-                    if (partnerId)
-                        irctcUrl += `&partner_id=${encodeURIComponent(partnerId)}`;
-                    if (campaignId)
-                        irctcUrl += `&campaign_id=${encodeURIComponent(campaignId)}`;
-                    if (utmSource)
-                        irctcUrl += `&utm_source=${encodeURIComponent(utmSource)}`;
-                    if (utmMedium)
-                        irctcUrl += `&utm_medium=${encodeURIComponent(utmMedium)}`;
-                }
-                return res.redirect(302, irctcUrl);
+                // Generate booking URL via BookingProviderResolver
+                const bookingResult = await booking_1.bookingProviderResolver.generateBookingUrl({
+                    fromStation,
+                    toStation,
+                    trainNo,
+                    journeyDate,
+                    partnerId: featureFlags_1.featureFlags.partnerAttribution ? req.query.partnerId : undefined,
+                    campaignId: featureFlags_1.featureFlags.partnerAttribution ? req.query.campaignId : undefined,
+                    utmSource: featureFlags_1.featureFlags.partnerAttribution ? req.query.source : 'trayago',
+                    medium: featureFlags_1.featureFlags.partnerAttribution ? req.query.medium : undefined,
+                    interactionId: id
+                });
+                return res.redirect(302, bookingResult.url);
             }
             catch (err) {
                 logger_1.winstonLogger.error(`[RESCUE_REDIRECT] Redirect failed: ${err.message}`);

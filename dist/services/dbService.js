@@ -16,7 +16,7 @@ class DbService {
                 .limit(50);
             if (!error && data && data.length > 0) {
                 logger_1.winstonLogger.info(`[DB_SEARCH] Direct row match ${sourceCode} -> ${destinationCode}: ${data.length}`);
-                return this.normalizeDirectRows(data, sourceCode, destinationCode, date);
+                return this.enrichWithRunningDays(this.normalizeDirectRows(data, sourceCode, destinationCode, date));
             }
         }
         catch (err) {
@@ -31,7 +31,7 @@ class DbService {
                 .limit(50);
             if (!error && data && data.length > 0) {
                 logger_1.winstonLogger.info(`[DB_SEARCH] Alternate direct row match ${sourceCode} -> ${destinationCode}: ${data.length}`);
-                return this.normalizeDirectRows(data, sourceCode, destinationCode, date);
+                return this.enrichWithRunningDays(this.normalizeDirectRows(data, sourceCode, destinationCode, date));
             }
         }
         catch (err) {
@@ -44,15 +44,15 @@ class DbService {
             if (sourceCode === 'CSMT' && destinationCode !== 'CSMT') {
                 const retried = await this.searchLegacySchedule('CSTM', destinationCode, date);
                 if (retried.length > 0)
-                    return retried;
+                    return this.enrichWithRunningDays(retried);
             }
             else if (destinationCode === 'CSMT' && sourceCode !== 'CSMT') {
                 const retried = await this.searchLegacySchedule(sourceCode, 'CSTM', date);
                 if (retried.length > 0)
-                    return retried;
+                    return this.enrichWithRunningDays(retried);
             }
         }
-        return results;
+        return this.enrichWithRunningDays(results);
     }
     normalizeStationCode(code) {
         const match = code.match(/\(([^)]+)\)/);
@@ -159,7 +159,6 @@ class DbService {
             return;
         try {
             const trainPayloads = [];
-            const stopsPayloads = [];
             for (const t of trainArray) {
                 const trainNo = (t.trainNo || t.train_number || t.number)?.toString();
                 if (!trainNo)
@@ -169,60 +168,9 @@ class DbService {
                     name: t.name || t.train_name || undefined,
                     type: t.type || t.train_type || 'Express',
                 });
-                const journeyDate = t.travelDate || t.date || new Date().toISOString().split('T')[0];
-                const source = t.source || t.from_station_name || t.fromStationCode || '';
-                const destination = t.destination || t.to_station_name || t.toStationCode || '';
-                if (!source || !destination)
-                    continue;
-                stopsPayloads.push({
-                    Train_No: trainNo,
-                    Station_Code: source.split('-')[0].trim().toUpperCase(),
-                    Station_Name: source,
-                    Arrival_time: '00:00:00',
-                    Departure_Time: t.departure || '00:00:00',
-                    Journey_Date: journeyDate,
-                    SN: 1,
-                    Route_Number: 1
-                });
-                stopsPayloads.push({
-                    Train_No: trainNo,
-                    Station_Code: destination.split('-')[0].trim().toUpperCase(),
-                    Station_Name: destination,
-                    Arrival_time: t.arrival || '00:00:00',
-                    Departure_Time: '00:00:00',
-                    Journey_Date: journeyDate,
-                    SN: 99,
-                    Route_Number: 1
-                });
             }
             if (trainPayloads.length > 0) {
                 await supabase_1.supabase.from('trains').upsert(trainPayloads, { onConflict: 'number' });
-            }
-            if (stopsPayloads.length > 0) {
-                const trainNos = [...new Set(stopsPayloads.map(s => s.Train_No))];
-                const chunkedTrainNos = [];
-                for (let i = 0; i < trainNos.length; i += 100) {
-                    chunkedTrainNos.push(trainNos.slice(i, i + 100));
-                }
-                let existingStops = [];
-                for (const chunk of chunkedTrainNos) {
-                    const { data } = await supabase_1.supabase
-                        .from('train_schedule')
-                        .select('id, Train_No, Station_Code, Journey_Date')
-                        .in('Train_No', chunk);
-                    if (data)
-                        existingStops = existingStops.concat(data);
-                }
-                const existingMap = new Map();
-                existingStops.forEach(s => {
-                    existingMap.set(`${s.Train_No}_${s.Station_Code}_${s.Journey_Date}`, s.id);
-                });
-                const upsertPayloads = stopsPayloads.map(stop => {
-                    const key = `${stop.Train_No}_${stop.Station_Code}_${stop.Journey_Date}`;
-                    const existingId = existingMap.get(key);
-                    return existingId ? { ...stop, id: existingId } : stop;
-                });
-                await supabase_1.supabase.from('train_schedule').upsert(upsertPayloads);
             }
         }
         catch (e) {
@@ -358,6 +306,54 @@ class DbService {
             };
         });
     }
+    /**
+     * PHASE_5B146 — PAN-INDIA GENERIC running_days hydration.
+     *
+     * Batch-fetches running_days from the authoritative `trains` table for every
+     * train number in the result set and merges it into each result object.
+     *
+     * This mirrors exactly what trainService.searchDirect() does at lines 376-379:
+     *   supabase.from('trains').select('number, name, type, running_days').in('number', trainNumbers)
+     *
+     * Called at every return point of searchTrains() so the split engine's DB fallback
+     * path carries the same running_days metadata that the direct search path already has.
+     *
+     * Failure behaviour: returns input unmodified (fail-open at the fetch level).
+     * isTrainActive() will allow trains with missing metadata — same as direct path.
+     */
+    async enrichWithRunningDays(results) {
+        if (!results || results.length === 0)
+            return results;
+        const trainNumbers = [
+            ...new Set(results.map(r => String(r.trainNo || r.number || '')).filter(Boolean)),
+        ];
+        if (trainNumbers.length === 0)
+            return results;
+        try {
+            const { data } = await supabase_1.supabase
+                .from('trains')
+                .select('number, running_days')
+                .in('number', trainNumbers);
+            if (!data || data.length === 0)
+                return results;
+            const metaMap = new Map(data.map((row) => [String(row.number), row]));
+            return results.map(r => {
+                const trainNo = String(r.trainNo || r.number || '');
+                const meta = metaMap.get(trainNo);
+                if (!meta)
+                    return r;
+                const updated = { ...r };
+                if (meta.running_days !== undefined && meta.running_days !== null && !r.running_days && !r.runningDays) {
+                    updated.running_days = meta.running_days;
+                }
+                return updated;
+            });
+        }
+        catch (err) {
+            logger_1.winstonLogger.debug(`[DB_SEARCH] enrichWithRunningDays silently failed: ${err?.message}`);
+            return results; // Fail open — return unmodified
+        }
+    }
     async searchLegacySchedule(from, to, date) {
         try {
             const [sourceStops, destStops] = await Promise.all([
@@ -390,7 +386,7 @@ class DbService {
             ];
             const { data: trainMeta } = await supabase_1.supabase
                 .from('trains')
-                .select('number, name, type')
+                .select('number, name, type, running_days')
                 .in('number', trainNumbers);
             const trainMetaMap = new Map((trainMeta || []).map((row) => [String(row.number), row]));
             const destMap = new Map();
@@ -421,6 +417,7 @@ class DbService {
                         fromStationCode: sourceRow.Station_Code || from,
                         toStationCode: destRow.Station_Code || to,
                         travelDate: date,
+                        running_days: meta?.running_days || undefined,
                         _rawCategory: 'direct',
                         _isLive: false,
                     });

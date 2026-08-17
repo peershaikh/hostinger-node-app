@@ -42,7 +42,7 @@ class PaymentService {
     }
     saveTransactions() {
         try {
-            fs_1.default.writeFileSync(TXN_FILE, JSON.stringify(this.transactions, null, 2));
+            (0, supabase_1.safeWriteFileSync)(TXN_FILE, JSON.stringify(this.transactions, null, 2));
         }
         catch (e) {
             logger_1.winstonLogger.error("Error saving transactions:", e);

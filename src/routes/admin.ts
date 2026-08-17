@@ -5,6 +5,10 @@ import { requireAdmin } from '../middleware/adminAuth';
 import { adminLimiter, diagnosticsLimiter, cacheClearLimiter } from '../middleware/rateLimiter';
 import providersRouter from './providers';
 import ratesRouter from './rates';
+import bulkAdminRouter from './bulkAdmin';
+import featureFlagAdminRouter from './featureFlagAdmin';
+import bookingAdminRouter from './bookingAdmin';
+import aiAdminRouter from './aiAdmin';
 // ── Phase 10.8.42 additions (T2/T3/T4) ──────────────────────────────────────
 import { eventMetrics } from '../services/eventMetrics';
 import { userCache } from '../cache/userCache';
@@ -105,10 +109,20 @@ router.post('/users/bulk-block', adminLimiter as any, requireAdmin as any, admin
 router.post('/users/bulk-unblock', adminLimiter as any, requireAdmin as any, adminController.bulkUnblockUsers.bind(adminController));
 router.post('/users/:id/terminate-sessions', adminLimiter as any, requireAdmin as any, adminController.terminateUserSessions.bind(adminController));
 router.post('/users/:id/adjust-credits', adminLimiter as any, requireAdmin as any, adminController.adjustUserCredits.bind(adminController));
+router.get('/signup-intelligence', adminLimiter as any, requireAdmin as any, adminController.getSignupIntelligence.bind(adminController));
+router.get('/learning-intelligence', adminLimiter as any, requireAdmin as any, adminController.getLearningIntelligence.bind(adminController));
+
+// ─── Safe Bulk Operations Engine (Phase 053) ────────────────────────────────
+router.use('/bulk', bulkAdminRouter);
+
+// ─── Safe Feature Flag & Kill Switch Control Center (Phase 054) ─────────────
+router.use('/feature-flags', featureFlagAdminRouter);
 
 // ─── API Provider Management ────────────────────────────────────────────────
 router.use('/providers/rates', adminLimiter as any, requireAdmin as any, ratesRouter);
 router.use('/providers', adminLimiter as any, requireAdmin as any, providersRouter);
+router.use('/booking', adminLimiter as any, requireAdmin as any, bookingAdminRouter);
+router.use('/ai', adminLimiter as any, requireAdmin as any, aiAdminRouter);
 
 // ─── Beta Codes Management ──────────────────────────────────────────────────
 router.get('/beta/codes', adminLimiter as any, requireAdmin as any, adminController.listBetaCodes.bind(adminController));

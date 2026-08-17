@@ -15,7 +15,7 @@ const PAN_INDIA_CLUSTERS = [
     ['SBC', 'YPR', 'SMVB', 'BNC', 'KSR'],
     ['SC', 'HYB', 'KCG'],
     ['PUNE', 'CCH', 'LNL'],
-    ['ADI', 'SBT', 'GNC'],
+    ['ADI', 'SBT', 'SBIB', 'GNC'],
     ['BSB', 'BSBS', 'DDU', 'MUV'],
     ['PRYJ', 'PRRB', 'NYN', 'ALD'],
     ['PNBE', 'PPTA', 'RJPB', 'DNR'],
@@ -34,6 +34,11 @@ exports.IRCTC_CANONICAL = {
     CSTM: 'CSMT',
     MMC: 'MAS',
     KSR: 'SBC',
+    // PHASE_5B037 — ADI cluster: Sabarmati / Gandhinagar Canton → Ahmedabad
+    GNC: 'ADI',
+    SBT: 'ADI',
+    // PHASE_5B037 — Bengaluru: Yeshwantpur → SBC (IRCTC canonical)
+    YPR: 'SBC',
 };
 function areStationsCompatible(code1, code2) {
     const c1 = code1.toUpperCase().trim();

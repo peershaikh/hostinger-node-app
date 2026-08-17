@@ -38,10 +38,8 @@ const supabase_1 = require("../config/supabase");
 const logger_1 = require("../middleware/logger");
 const dayUtils_1 = require("../utils/dayUtils");
 const dbService_1 = require("./dbService");
-const irctcService_1 = require("./irctcService");
-const railRadarService_1 = require("./railRadarService");
 const rankingService_1 = require("./rankingService");
-const providerConfigService_1 = require("./providerConfigService");
+const railProviderResolver_1 = require("./railProviderResolver");
 const stationService_1 = require("./stationService");
 const cacheService_1 = require("./cacheService");
 const availabilityCacheKeys_1 = require("../utils/availabilityCacheKeys");
@@ -75,17 +73,10 @@ class TrainService {
                 warning: null,
             };
         }
-        // Pre-warm provider enable cache (10s TTL) before sequential fallback chain
-        await Promise.all([
-            providerConfigService_1.providerConfigService.isProviderEnabled('IRCTC'),
-            providerConfigService_1.providerConfigService.isProviderEnabled('RAILRADAR'),
-            providerConfigService_1.providerConfigService.isProviderEnabled('RAPIDAPI'),
-        ]);
         let sourceUsed = 'DB';
         let apiUsed = 'DB';
         let dataSource = 'DATABASE';
         let directResults = [];
-        // PHASE_4C931 TASK 2: track whether any live provider was attempted and succeeded
         let anyProviderAttempted = false;
         let anyProviderSucceeded = false;
         const providerAttempted = [];
@@ -106,48 +97,22 @@ class TrainService {
         };
         // Fire DB search concurrently to use as a baseline for detecting cancelled trains
         const dbPromise = withTimeout(dbService_1.dbService.searchTrains(sCode, dCode, searchDate), 5000).catch(() => []);
-        // 1. IRCTC primary
-        const irctcGuard = await providerConfigService_1.providerConfigService.isProviderEnabled('IRCTC');
-        if (irctcGuard.enabled) {
+        // Resolve active candidate search providers dynamically based on Admin configuration and capabilities
+        const searchChain = await railProviderResolver_1.railProviderResolver.resolveProviderChain('search');
+        for (const provider of searchChain) {
+            if (provider.providerId === 'DATABASE')
+                continue; // Database is handled in the terminal fallback step
             anyProviderAttempted = true;
-            providerAttempted.push('IRCTC');
-            const irctcResult = await tryFetch('IRCTC', async () => irctcService_1.irctcService.search(sCode, dCode, searchDate));
-            if (irctcResult) {
-                logger_1.winstonLogger.info('[TRAIN_SERVICE] IRCTC returned results');
-                sourceUsed = 'IRCTC';
-                apiUsed = 'IRCTC';
+            providerAttempted.push(provider.providerId);
+            const provResult = await tryFetch(provider.providerId, async () => provider.searchTrains({ from: sCode, to: dCode, date: searchDate }));
+            if (provResult && provResult.length > 0) {
+                logger_1.winstonLogger.info(`[TRAIN_SERVICE] ${provider.providerId} returned results`);
+                sourceUsed = provider.providerId;
+                apiUsed = provider.providerId;
                 dataSource = 'LIVE';
-                directResults = irctcResult;
+                directResults = provResult;
                 anyProviderSucceeded = true;
-            }
-        }
-        else {
-            const skipLabel = (irctcGuard.reason === 'PROVIDER_UNHEALTHY' || irctcGuard.reason === 'CIRCUIT_BREAKER_BLOCKED')
-                ? '[PROVIDER_SKIPPED_UNHEALTHY]'
-                : '[PROVIDER_SKIPPED_DISABLED]';
-            logger_1.winstonLogger.info(`${skipLabel} IRCTC | Reason: ${irctcGuard.reason}`);
-        }
-        // 2. RailRadar fallback
-        if (!directResults.length) {
-            const rrGuard = await providerConfigService_1.providerConfigService.isProviderEnabled('RAILRADAR');
-            if (rrGuard.enabled) {
-                anyProviderAttempted = true;
-                providerAttempted.push('RAILRADAR');
-                const railRadarResult = await tryFetch('RailRadar', async () => railRadarService_1.railRadarService.search(sCode, dCode, searchDate));
-                if (railRadarResult) {
-                    logger_1.winstonLogger.info('[TRAIN_SERVICE] RailRadar returned results');
-                    sourceUsed = 'RAILRADAR';
-                    apiUsed = 'RAILRADAR';
-                    dataSource = 'LIVE';
-                    directResults = railRadarResult;
-                    anyProviderSucceeded = true;
-                }
-            }
-            else {
-                const skipLabel = (rrGuard.reason === 'PROVIDER_UNHEALTHY' || rrGuard.reason === 'CIRCUIT_BREAKER_BLOCKED')
-                    ? '[PROVIDER_SKIPPED_UNHEALTHY]'
-                    : '[PROVIDER_SKIPPED_DISABLED]';
-                logger_1.winstonLogger.info(`${skipLabel} RAILRADAR | Reason: ${rrGuard.reason}`);
+                break;
             }
         }
         // 4. Database fallback

@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { winstonLogger } from '../middleware/logger';
 import { providerConfigService } from './providerConfigService';
+import { railProviderResolver } from './railProviderResolver';
 import {
   mapProviderErrorToReason,
   resolveSegmentForAvailability,
@@ -77,27 +78,22 @@ export class AvailabilityProvider {
     winstonLogger.info(`[AVAIL_PROVIDER_START] train=${params.trainNo} from=${fromNorm} to=${toNorm}`);
     winstonLogger.info(`[AVAIL_PROVIDER_PARAMS] train=${params.trainNo} from=${fromNorm} to=${toNorm} date=${params.date} class=${params.classType} quota=${params.quota}`);
     
-    let irctcData: any = null;
     let irctcHandledError: any = null;
+    const availChain = await railProviderResolver.resolveProviderChain('availability');
 
-    const irctcGuard = await providerConfigService.isProviderEnabled('IRCTC');
-    if (irctcGuard.enabled) {
+    for (const provider of availChain) {
       try {
-        const { irctcService } = require('./irctcService');
-        
-        const dateToPass = params.date;
-        irctcData = await irctcService.getAvailability(
-          params.trainNo,
-          dateToPass,
-          fromNorm,
-          toNorm,
-          params.classType,
-          params.quota,
-          { bypassCache: true }
-        );
+        const provData = await provider.checkAvailability({
+          trainNo: params.trainNo,
+          from: fromNorm,
+          to: toNorm,
+          date: params.date,
+          classType: params.classType,
+          quota: params.quota
+        });
 
-        if (irctcData && typeof irctcData === 'object') {
-          if (irctcData.success === false) {
+        if (provData && typeof provData === 'object') {
+          if (provData.success === false) {
             let isDateNonRunning = false;
             try {
               const { trainOperatesOnDate } = require('../utils/dayUtils');
@@ -107,14 +103,14 @@ export class AvailabilityProvider {
               if (runningVerdict === 'NO') isDateNonRunning = true;
             } catch { /* non-fatal */ }
 
-            const providerReason = mapProviderErrorToReason(irctcData.error || '', isDateNonRunning);
-            winstonLogger.info(`[AVAIL_PROVIDER_HANDLED_ERROR] train=${params.trainNo} error=${irctcData.error} reason=${providerReason}`);
+            const providerReason = mapProviderErrorToReason(provData.error || '', isDateNonRunning);
+            winstonLogger.info(`[AVAIL_PROVIDER_HANDLED_ERROR] train=${params.trainNo} error=${provData.error} reason=${providerReason}`);
             
             const message = providerReason === 'TRAIN_NOT_RUNNING'
               ? `Train ${params.trainNo} does not run on this date`
               : providerReason === 'PROVIDER_REQUEST_REJECTED'
                 ? 'Railway servers rejected availability check for this date/class'
-                : (irctcData.error || 'Class not available in selected quota/class');
+                : (provData.error || 'Class not available in selected quota/class');
 
             irctcHandledError = {
               success: false,
@@ -122,51 +118,17 @@ export class AvailabilityProvider {
               message
             };
           } else {
-            const returnedClasses = Array.isArray(irctcData)
+            const returnedClasses = Array.isArray(provData)
               ? ['ARRAY']
-              : (typeof irctcData === 'object' ? Object.keys(irctcData) : []);
-            winstonLogger.info(`[AVAIL_PROVIDER_CLASSES_RETURNED] train=${params.trainNo} requestedClass=${params.classType} returnedClasses=${returnedClasses.join(',') || 'NONE'} source=IRCTC`);
-            winstonLogger.info(`[AVAIL_PROVIDER_SUCCESS] train=${params.trainNo} source=IRCTC`);
-            return { success: true, data: irctcData };
+              : (typeof provData === 'object' ? Object.keys(provData) : []);
+            winstonLogger.info(`[AVAIL_PROVIDER_CLASSES_RETURNED] train=${params.trainNo} requestedClass=${params.classType} returnedClasses=${returnedClasses.join(',') || 'NONE'} source=${provider.providerId}`);
+            winstonLogger.info(`[AVAIL_PROVIDER_SUCCESS] train=${params.trainNo} source=${provider.providerId}`);
+            return { success: true, data: provData };
           }
-        } else {
-          throw new Error(`IRCTC Provider returned empty or failed: ${JSON.stringify(irctcData)}`);
         }
       } catch (err: any) {
-        winstonLogger.warn(`[AVAIL_PROVIDER_FAIL] train=${params.trainNo} error=${err.message} - Trying RailRadar`);
+        winstonLogger.warn(`[AVAIL_PROVIDER_FAIL] ${provider.providerId} train=${params.trainNo} error=${err.message}`);
       }
-    } else {
-      const skipLabel = (irctcGuard.reason === 'PROVIDER_UNHEALTHY' || irctcGuard.reason === 'CIRCUIT_BREAKER_BLOCKED')
-        ? '[PROVIDER_SKIPPED_UNHEALTHY]'
-        : '[PROVIDER_SKIPPED_DISABLED]';
-      winstonLogger.info(`${skipLabel} IRCTC | Reason: ${irctcGuard.reason}`);
-    }
-
-    const rrGuard = await providerConfigService.isProviderEnabled('RAILRADAR');
-    if (rrGuard.enabled) {
-      try {
-        const { railRadarService } = require('./railRadarService');
-        const rrData = await railRadarService.getAvailability(
-          params.trainNo,
-          fromNorm,
-          toNorm,
-          params.date,
-          params.classType,
-          params.quota
-        );
-        if (rrData) {
-          const source = irctcHandledError ? 'RAILRADAR (IRCTC_FALLBACK)' : 'RAILRADAR';
-          winstonLogger.info(`[AVAIL_PROVIDER_SUCCESS] train=${params.trainNo} source=${source}`);
-          return { success: true, data: rrData };
-        }
-      } catch (rrErr: any) {
-        winstonLogger.warn(`[AVAIL_PROVIDER_RAILRADAR_FAIL] train=${params.trainNo} error=${rrErr.message}`);
-      }
-    } else {
-      const skipLabel = (rrGuard.reason === 'PROVIDER_UNHEALTHY' || rrGuard.reason === 'CIRCUIT_BREAKER_BLOCKED')
-        ? '[PROVIDER_SKIPPED_UNHEALTHY]'
-        : '[PROVIDER_SKIPPED_DISABLED]';
-      winstonLogger.info(`${skipLabel} RAILRADAR | Reason: ${rrGuard.reason}`);
     }
 
     if (irctcHandledError) {
@@ -179,7 +141,7 @@ export class AvailabilityProvider {
         date: params.date,
         classType: params.classType,
         quota: params.quota,
-        providerStatus: irctcData?.error || 'REJECTED',
+        providerStatus: irctcHandledError.message || 'REJECTED',
         normalizedReason: irctcHandledError.reason,
       });
       return irctcHandledError;

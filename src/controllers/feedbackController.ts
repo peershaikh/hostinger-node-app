@@ -5,6 +5,7 @@ import path from 'path';
 import { supabase, isSupabaseConfigured } from '../config/supabase';
 import { winstonLogger } from '../middleware/logger';
 import { llmService } from '../services/llmService';
+import { userFeedbackIntelligenceService } from '../services/userFeedbackIntelligenceService';
 
 const FEEDBACK_FILE = path.join(__dirname, '../../../data/feedback.json');
 const FEEDBACK_CATEGORIES_FILE = path.join(__dirname, '../../../data/feedback_categories.json');
@@ -144,6 +145,30 @@ export const feedbackController = {
       const feedbackText = [bug, suggestions, feature].filter(Boolean).join(' | ') || 'No description provided';
       setImmediate(() => {
         categorizeFeedbackAsync(feedback.id, feedbackText, { feature, severity, device });
+      });
+      // ───────────────────────────────────────────────────────────────────────
+
+      // ─── Phase 029 User Feedback Intelligence Ingestion ────────────────────
+      setImmediate(() => {
+        userFeedbackIntelligenceService.ingestExplicitFeedback({
+          feedbackId: feedback.id,
+          userId: userId || null,
+          guestId: (req.headers['x-device-id'] as string) || undefined,
+          ipAddress: req.ip || req.socket.remoteAddress,
+          comments: feedbackText,
+          overallRating: performance ? parseInt(performance, 10) : undefined,
+          feature,
+          severity,
+          device,
+          metadata: {
+            bug,
+            suggestions,
+            ui,
+            routeContext
+          }
+        }).catch(err => {
+          winstonLogger.debug(`[FEEDBACK_INTELLIGENCE_ERR] ${err.message}`);
+        });
       });
       // ───────────────────────────────────────────────────────────────────────
 

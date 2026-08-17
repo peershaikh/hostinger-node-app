@@ -52,12 +52,13 @@ export class TruthValidationEngine {
       // Normalization Layer: map IRCTC getTrainInfo response structure to expected schedule properties
       const schedule = {
         running_days: rawSchedule.trainInfo?.running_days || rawSchedule.running_days || '1111111',
-        station_list: (rawSchedule.route || rawSchedule.station_list || []).map((s: any) => ({
-          station_code: s.stnCode || s.station_code || s.code || '',
-          station_name: s.stnName || s.station_name || s.name || '',
-          arrival_time: s.arrival || s.arrival_time || '',
-          departure_time: s.departure || s.departure_time || ''
+        station_list: (rawSchedule.route || rawSchedule.station_list || rawSchedule.stops || rawSchedule.stations || rawSchedule.stationList || []).map((s: any) => ({
+          station_code: s.stationCode || s.stnCode || s.station_code || s.Station_Code || s.code || '',
+          station_name: s.stationName || s.stnName || s.station_name || s.Station_Name || s.name || '',
+          arrival_time: s.arrivalTime || s.arrival || s.arrival_time || '',
+          departure_time: s.departureTime || s.departure || s.departure_time || ''
         }))
+
       };
 
       // Running Days Validation
