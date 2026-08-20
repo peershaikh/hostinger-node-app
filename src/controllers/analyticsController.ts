@@ -130,7 +130,27 @@ export class AnalyticsController {
         }
       });
 
-      // 2. Legacy table write for backward compatibility
+      // 2. Outbound conversion attribution correlation hook
+      if (canonicalName === 'booking_outbound_click' || rawEventName === 'booking_outbound_click') {
+        try {
+          const { partnerConversionService } = require('../services/booking/partnerConversionService');
+          partnerConversionService.recordOutboundClick({
+            attributionId: metadata?.attribution_id || metadata?.attributionId,
+            providerId: metadata?.provider_id || metadata?.providerId || metadata?.provider || 'IRCTC',
+            source: metadata?.source || 'news',
+            articleId: metadata?.article_id || metadata?.articleId,
+            trainNo: metadata?.train_no || metadata?.trainNo,
+            campaignId: metadata?.campaign_id || metadata?.campaignId,
+            timestamp: new Date().toISOString(),
+            userId: userId || undefined,
+            guestId: sessionId || undefined
+          });
+        } catch (err: any) {
+          winstonLogger.warn(`[ATTRIBUTION_TRACK_WARN] ${err.message}`);
+        }
+      }
+
+      // 3. Legacy table write for backward compatibility
       const dbPayload = {
         event_type: rawEventName,
         session_id: sessionId,

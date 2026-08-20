@@ -9,6 +9,7 @@ import bulkAdminRouter from './bulkAdmin';
 import featureFlagAdminRouter from './featureFlagAdmin';
 import bookingAdminRouter from './bookingAdmin';
 import aiAdminRouter from './aiAdmin';
+import newsAdminRouter from './newsAdmin';
 // ── Phase 10.8.42 additions (T2/T3/T4) ──────────────────────────────────────
 import { eventMetrics } from '../services/eventMetrics';
 import { userCache } from '../cache/userCache';
@@ -137,5 +138,8 @@ router.get('/self-learning/data', adminLimiter as any, requireAdmin as any, admi
 router.get('/self-learning/analytics', adminLimiter as any, requireAdmin as any, adminController.getSelfLearningAnalytics.bind(adminController));
 router.post('/self-learning/approve', adminLimiter as any, requireAdmin as any, adminController.approveSelfLearning.bind(adminController));
 router.post('/self-learning/reject', adminLimiter as any, requireAdmin as any, adminController.rejectSelfLearning.bind(adminController));
+
+// ─── News CMS Admin (Phase 066) ─────────────────────────────────────────────
+router.use('/news', newsAdminRouter);
 
 export default router;

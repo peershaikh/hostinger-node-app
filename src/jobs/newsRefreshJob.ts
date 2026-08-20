@@ -31,13 +31,19 @@ export class NewsRefreshJob {
     });
   }
 
+  public async trigger(reason: string = 'manual_trigger') {
+    return this.refresh(reason);
+  }
+
   private async refresh(reason: string) {
     try {
       winstonLogger.info(`[NEWS_REFRESH] Triggering refresh (${reason})...`);
       const articles = await railwayNewsService.refreshNews();
       winstonLogger.info(`[NEWS_REFRESH] Complete (${reason}): ${articles.length} articles cached`);
+      return articles;
     } catch (err: any) {
       winstonLogger.error(`[NEWS_REFRESH] Failed (${reason}): ${err.message}`);
+      return [];
     }
   }
 }

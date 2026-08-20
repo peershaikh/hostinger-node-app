@@ -18,6 +18,8 @@ export interface BookingContext {
   campaignId?: string;
   medium?: string;
   interactionId?: string;
+  attributionId?: string;
+  articleId?: string;
 }
 
 export interface BookingUrlResult {
@@ -27,6 +29,7 @@ export interface BookingUrlResult {
   isOfficial: boolean;
   partnerId?: string;
   campaignId?: string;
+  attributionId?: string;
 }
 
 export interface BookingProvider {

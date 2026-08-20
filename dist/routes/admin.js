@@ -14,6 +14,7 @@ const bulkAdmin_1 = __importDefault(require("./bulkAdmin"));
 const featureFlagAdmin_1 = __importDefault(require("./featureFlagAdmin"));
 const bookingAdmin_1 = __importDefault(require("./bookingAdmin"));
 const aiAdmin_1 = __importDefault(require("./aiAdmin"));
+const newsAdmin_1 = __importDefault(require("./newsAdmin"));
 // ── Phase 10.8.42 additions (T2/T3/T4) ──────────────────────────────────────
 const eventMetrics_1 = require("../services/eventMetrics");
 const userCache_1 = require("../cache/userCache");
@@ -124,4 +125,6 @@ router.get('/self-learning/data', rateLimiter_1.adminLimiter, adminAuth_1.requir
 router.get('/self-learning/analytics', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getSelfLearningAnalytics.bind(adminController_1.adminController));
 router.post('/self-learning/approve', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.approveSelfLearning.bind(adminController_1.adminController));
 router.post('/self-learning/reject', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.rejectSelfLearning.bind(adminController_1.adminController));
+// ─── News CMS Admin (Phase 066) ─────────────────────────────────────────────
+router.use('/news', newsAdmin_1.default);
 exports.default = router;

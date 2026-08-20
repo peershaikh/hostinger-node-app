@@ -283,7 +283,7 @@ export class NewsIngestionEngine {
   }
 
   /**
-   * Fetches an RSS feed with retry and exponential backoff.
+   * Fetches an RSS feed with retry, exponential backoff, and HTTP status code tracking.
    */
   public async fetchFeedWithRetry(
     url: string,
@@ -297,19 +297,24 @@ export class NewsIngestionEngine {
         return feed;
       } catch (err: any) {
         lastError = err;
-        const msg = err.message || '';
+        const msg = (err.message || '').toLowerCase();
+        const statusCode = err.statusCode || err.status || (msg.includes('429') ? 429 : msg.includes('404') ? 404 : msg.includes('403') ? 403 : msg.includes('500') ? 500 : msg.includes('503') ? 503 : undefined);
+
         const isPermanent =
-          msg.includes('403') ||
-          msg.includes('404') ||
-          msg.includes('Invalid XML') ||
-          msg.includes('Not Found');
+          statusCode === 403 ||
+          statusCode === 404 ||
+          statusCode === 429 ||
+          msg.includes('invalid xml') ||
+          msg.includes('not found') ||
+          msg.includes('too many requests');
 
         if (isPermanent || attempt === maxRetries) {
+          if (statusCode) err.statusCode = statusCode;
           throw err;
         }
 
         const delay = baseDelayMs * Math.pow(2, attempt - 1);
-        winstonLogger.warn(`[NEWS_FETCH_RETRY] Attempt ${attempt}/${maxRetries} failed: ${msg}. Retrying in ${delay}ms`);
+        winstonLogger.warn(`[NEWS_FETCH_RETRY] Attempt ${attempt}/${maxRetries} failed: ${err.message}. Retrying in ${delay}ms`);
         await new Promise(res => setTimeout(res, delay));
       }
     }
@@ -336,7 +341,7 @@ export class NewsIngestionEngine {
     };
 
     if (!newsSourceRegistry.canAttempt(source.id)) {
-      winstonLogger.warn(`[NEWS_INGESTION_SKIPPED] Source ${source.name} circuit-broken. Skipping.`);
+      winstonLogger.warn(`[NEWS_INGESTION_SKIPPED] Source ${source.name} circuit-broken or disabled. Skipping.`);
       result.status = 'SKIPPED';
       return result;
     }
@@ -398,8 +403,8 @@ export class NewsIngestionEngine {
 
         const simhash = SimHash.compute(title + ' ' + summary);
 
-        // Multi-layer deduplication against currently accepted and existing articles
-        const isDuplicate = this.isDuplicateArticle(
+        // Multi-layer deduplication and change detection
+        const dedupResult = this.checkDeduplicationAndChange(
           cleanUrl,
           item.guid || null,
           contentHash,
@@ -407,16 +412,15 @@ export class NewsIngestionEngine {
           [...existingArticles, ...result.accepted]
         );
 
-        if (isDuplicate) {
+        if (dedupResult.isDuplicate && !dedupResult.isChangeDetected) {
           result.rejectedCount++;
           result.rejectedReasons['DUPLICATE'] = (result.rejectedReasons['DUPLICATE'] || 0) + 1;
           continue;
         }
 
-        const id = crypto
-          .createHash('md5')
-          .update(title.slice(0, 60) + publishedAt.slice(0, 10))
-          .digest('hex');
+        const id = dedupResult.isChangeDetected
+          ? crypto.createHash('md5').update(title.slice(0, 60) + publishedAt.slice(0, 10) + '_update_' + Date.now()).digest('hex')
+          : crypto.createHash('md5').update(title.slice(0, 60) + publishedAt.slice(0, 10)).digest('hex');
 
         const slug = this.generateSlug(title, publishedAt);
         const category = this.classifyCategory(title, summary);
@@ -453,29 +457,70 @@ export class NewsIngestionEngine {
           updated_at: now,
         };
 
+        if (dedupResult.isChangeDetected && dedupResult.matchedArticleId) {
+          article.rejection_note = `[UPDATED_DRAFT] Material change detected from existing article ID: ${dedupResult.matchedArticleId}`;
+        }
+
         result.accepted.push(article);
       }
 
       result.latencyMs = Date.now() - start;
-      newsSourceRegistry.recordSuccess(source.id, result.latencyMs);
+      newsSourceRegistry.recordSuccess(source.id, result.latencyMs, 200);
       return result;
     } catch (err: any) {
       result.latencyMs = Date.now() - start;
       result.status = 'FAILED';
       const errMsg = err?.message || 'Unknown fetch error';
+      const httpStatus = err?.statusCode || (errMsg.includes('429') ? 429 : errMsg.includes('500') ? 500 : undefined);
       result.error = errMsg;
-      newsSourceRegistry.recordFailure(source.id, errMsg, result.latencyMs);
-      winstonLogger.error(`[NEWS_INGESTION_SOURCE_FAIL] Source ${source.name} failed: ${err.message}`);
+      newsSourceRegistry.recordFailure(source.id, errMsg, result.latencyMs, httpStatus);
+      winstonLogger.error(`[NEWS_INGESTION_SOURCE_FAIL] Source ${source.name} failed: ${err.message} (HTTP ${httpStatus || 'N/A'})`);
       return result;
     }
   }
 
   /**
-   * Checks multi-layer duplicate rules:
-   * 1. Exact URL match
-   * 2. GUID match
-   * 3. Exact Content SHA-256 hash match
-   * 4. SimHash near-duplicate match (Hamming distance <= 3)
+   * Checks multi-layer duplicate rules & material change detection:
+   * 1. Exact URL match with identical content -> DUPLICATE
+   * 2. Exact URL / GUID match with DIFFERENT content -> CHANGE_DETECTED (Updated Draft)
+   * 3. Exact Content SHA-256 hash match -> DUPLICATE
+   * 4. SimHash near-duplicate match (Hamming distance <= 6) -> DUPLICATE
+   */
+  public checkDeduplicationAndChange(
+    cleanUrl: string,
+    guid: string | null,
+    contentHash: string,
+    simhash: string,
+    existingList: CanonicalNewsArticle[]
+  ): { isDuplicate: boolean; isChangeDetected: boolean; matchedArticleId?: string } {
+    for (const existing of existingList) {
+      const urlMatches = existing.source_url === cleanUrl;
+      const guidMatches = guid && existing.source_guid && existing.source_guid === guid;
+
+      // URL or GUID matches
+      if (urlMatches || guidMatches) {
+        if (existing.content_hash === contentHash) {
+          return { isDuplicate: true, isChangeDetected: false, matchedArticleId: existing.id };
+        }
+        // Material content update detected
+        return { isDuplicate: true, isChangeDetected: true, matchedArticleId: existing.id };
+      }
+
+      // Exact content SHA-256 match across different URLs
+      if (existing.content_hash === contentHash) {
+        return { isDuplicate: true, isChangeDetected: false, matchedArticleId: existing.id };
+      }
+
+      // Near-duplicate SimHash match (Hamming distance <= 15)
+      if (existing.simhash && SimHash.isNearDuplicate(existing.simhash, simhash, 15)) {
+        return { isDuplicate: true, isChangeDetected: false, matchedArticleId: existing.id };
+      }
+    }
+    return { isDuplicate: false, isChangeDetected: false };
+  }
+
+  /**
+   * Backward-compatible duplicate checker method.
    */
   public isDuplicateArticle(
     cleanUrl: string,
@@ -484,22 +529,8 @@ export class NewsIngestionEngine {
     simhash: string,
     existingList: CanonicalNewsArticle[]
   ): boolean {
-    for (const existing of existingList) {
-      // 1. Exact URL match
-      if (existing.source_url === cleanUrl) return true;
-
-      // 2. GUID match
-      if (guid && existing.source_guid && existing.source_guid === guid) return true;
-
-      // 3. Exact content SHA-256 match
-      if (existing.content_hash === contentHash) return true;
-
-      // 4. Near-duplicate SimHash match (Hamming distance <= 6)
-      if (existing.simhash && SimHash.isNearDuplicate(existing.simhash, simhash, 6)) {
-        return true;
-      }
-    }
-    return false;
+    const res = this.checkDeduplicationAndChange(cleanUrl, guid, contentHash, simhash, existingList);
+    return res.isDuplicate;
   }
 }
 

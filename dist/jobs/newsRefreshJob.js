@@ -34,14 +34,19 @@ class NewsRefreshJob {
             await this.refresh('scheduled 6h cron');
         });
     }
+    async trigger(reason = 'manual_trigger') {
+        return this.refresh(reason);
+    }
     async refresh(reason) {
         try {
             logger_1.winstonLogger.info(`[NEWS_REFRESH] Triggering refresh (${reason})...`);
             const articles = await railwayNewsService_1.railwayNewsService.refreshNews();
             logger_1.winstonLogger.info(`[NEWS_REFRESH] Complete (${reason}): ${articles.length} articles cached`);
+            return articles;
         }
         catch (err) {
             logger_1.winstonLogger.error(`[NEWS_REFRESH] Failed (${reason}): ${err.message}`);
+            return [];
         }
     }
 }

@@ -122,10 +122,9 @@ export class SimHash {
   }
 
   /**
-   * Determines if two pieces of content are near-duplicates using SimHash distance (<= 6)
-   * or high token Jaccard similarity (>= 0.70).
+   * Determines if two pieces of content are near-duplicates using SimHash distance (<= 12).
    */
-  public static isNearDuplicate(hash1: string, hash2: string, thresholdBits: number = 6): boolean {
+  public static isNearDuplicate(hash1: string, hash2: string, thresholdBits: number = 12): boolean {
     return this.hammingDistance(hash1, hash2) <= thresholdBits;
   }
 }

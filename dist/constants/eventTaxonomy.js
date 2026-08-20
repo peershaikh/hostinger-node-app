@@ -34,6 +34,7 @@ exports.UniversalEventNames = {
     ROUTE_SHARED: 'route_shared',
     BOOKING_OUTBOUND_CLICK: 'booking_outbound_click',
     BOOKING_PLACEHOLDER: 'booking_placeholder',
+    PARTNER_CONVERSION: 'partner_conversion',
     FEEDBACK_SUBMITTED: 'feedback_submitted',
     COMPLAINT_LOGGED: 'complaint_logged',
     NOTIFICATION_SENT: 'notification_sent',
@@ -44,6 +45,15 @@ exports.UniversalEventNames = {
     ROUTE_ENRICHMENT_COMPLETED: 'route_enrichment_completed',
     KNOWLEDGE_PROMOTED: 'knowledge_promoted',
     KNOWLEDGE_REJECTED: 'knowledge_rejected',
+    // News & Editorial Intelligence (Phase 069)
+    NEWS_LIST_VIEW: 'news_list_view',
+    NEWS_ARTICLE_VIEW: 'news_article_view',
+    NEWS_CATEGORY_VIEW: 'news_category_view',
+    NEWS_SOURCE_CLICK: 'news_source_click',
+    NEWS_RELATED_ARTICLE_CLICK: 'news_related_article_click',
+    NEWS_TRAIN_LINK_CLICK: 'news_train_link_click',
+    NEWS_STATION_LINK_CLICK: 'news_station_link_click',
+    NEWS_MONETIZATION_CLICK: 'news_monetization_click',
     // Cache & Provider Pipeline
     CACHE_HIT: 'cache_hit',
     CACHE_MISS: 'cache_miss',

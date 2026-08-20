@@ -16,9 +16,10 @@ export interface NewsArticle {
   sourceName: string;
   sourceUrl: string;
   publishedAt: string;
+  updatedAt?: string;
   category: string;
   imageUrl: string | null;
-  // Extended canonical metadata (optional for backward compatibility)
+  // Extended canonical metadata
   slug?: string | null;
   seoTitle?: string | null;
   metaDescription?: string | null;
@@ -26,6 +27,9 @@ export interface NewsArticle {
   sourceTier?: string;
   status?: string;
   relevanceScore?: number;
+  keyTakeaways?: string[];
+  passengerAdvice?: string | null;
+  faq?: Array<{ question: string; answer: string }>;
   affectedTrains?: string[];
   affectedStations?: string[];
 }
@@ -64,6 +68,17 @@ function writeLocalNewsFallback(articles: NewsArticle[]): void {
 
 // ─── Schema Transformation ────────────────────────────────────────────────────
 
+function parseJsonArray<T = any>(val: any): T[] {
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {}
+  }
+  return [];
+}
+
 function transformToDatabasePayload(articles: CanonicalNewsArticle[]): any[] {
   return articles.map(article => ({
     id: article.id,
@@ -95,47 +110,90 @@ function transformToDatabasePayload(articles: CanonicalNewsArticle[]): any[] {
 }
 
 function transformFromDatabaseRow(row: any): NewsArticle {
+  const publishedAt = row.published_at || new Date().toISOString();
+  const slug = row.slug || newsIngestionEngine.generateSlug(row.title, publishedAt);
   return {
     id: row.id,
     title: row.title,
     summary: row.summary || 'Official railway update.',
     sourceName: row.source_name,
     sourceUrl: row.source_url,
-    publishedAt: row.published_at,
+    publishedAt: publishedAt,
+    updatedAt: row.updated_at || publishedAt,
     category: row.category || 'Railway Updates',
     imageUrl: row.image_url || null,
-    slug: row.slug || null,
+    slug: slug,
     seoTitle: row.seo_title || null,
     metaDescription: row.meta_description || null,
     sourceId: row.source_id,
     sourceTier: row.source_tier,
-    status: row.status,
+    status: row.status || 'PUBLISHED',
     relevanceScore: row.relevance_score,
-    affectedTrains: row.affected_trains || [],
-    affectedStations: row.affected_stations || [],
+    keyTakeaways: parseJsonArray<string>(row.key_takeaways),
+    passengerAdvice: row.passenger_advice || null,
+    faq: parseJsonArray<{ question: string; answer: string }>(row.faq),
+    affectedTrains: parseJsonArray<string>(row.affected_trains),
+    affectedStations: parseJsonArray<string>(row.affected_stations),
   };
 }
 
 function canonicalToLegacyArticle(a: CanonicalNewsArticle): NewsArticle {
+  const publishedAt = a.published_at || new Date().toISOString();
+  const slug = a.slug || newsIngestionEngine.generateSlug(a.title, publishedAt);
   return {
     id: a.id,
     title: a.title,
     summary: a.summary,
     sourceName: a.source_name,
     sourceUrl: a.source_url,
-    publishedAt: a.published_at,
+    publishedAt: publishedAt,
+    updatedAt: a.updated_at || publishedAt,
     category: a.category,
     imageUrl: a.image_url,
-    slug: a.slug,
+    slug: slug,
     seoTitle: a.seo_title,
     metaDescription: a.meta_description,
     sourceId: a.source_id,
     sourceTier: a.source_tier,
-    status: a.status,
+    status: a.status || 'PUBLISHED',
     relevanceScore: a.relevance_score,
-    affectedTrains: a.affected_trains,
-    affectedStations: a.affected_stations,
+    keyTakeaways: a.key_takeaways || [],
+    passengerAdvice: a.passenger_advice || null,
+    faq: a.faq || [],
+    affectedTrains: a.affected_trains || [],
+    affectedStations: a.affected_stations || [],
   };
+}
+
+// ─── Related Articles Deterministic Ranking ───────────────────────────────────
+
+function calculateRelatedScore(current: NewsArticle, other: NewsArticle): number {
+  let score = 0;
+
+  // 1. Train match (+5)
+  if (current.affectedTrains && current.affectedTrains.length > 0 && other.affectedTrains && other.affectedTrains.length > 0) {
+    const hasSharedTrain = current.affectedTrains.some(t => other.affectedTrains?.includes(t));
+    if (hasSharedTrain) score += 5;
+  }
+
+  // 2. Station match (+4)
+  if (current.affectedStations && current.affectedStations.length > 0 && other.affectedStations && other.affectedStations.length > 0) {
+    const hasSharedStation = current.affectedStations.some(s => other.affectedStations?.includes(s));
+    if (hasSharedStation) score += 4;
+  }
+
+  // 3. Category match (+3)
+  if (current.category && other.category && current.category.toLowerCase().trim() === other.category.toLowerCase().trim()) {
+    score += 3;
+  }
+
+  // 4. Recency (+1 if published within last 7 days)
+  const ageMs = Date.now() - new Date(other.publishedAt).getTime();
+  if (ageMs <= 7 * 24 * 60 * 60 * 1000) {
+    score += 1;
+  }
+
+  return score;
 }
 
 // ─── Main Service ─────────────────────────────────────────────────────────────
@@ -143,59 +201,137 @@ function canonicalToLegacyArticle(a: CanonicalNewsArticle): NewsArticle {
 export const railwayNewsService = {
   /**
    * Returns latest railway news articles.
-   * Serves from 30-minute memory cache; falls back to DB or local storage; refreshes on total miss.
+   * STRICT PUBLISHED GATE: Only exposes articles with status === 'PUBLISHED'.
    */
-  getLatestNews: async (): Promise<NewsArticle[]> => {
+  getLatestNews: async (options?: { category?: string; limit?: number; offset?: number }): Promise<NewsArticle[]> => {
+    let allPublished: NewsArticle[] = [];
+
     // 1. Memory cache
     const cached = cacheService.get<NewsArticle[]>(NEWS_CACHE_KEY);
     if (cached && cached.length > 0) {
-      winstonLogger.info('[NEWS_CACHE_HIT] Serving from cache', { count: cached.length });
-      return cached;
+      allPublished = cached.filter(a => a.status === 'PUBLISHED');
     }
 
-    winstonLogger.info('[NEWS_CACHE_MISS] Cache empty, checking database...');
-
-    // 2. Database layer (Breaking news window: last 48h)
-    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-    try {
-      if (isSupabaseConfigured()) {
+    // 2. Database query (if cache miss)
+    if (allPublished.length === 0 && isSupabaseConfigured()) {
+      try {
         const { data: dbArticles, error } = await supabase
           .from('railway_news')
           .select('*')
-          .gte('published_at', fortyEightHoursAgo)
+          .eq('status', 'PUBLISHED')
           .order('published_at', { ascending: false })
-          .limit(MAX_TOTAL_ARTICLES);
+          .limit(100);
 
         if (!error && dbArticles && dbArticles.length > 0) {
-          const articles = dbArticles
+          allPublished = dbArticles
             .map(transformFromDatabaseRow)
-            .filter(a => newsIngestionEngine.evaluateRelevance(a.title, a.summary, a.sourceName).isRelevant);
+            .filter(a => a.status === 'PUBLISHED');
 
-          if (articles.length > 0) {
-            winstonLogger.info('[NEWS_DB_FALLBACK] Serving from database', { count: articles.length });
-            cacheService.set(NEWS_CACHE_KEY, articles, NEWS_CACHE_TTL);
-            writeLocalNewsFallback(articles);
-            return articles;
+          if (allPublished.length > 0) {
+            winstonLogger.info('[NEWS_DB_FALLBACK] Serving from database', { count: allPublished.length });
+            cacheService.set(NEWS_CACHE_KEY, allPublished, NEWS_CACHE_TTL);
+            writeLocalNewsFallback(allPublished);
           }
         }
+      } catch (err: any) {
+        winstonLogger.warn('[NEWS_DB_FALLBACK_FAIL]', { error: err.message });
       }
-    } catch (err: any) {
-      winstonLogger.warn('[NEWS_DB_FALLBACK_FAIL]', { error: err.message });
     }
 
     // 3. Local JSON fallback
-    const local = readLocalNewsFallback();
-    if (local.length > 0) {
-      const recent = local.filter(a => new Date(a.publishedAt).getTime() >= Date.now() - 48 * 60 * 60 * 1000);
-      if (recent.length > 0) {
-        winstonLogger.info('[NEWS_LOCAL_FALLBACK] Serving from local JSON', { count: recent.length });
-        cacheService.set(NEWS_CACHE_KEY, recent, NEWS_CACHE_TTL);
-        return recent;
+    if (allPublished.length === 0) {
+      const local = readLocalNewsFallback();
+      if (local.length > 0) {
+        allPublished = local.filter(a => a.status === 'PUBLISHED');
+        if (allPublished.length > 0) {
+          cacheService.set(NEWS_CACHE_KEY, allPublished, NEWS_CACHE_TTL);
+        }
       }
     }
 
-    // 4. Trigger fresh multi-source refresh
-    return railwayNewsService.refreshNews();
+    // Optional category filter
+    let filtered = allPublished;
+    if (options?.category && typeof options.category === 'string' && options.category.trim() !== '' && options.category.toLowerCase() !== 'all') {
+      const targetCat = options.category.toLowerCase().trim();
+      filtered = filtered.filter(a => a.category && a.category.toLowerCase().trim() === targetCat);
+    }
+
+    const offset = options?.offset || 0;
+    const limit = Math.min(options?.limit || MAX_TOTAL_ARTICLES, 100);
+
+    return filtered.slice(offset, offset + limit);
+  },
+
+  /**
+   * Retrieves a single published article by slug (with deterministic related articles).
+   * Strictly enforces status === 'PUBLISHED'. Returns null if not found or not published.
+   */
+  getArticleBySlug: async (slug: string): Promise<{ article: NewsArticle; related: NewsArticle[] } | null> => {
+    if (!slug || typeof slug !== 'string' || slug.trim() === '') {
+      return null;
+    }
+
+    const cleanSlug = slug.trim().toLowerCase();
+
+    // 1. Check in-memory/recent published articles
+    const allPublished = await railwayNewsService.getLatestNews({ limit: 100 });
+    let article = allPublished.find(a => (a.slug && a.slug.toLowerCase() === cleanSlug) || a.id === cleanSlug);
+
+    // 2. Direct Supabase query if not found in cache
+    if (!article && isSupabaseConfigured()) {
+      try {
+        const { data, error } = await supabase
+          .from('railway_news')
+          .select('*')
+          .eq('status', 'PUBLISHED')
+          .or(`slug.eq.${cleanSlug},id.eq.${cleanSlug}`)
+          .maybeSingle();
+
+        if (!error && data) {
+          article = transformFromDatabaseRow(data);
+        }
+      } catch (err: any) {
+        winstonLogger.warn('[NEWS_SLUG_FETCH_FAIL]', { error: err.message, slug: cleanSlug });
+      }
+    }
+
+    // 3. Strict published gate check
+    if (!article || article.status !== 'PUBLISHED') {
+      return null;
+    }
+
+    // 4. Calculate deterministic related articles
+    const candidates = allPublished.filter(
+      other => other.id !== article!.id && other.slug !== article!.slug && other.status === 'PUBLISHED'
+    );
+
+    const scored = candidates.map(candidate => ({
+      article: candidate,
+      score: calculateRelatedScore(article!, candidate),
+    }));
+
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return new Date(b.article.publishedAt).getTime() - new Date(a.article.publishedAt).getTime();
+    });
+
+    const related = scored.slice(0, 4).map(s => s.article);
+
+    return { article, related };
+  },
+
+  /**
+   * Returns list of published article slugs and timestamps for dynamic sitemap generation.
+   */
+  getSitemapEntries: async (): Promise<Array<{ slug: string; publishedAt: string; updatedAt: string }>> => {
+    const articles = await railwayNewsService.getLatestNews({ limit: 100 });
+    return articles
+      .filter(a => a.slug && a.status === 'PUBLISHED')
+      .map(a => ({
+        slug: a.slug!,
+        publishedAt: a.publishedAt,
+        updatedAt: a.updatedAt || a.publishedAt,
+      }));
   },
 
   /**
