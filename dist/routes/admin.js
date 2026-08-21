@@ -125,6 +125,7 @@ router.get('/self-learning/data', rateLimiter_1.adminLimiter, adminAuth_1.requir
 router.get('/self-learning/analytics', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getSelfLearningAnalytics.bind(adminController_1.adminController));
 router.post('/self-learning/approve', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.approveSelfLearning.bind(adminController_1.adminController));
 router.post('/self-learning/reject', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.rejectSelfLearning.bind(adminController_1.adminController));
+router.post('/self-learning/revalidate-split', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.revalidateSplitRoute.bind(adminController_1.adminController));
 // ─── News CMS Admin (Phase 066) ─────────────────────────────────────────────
 router.use('/news', newsAdmin_1.default);
 exports.default = router;

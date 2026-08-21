@@ -22,6 +22,19 @@ export interface MissingRoute {
   id: string;
   source: string;
   destination: string;
+  category?: 'SPLIT_ROUTE_MISS' | 'SEARCH_ROUTE_MISS';
+  date?: string;
+  source_code?: string;
+  destination_code?: string;
+  direct_count?: number;
+  valid_split_count?: number;
+  candidate_count?: number;
+  rejection_reasons?: string[];
+  top_rejection_reason?: string;
+  rejection_stats?: Record<string, number>;
+  current_state?: 'RESOLVED' | 'CURRENT_MISS' | 'HISTORICAL_MISS' | 'STALE';
+  last_verified_at?: string;
+  last_successful_at?: string;
   user_id?: string | null;
   count: number;
   last_seen: string;
@@ -392,24 +405,58 @@ export class SelfLearningService {
     }
   }
 
-  public async logMissingRoute(source: string, destination: string, userId: string | null): Promise<void> {
-    const key = `route:${source}:${destination}`;
-    if (this.isDuplicate(key)) return;
-
+  public async logMissingRoute(
+    source: string,
+    destination: string,
+    userId: string | null,
+    meta?: {
+      category?: 'SPLIT_ROUTE_MISS' | 'SEARCH_ROUTE_MISS';
+      date?: string;
+      source_code?: string;
+      destination_code?: string;
+      direct_count?: number;
+      rejection_reasons?: string[];
+      top_rejection_reason?: string;
+    }
+  ): Promise<void> {
     const cleanSource = source.toUpperCase().trim();
     const cleanDestination = destination.toUpperCase().trim();
+    const category = meta?.category || 'SPLIT_ROUTE_MISS';
+    const key = `route:${category}:${cleanSource}:${cleanDestination}`;
+    if (this.isDuplicate(key)) return;
 
-    let existing = this.missingRoutes.find(r => r.source === cleanSource && r.destination === cleanDestination && r.status === 'pending');
+    let existing = this.missingRoutes.find(r => 
+      r.source === cleanSource && 
+      r.destination === cleanDestination && 
+      r.status === 'pending' &&
+      (r.category === category || (!r.category && category === 'SPLIT_ROUTE_MISS'))
+    );
     const dbId = existing ? existing.id : crypto.randomUUID();
 
     if (existing) {
       existing.count += 1;
       existing.last_seen = new Date().toISOString();
+      if (meta?.date) existing.date = meta.date;
+      if (meta?.direct_count != null) existing.direct_count = meta.direct_count;
+      if (meta?.source_code) existing.source_code = meta.source_code;
+      if (meta?.destination_code) existing.destination_code = meta.destination_code;
+      if (meta?.top_rejection_reason) existing.top_rejection_reason = meta.top_rejection_reason;
+      if (meta?.rejection_reasons && meta.rejection_reasons.length > 0) {
+        const mergedReasons = Array.from(new Set([...(existing.rejection_reasons || []), ...meta.rejection_reasons]));
+        existing.rejection_reasons = mergedReasons;
+      }
     } else {
       existing = {
         id: dbId,
         source: cleanSource,
         destination: cleanDestination,
+        category,
+        date: meta?.date,
+        source_code: meta?.source_code,
+        destination_code: meta?.destination_code,
+        direct_count: meta?.direct_count ?? 0,
+        rejection_reasons: meta?.rejection_reasons || (meta?.top_rejection_reason ? [meta.top_rejection_reason] : []),
+        top_rejection_reason: meta?.top_rejection_reason || 'ROUTE_NOT_FOUND',
         user_id: userId,
         count: 1,
         last_seen: new Date().toISOString(),
@@ -430,7 +477,14 @@ export class SelfLearningService {
         userId: userId || undefined,
         mode: 'rail',
         route: `${cleanSource}-${cleanDestination}`,
-        metadata: { source: cleanSource, destination: cleanDestination, query_id: dbId }
+        metadata: {
+          source: cleanSource,
+          destination: cleanDestination,
+          category,
+          date: meta?.date,
+          top_rejection_reason: existing.top_rejection_reason,
+          query_id: dbId
+        }
       });
     } catch {
       // Non-blocking telemetry
@@ -449,7 +503,12 @@ export class SelfLearningService {
         if (!error && data) {
           await supabase
             .from('missing_routes')
-            .update({ count: data.count + 1, last_seen: new Date().toISOString() })
+            .update({
+              count: data.count + 1,
+              last_seen: new Date().toISOString(),
+              top_rejection_reason: existing.top_rejection_reason,
+              category
+            })
             .eq('id', data.id);
         } else {
           await supabase
@@ -458,6 +517,10 @@ export class SelfLearningService {
               id: dbId,
               source: cleanSource,
               destination: cleanDestination,
+              category,
+              date: meta?.date,
+              direct_count: meta?.direct_count ?? 0,
+              top_rejection_reason: existing.top_rejection_reason,
               user_id: userId,
               count: 1,
               status: 'pending',
@@ -695,7 +758,37 @@ export class SelfLearningService {
   public getLocalDataForTable(table: string): any[] {
     switch (table) {
       case 'missing_queries': return this.missingQueries;
-      case 'missing_routes': return this.missingRoutes;
+      case 'missing_routes': {
+        const now = Date.now();
+        const SEVEN_DAYS_MS = 7 * 24 * 3600 * 1000;
+        return this.missingRoutes.map(r => {
+          let currentState: 'RESOLVED' | 'CURRENT_MISS' | 'HISTORICAL_MISS' | 'STALE' = 'HISTORICAL_MISS';
+          if (r.last_verified_at) {
+            const ageMs = now - new Date(r.last_verified_at).getTime();
+            if (ageMs > SEVEN_DAYS_MS) {
+              currentState = 'STALE';
+            } else if (r.valid_split_count != null && r.valid_split_count > 0) {
+              currentState = 'RESOLVED';
+            } else {
+              currentState = 'CURRENT_MISS';
+            }
+          } else if (r.status === 'approved' || r.status === 'merged') {
+            currentState = 'RESOLVED';
+          } else {
+            currentState = 'HISTORICAL_MISS';
+          }
+
+          return {
+            ...r,
+            current_state: r.current_state || currentState,
+            // Do NOT show 0 direct for unverified historical records
+            direct_count: r.last_verified_at ? r.direct_count : undefined,
+            top_rejection_reason: r.last_verified_at 
+              ? (r.top_rejection_reason || ((r.valid_split_count && r.valid_split_count > 0) ? 'NONE' : 'DIAGNOSTIC_UNAVAILABLE'))
+              : (r.top_rejection_reason || 'NOT_REVALIDATED')
+          };
+        });
+      }
       case 'missing_trains': return this.missingTrains;
       case 'missing_stations': return this.missingStations;
       case 'route_memory': return this.routeMemory;
@@ -819,6 +912,146 @@ export class SelfLearningService {
     }
 
     return true;
+  }
+
+  public async revalidateSplitRoute(params: {
+    id?: string;
+    source?: string;
+    destination?: string;
+    date?: string;
+  }): Promise<{
+    success: boolean;
+    record?: MissingRoute;
+    diagnostic: {
+      directCount: number;
+      candidateCount: number;
+      validSplitCount: number;
+      topRejectionReason: string;
+      rejectionStats: Record<string, number>;
+      verificationTimestamp: string;
+      currentState: 'RESOLVED' | 'CURRENT_MISS';
+    };
+    error?: string;
+  }> {
+    const { id, source, destination, date } = params;
+    const { stationService } = require('./stationService');
+    const { trainService } = require('./trainService');
+    const { splitJourneyEngine } = require('./splitJourneyEngine');
+
+    let matchingRecords: MissingRoute[] = [];
+
+    if (id) {
+      const rec = this.missingRoutes.find(r => r.id === id);
+      if (rec) matchingRecords.push(rec);
+    } else if (source && destination) {
+      const cleanSrc = stationService.normalizeInput(source);
+      const cleanDst = stationService.normalizeInput(destination);
+      matchingRecords = this.missingRoutes.filter(r => 
+        (r.source === source || r.source_code === cleanSrc || stationService.normalizeInput(r.source) === cleanSrc || (cleanSrc === 'CSMT' && stationService.normalizeInput(r.source) === 'CSTM') || (cleanSrc === 'CSTM' && stationService.normalizeInput(r.source) === 'CSMT')) &&
+        (r.destination === destination || r.destination_code === cleanDst || stationService.normalizeInput(r.destination) === cleanDst)
+      );
+    }
+
+    const rawSource = source || matchingRecords[0]?.source;
+    const rawDestination = destination || matchingRecords[0]?.destination;
+
+    if (!rawSource || !rawDestination) {
+      throw new Error('Source and destination are required for split route revalidation');
+    }
+
+    const cleanSource = stationService.normalizeInput(rawSource);
+    const cleanDestination = stationService.normalizeInput(rawDestination);
+    const travelDate = date || matchingRecords[0]?.date || '2026-08-28';
+
+    winstonLogger.info(`[REVALIDATE_SPLIT] Running read-only diagnostic for ${cleanSource} → ${cleanDestination} on ${travelDate}`);
+
+    // 1. Fetch direct trains
+    const directRes = await trainService.getTrainData(cleanSource, cleanDestination, travelDate);
+    const directTrains = directRes?.direct || [];
+    const directCount = directTrains.length;
+
+    // 2. Run Split Engine in diagnostic mode (read-only)
+    const splitRes = await splitJourneyEngine.findCombinedRoutes(
+      cleanSource,
+      cleanDestination,
+      travelDate,
+      directTrains,
+      undefined,
+      { classType: '3A', quota: 'GN' }
+    );
+
+    const validSplits = (splitRes as any)?.split || (splitRes as any)?.smart_routes || [];
+    const validSplitCount = Array.isArray(validSplits) ? validSplits.length : 0;
+    const diag = (splitRes as any)?.diagnostic || {};
+    const candidateCount = diag.candidateCount || 0;
+    const rejectionStats = diag.rejectionStats || {};
+
+    let topRejectionReason = 'NONE';
+    if (validSplitCount === 0) {
+      if (candidateCount === 0) {
+        topRejectionReason = directCount === 0 ? 'ROUTE_NOT_FOUND' : 'ROUTE_NOT_FOUND';
+      } else if (diag.topRejectionReason && diag.topRejectionReason !== 'NONE') {
+        topRejectionReason = diag.topRejectionReason;
+      } else {
+        topRejectionReason = 'TRANSFER_BUFFER_FAILURE';
+      }
+    }
+
+    const currentState: 'RESOLVED' | 'CURRENT_MISS' = validSplitCount > 0 ? 'RESOLVED' : 'CURRENT_MISS';
+    const verificationTimestamp = new Date().toISOString();
+
+    // 3. Update the matching record in telemetry if it exists (OBSERVABILITY ONLY — no auto learning)
+    for (const rec of matchingRecords) {
+      rec.source_code = cleanSource;
+      rec.destination_code = cleanDestination;
+      rec.date = travelDate;
+      rec.direct_count = directCount;
+      rec.valid_split_count = validSplitCount;
+      rec.candidate_count = candidateCount;
+      rec.top_rejection_reason = topRejectionReason;
+      rec.rejection_stats = rejectionStats;
+      rec.rejection_reasons = Object.keys(rejectionStats).filter(k => rejectionStats[k] > 0);
+      rec.current_state = currentState;
+      rec.last_verified_at = verificationTimestamp;
+      if (validSplitCount > 0) {
+        rec.last_successful_at = verificationTimestamp;
+      }
+    }
+
+    if (matchingRecords.length > 0) {
+      this.saveLocalData('missing_routes.json', this.missingRoutes);
+
+      if (isSupabaseConfigured()) {
+        try {
+          for (const rec of matchingRecords) {
+            await supabase
+              .from('missing_routes')
+              .update({
+                direct_count: directCount,
+                top_rejection_reason: topRejectionReason,
+                last_seen: verificationTimestamp
+              })
+              .eq('id', rec.id);
+          }
+        } catch (err: any) {
+          winstonLogger.warn(`[SELF_LEARNING] Supabase revalidate update failed: ${err.message}`);
+        }
+      }
+    }
+
+    return {
+      success: true,
+      record: matchingRecords[0],
+      diagnostic: {
+        directCount,
+        candidateCount,
+        validSplitCount,
+        topRejectionReason,
+        rejectionStats,
+        verificationTimestamp,
+        currentState
+      }
+    };
   }
 
   public async getAnalytics(): Promise<any> {

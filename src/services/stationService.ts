@@ -127,6 +127,11 @@ export class StationService {
     return result;
   }
 
+  isCode(input: string): boolean {
+    if (!input) return false;
+    return /^[A-Z]{2,6}$/.test(input.toUpperCase().trim());
+  }
+
   /**
    * Synchronous reverse city lookup using pre-compiled memory map.
    * Runs in O(1) time complexity. Bypasses database, cache, and REST queries.
@@ -301,11 +306,6 @@ export class StationService {
       }
       return resolveStationsWithShadow(cleanCity, legacyMapped);
     }
-  }
-
-  isCode(input: string): boolean {
-    if (!input) return false;
-    return /^[A-Z]{2,6}$/.test(input.toUpperCase().trim());
   }
 
   async getStationName(code: string, apiName?: string): Promise<string> {

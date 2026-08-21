@@ -119,6 +119,11 @@ class StationService {
         logger_1.winstonLogger.debug(`[STATION_RESOLVE] Normalization result for "${input}" → "${result}"`);
         return result;
     }
+    isCode(input) {
+        if (!input)
+            return false;
+        return /^[A-Z]{2,6}$/.test(input.toUpperCase().trim());
+    }
     /**
      * Synchronous reverse city lookup using pre-compiled memory map.
      * Runs in O(1) time complexity. Bypasses database, cache, and REST queries.
@@ -277,11 +282,6 @@ class StationService {
             }
             return resolveStationsWithShadow(cleanCity, legacyMapped);
         }
-    }
-    isCode(input) {
-        if (!input)
-            return false;
-        return /^[A-Z]{2,6}$/.test(input.toUpperCase().trim());
     }
     async getStationName(code, apiName) {
         const cleanCode = this.normalizeInput(code);

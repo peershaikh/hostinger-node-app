@@ -138,6 +138,7 @@ router.get('/self-learning/data', adminLimiter as any, requireAdmin as any, admi
 router.get('/self-learning/analytics', adminLimiter as any, requireAdmin as any, adminController.getSelfLearningAnalytics.bind(adminController));
 router.post('/self-learning/approve', adminLimiter as any, requireAdmin as any, adminController.approveSelfLearning.bind(adminController));
 router.post('/self-learning/reject', adminLimiter as any, requireAdmin as any, adminController.rejectSelfLearning.bind(adminController));
+router.post('/self-learning/revalidate-split', adminLimiter as any, requireAdmin as any, adminController.revalidateSplitRoute.bind(adminController));
 
 // ─── News CMS Admin (Phase 066) ─────────────────────────────────────────────
 router.use('/news', newsAdminRouter);

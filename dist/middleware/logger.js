@@ -148,10 +148,12 @@ const winston_daily_rotate_file_1 = __importDefault(require("winston-daily-rotat
 // the shell-only flag directly so ordinary E2E request logging stays console
 // only and never creates/rotates local log files.
 const noWriteMode = process.env.LOCAL_E2E_NO_WRITE === 'true';
+const isProduction = process.env.NODE_ENV === 'production';
+const consoleLogLevel = process.env.CONSOLE_LOG_LEVEL || (isProduction ? 'warn' : (process.env.LOG_LEVEL || 'info'));
 const loggerTransports = noWriteMode
-    ? [new winston_1.default.transports.Console()]
+    ? [new winston_1.default.transports.Console({ level: consoleLogLevel })]
     : [
-        new winston_1.default.transports.Console(),
+        new winston_1.default.transports.Console({ level: consoleLogLevel }),
         new winston_daily_rotate_file_1.default({
             filename: 'logs/error-%DATE%.log',
             datePattern: 'YYYY-MM-DD',

@@ -257,6 +257,8 @@ export class TrainController {
       winstonLogger.info(`[ADVANCED] source=${trainData.source} directCount=${allTrains.length}`);
 
       let finalSplits: any[] = [];
+      let splitResult: any = null;
+
       if (includeSplit) {
         // Check if user can use split feature
         const userId = req.headers['x-user-id'] as string || null;
@@ -318,7 +320,7 @@ export class TrainController {
         };
 
         const execStart = Date.now();
-        let splitResult = await runSplitAttempt(55000);
+        splitResult = await runSplitAttempt(55000);
         const firstEmpty = Array.isArray(splitResult)
           ? splitResult.length === 0
           : ((splitResult as any)?.split || []).length === 0;
@@ -348,15 +350,9 @@ export class TrainController {
           const key = [
             hub,
             leg1.trainNo || '',
-            leg1.fromCode || leg1.from || '',
-            leg1.toCode || leg1.to || '',
-            leg1.travelDate || leg1.journeyDate || '',
             leg1.departure || '',
             leg1.arrival || '',
             leg2.trainNo || '',
-            leg2.fromCode || leg2.from || '',
-            leg2.toCode || leg2.to || '',
-            leg2.travelDate || leg2.journeyDate || '',
             leg2.departure || '',
             leg2.arrival || '',
           ].join('|');
@@ -448,7 +444,18 @@ export class TrainController {
       }
       if (includeSplit && finalSplits.length === 0) {
         setImmediate(() => {
-          selfLearningService.logMissingRoute(source, destination, userId).catch(() => {});
+          const diag = (splitResult as any)?.diagnostic || {};
+          const topReason = diag.topRejectionReason || 'ROUTE_NOT_FOUND';
+          const reasons = diag.rejectionStats ? Object.keys(diag.rejectionStats).filter(k => diag.rejectionStats[k] > 0) : [topReason];
+          selfLearningService.logMissingRoute(source, destination, userId, {
+            category: 'SPLIT_ROUTE_MISS',
+            date,
+            source_code: source.trim().toUpperCase(),
+            destination_code: destination.trim().toUpperCase(),
+            direct_count: allTrains.length,
+            rejection_reasons: reasons.length > 0 ? reasons : [topReason],
+            top_rejection_reason: topReason
+          }).catch(() => {});
         });
       }
 

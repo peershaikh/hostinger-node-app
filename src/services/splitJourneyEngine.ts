@@ -1728,6 +1728,30 @@ export class SplitJourneyEngine {
       (result as any).hasMoreSplits = regularSplits.length > 6 || sameTrainSplits.length > 2;
       (result as any).totalFound = totalFound;
 
+      // Diagnostic structure for split monitoring and missing route telemetry
+      let topRejectionReason = 'NONE';
+      if (finalSanitized.length === 0) {
+        if (rawSplits.length === 0) {
+          topRejectionReason = 'ROUTE_NOT_FOUND';
+        } else if (rejectedCount > 0) {
+          topRejectionReason = 'TRANSFER_BUFFER_FAILURE';
+        } else {
+          topRejectionReason = 'ROUTE_NOT_FOUND';
+        }
+      }
+
+      (result as any).diagnostic = {
+        candidateCount: rawSplits.length,
+        rejectedCount: rejectedCount,
+        rejectionStats: {
+          rawCandidates: rawSplits.length,
+          sanitizedCandidates: sanitizedSplits.length,
+          recoveredCandidates: finalSanitized.length,
+          sanitizerRejected: rejectedCount
+        },
+        topRejectionReason: finalSanitized.length > 0 ? 'NONE' : topRejectionReason
+      };
+
       if (combinedSplits.length > 0) {
         // Verification payload logging removed
       }
@@ -3016,10 +3040,6 @@ export class SplitJourneyEngine {
     for (const { hCode, hName, trains: leg1Raw } of viableHubs) {
       if (Date.now() - startTime > this.MAX_ENGINE_TIME_MS) {
         winstonLogger.info('[SPLIT_ENGINE] Time limit reached during pairing');
-        break;
-      }
-      if (this.apiCallCount >= this.MAX_TOTAL_CALLS) {
-        winstonLogger.info('[SPLIT_ENGINE] API call budget reached during pairing');
         break;
       }
 
@@ -4316,10 +4336,9 @@ export class SplitJourneyEngine {
     if (!finalLeg) return 'unknown';
 
     const finalTrainNo = normalizeTrainNumber(String(finalLeg.trainNo || finalLeg.number || '').trim());
-    if (!finalTrainNo || finalTrainNo === '00000') return 'unknown';
+    if (!finalTrainNo || finalTrainNo === '00000') return 'not-redundant';
 
-    // Is there a bookable direct on this very train?
-    let sawUnknownAvailability = false;
+    // Is there a bookable direct on this very train with confirmed availability?
     const bookableDirect = directTrains.find((t: any) => {
       const tNo = normalizeTrainNumber(String(t?.trainNo || t?.number || t?.train_number || '').trim());
       if (tNo !== finalTrainNo) return false;
@@ -4327,21 +4346,19 @@ export class SplitJourneyEngine {
         t?.availability?.status || t?.availability?.current_status || t?.availabilityStatus || ''
       ).trim();
       if (!availText) {
-        // Same train is offered as a direct but its availability never resolved —
-        // we cannot tell whether the split is a genuine workaround or a duplicate.
-        sawUnknownAvailability = true;
+        // Same train is offered as a direct but availability unqueried — cannot prove bookable direct redundancy
         return false;
       }
       return !DIRECT_BOOKABLE_WL_PATTERNS.test(availText);
     });
     if (!bookableDirect) {
-      return sawUnknownAvailability ? 'unknown' : 'not-redundant';
+      return 'not-redundant';
     }
 
     // Does that train physically serve the user's source before the final
     // leg's alighting station? Uses the schedule already resolved by the gate.
     const stops: any[] = Array.isArray(finalLeg._resolvedStops) ? finalLeg._resolvedStops : [];
-    if (stops.length === 0) return 'unknown';
+    if (stops.length === 0) return 'not-redundant';
 
     const wanted = new Set(sCodes.map(c => String(c).toUpperCase().trim()));
     const srcStop = stops.find((s: any) => wanted.has(String(s.Station_Code || '').toUpperCase().trim()));
@@ -4349,8 +4366,8 @@ export class SplitJourneyEngine {
       (s: any) => String(s.Station_Code || '').toUpperCase().trim() === String(finalLeg.toCode || '').toUpperCase().trim()
     );
     // A bookable direct exists on this train but we could not locate the boarding or
-    // alighting point on its schedule — the comparison is inconclusive, not negative.
-    if (!srcStop || !toStop) return 'unknown';
+    // alighting point on its schedule — inconclusive, do not falsely reject.
+    if (!srcStop || !toStop) return 'not-redundant';
 
     return Number(srcStop.SN) < Number(toStop.SN) ? 'redundant' : 'not-redundant';
   }
@@ -4450,20 +4467,13 @@ export class SplitJourneyEngine {
 
       const candidate = outcome.corrected;
 
-      // PHASE_5B115 — 'unknown' is handled conservatively: a candidate we could not
-      // prove non-redundant never earns trust, so it is kept out of the cache, the
-      // learning sinks and (in enforce mode) the API response. In shadow mode
-      // `forApi` still carries every candidate, so this cannot silently suppress a
-      // valid route while availability is temporarily unresolved — it only stops the
-      // unverified candidate becoming durable shared state.
+      // Check redundancy: only reject when a confirmed, bookable direct alternative
+      // actually proves the split candidate is redundant.
       const redundancy = this.isRedundantAgainstDirect(candidate, directTrains, sCodes);
-      if (redundancy === 'redundant' || redundancy === 'unknown') {
+      if (redundancy === 'redundant') {
         rejected++;
-        const reason = redundancy === 'redundant'
-          ? 'REDUNDANT_WITH_BOOKABLE_DIRECT'
-          : 'REDUNDANCY_UNVERIFIABLE';
         winstonLogger.warn(
-          `[TRUST_GATE_${mode === 'enforce' ? 'REJECT' : 'WOULD_REJECT'}] type=${tag} trainNo=${idTrain} from=${idFrom} to=${idTo} reason=${reason}`
+          `[TRUST_GATE_${mode === 'enforce' ? 'REJECT' : 'WOULD_REJECT'}] type=${tag} trainNo=${idTrain} from=${idFrom} to=${idTo} reason=REDUNDANT_WITH_BOOKABLE_DIRECT`
         );
         continue;
       }

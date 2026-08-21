@@ -1908,6 +1908,17 @@ export class AdminController {
     }
   }
 
+  async revalidateSplitRoute(req: Request, res: Response) {
+    try {
+      const { id, source, destination, date } = req.body;
+      const result = await selfLearningService.revalidateSplitRoute({ id, source, destination, date });
+      res.json(result);
+    } catch (err: any) {
+      winstonLogger.error(`[ADMIN_SELF_LEARNING] revalidateSplitRoute error: ${err.message}`);
+      res.status(500).json({ success: false, error: err.message || 'Failed to revalidate split route' });
+    }
+  }
+
   async getDailyOperations(req: Request, res: Response) {
     try {
       const report = await aiOperationsService.generateDailyReport();

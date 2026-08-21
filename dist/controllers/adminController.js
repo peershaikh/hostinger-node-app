@@ -1804,6 +1804,17 @@ class AdminController {
             res.status(500).json({ success: false, error: 'Failed to reject self-learning record' });
         }
     }
+    async revalidateSplitRoute(req, res) {
+        try {
+            const { id, source, destination, date } = req.body;
+            const result = await selfLearningService_1.selfLearningService.revalidateSplitRoute({ id, source, destination, date });
+            res.json(result);
+        }
+        catch (err) {
+            logger_1.winstonLogger.error(`[ADMIN_SELF_LEARNING] revalidateSplitRoute error: ${err.message}`);
+            res.status(500).json({ success: false, error: err.message || 'Failed to revalidate split route' });
+        }
+    }
     async getDailyOperations(req, res) {
         try {
             const report = await aiOperationsService_1.aiOperationsService.generateDailyReport();
