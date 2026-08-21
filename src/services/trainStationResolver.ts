@@ -66,6 +66,23 @@ export interface SegmentValidationFailure {
 
 export type SegmentResolution = ResolvedSegment | SegmentValidationFailure;
 
+/**
+ * PHASE_084H — Pre-fetched authoritative running-days entry produced by the
+ * Split Engine's Phase 2.5 batch prefetch. Passed as an optional hint to
+ * resolveSegmentForAvailability() so the function can reuse the already-fetched
+ * live running-days data instead of calling getTrainInfo again.
+ *
+ * Only used within the Split Engine path. All other callers of
+ * resolveSegmentForAvailability() pass no hints and behaviour is unchanged.
+ */
+export interface RunningDaysEntry {
+  trainNo: string;
+  runningDays: string | null;
+  runningDaysAuthoritative: boolean;
+  isCancelled: boolean | null;
+  fetchedAt: number;
+}
+
 export interface ScheduleStop extends ScheduleStopLike {
   Station_Name?: string;
   Arrival_time?: string;
@@ -189,7 +206,12 @@ function mapIrctcInfoToStops(info: any): ScheduleStop[] {
   }).filter((s: ScheduleStop) => s.Station_Code.length > 0);
 }
 
-async function loadTrainScheduleContext(trainNo: string, fromIn?: string, toIn?: string): Promise<TrainScheduleContext> {
+async function loadTrainScheduleContext(
+  trainNo: string,
+  fromIn?: string,
+  toIn?: string,
+  runningDaysHint?: RunningDaysEntry
+): Promise<TrainScheduleContext> {
   const tNo = padTrainNo(trainNo);
   // PHASE_5B129 — v2 → v3. Entries written before this phase may contain a DB origin
   // that an `inferred` (train-name parsed) code overwrote, and they carry a 7200s TTL.
@@ -257,6 +279,22 @@ async function loadTrainScheduleContext(trainNo: string, fromIn?: string, toIn?:
   let validTo: string | null = null;
   let runningDaysAuthoritative = false;
 
+  // PHASE_084H — apply pre-fetched running-days hint from Split Engine Phase 2.5
+  // when available. This avoids calling getTrainInfo a second time solely for
+  // service-date truth when the Split Engine already fetched it. Physical stop
+  // validation (scheduleFetchNeeded) is separate and still triggers its own fetch.
+  let runningDaysFromHint = false;
+  if (runningDaysHint && runningDaysHint.runningDaysAuthoritative) {
+    // Apply the pre-fetched authoritative running days directly.
+    runningDays = runningDaysHint.runningDays;
+    runningDaysAuthoritative = true;
+    if (runningDaysHint.isCancelled !== null) is_cancelled = runningDaysHint.isCancelled;
+    runningDaysFromHint = true;
+    winstonLogger.debug(
+      `[STATION_RESOLVER] RD_HINT applied for ${tNo}: rd=${runningDays} auth=true isCancelled=${runningDaysHint.isCancelled}`
+    );
+  }
+
   const scheduleFetchNeeded = isLiveScheduleRequired({
     dbStopCount: dbStops.length,
     originCorrected: dbOriginSuspect,
@@ -264,7 +302,12 @@ async function loadTrainScheduleContext(trainNo: string, fromIn?: string, toIn?:
     hasTo,
   });
 
-  if (scheduleFetchNeeded || needsServiceWindow) {
+  // Only call getTrainInfo when:
+  // - physical stop validation needs a live schedule (scheduleFetchNeeded), OR
+  // - service-date truth still needs resolving AND we have no pre-fetched hint
+  const serviceWindowNeeded = needsServiceWindow && !runningDaysFromHint;
+
+  if (scheduleFetchNeeded || serviceWindowNeeded) {
     try {
       const info = await irctcService.getTrainInfo(tNo);
       if (info) {
@@ -289,12 +332,14 @@ async function loadTrainScheduleContext(trainNo: string, fromIn?: string, toIn?:
 
         if (liveValidFrom) validFrom = liveValidFrom;
         if (liveValidTo) validTo = liveValidTo;
-        if (liveRunningDays) {
+        // Only apply live running-days if we don't already have an authoritative hint
+        if (liveRunningDays && !runningDaysFromHint) {
           runningDays = liveRunningDays;
           runningDaysAuthoritative = true;
         }
         if (liveStatus) status = liveStatus;
-        if (liveCancelled !== undefined) is_cancelled = liveCancelled;
+        // Only override isCancelled from live if hint didn't already set it
+        if (liveCancelled !== undefined && !runningDaysFromHint) is_cancelled = liveCancelled;
       }
     } catch (e: any) {
       winstonLogger.warn(`[STATION_RESOLVER] IRCTC schedule/service-window fallback failed for ${tNo}: ${e.message}`);
@@ -362,7 +407,11 @@ export async function resolveSegmentForAvailability(
   trainNo: string,
   from: string,
   to: string,
-  date: string
+  date: string,
+  hints?: {
+    /** PHASE_084H — pre-fetched running-days from Split Engine Phase 2.5 */
+    runningDaysCache?: Map<string, RunningDaysEntry>;
+  }
 ): Promise<SegmentResolution> {
   const tNo = padTrainNo(trainNo);
   const fromIn = from.toUpperCase().trim();
@@ -376,7 +425,9 @@ export async function resolveSegmentForAvailability(
     };
   }
 
-  const ctx = await loadTrainScheduleContext(tNo, fromIn, toIn);
+  // PHASE_084H — look up pre-fetched running-days from Split Engine Phase 2.5
+  const rdHint = hints?.runningDaysCache?.get(tNo) ?? hints?.runningDaysCache?.get(trainNo);
+  const ctx = await loadTrainScheduleContext(tNo, fromIn, toIn, rdHint);
 
   // PHASE_5B167 — generic cancellation gate. Cancelled/suspended trains fail closed.
   if (ctx.is_cancelled === true || (ctx.status && (ctx.status.toLowerCase().includes('cancel') || ctx.status.toLowerCase().includes('suspend')))) {

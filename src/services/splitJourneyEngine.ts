@@ -16,6 +16,7 @@ import { stationService } from './stationService';
 import { providerConfigService } from './providerConfigService';
 import transferDistancesData from '../data/transferDistances.json';
 import { normalizeTrainNumber } from '../utils/availabilityCacheKeys';
+import type { RunningDaysEntry } from './trainStationResolver';
 
 // ——— Extended Leg with source/destination codes ——————————————————————————————
 interface RichLeg extends Leg {
@@ -1272,6 +1273,17 @@ export class SplitJourneyEngine {
    *  from engine start, searchLeg skips live APIs and uses DB-only. */
   private readonly API_BUDGET_MS = 2000;
 
+  /**
+   * PHASE_084H — Running-days validation limits.
+   * MAX_RD_VALIDATION_CALLS: maximum live getTrainInfo calls for running-days
+   *   pre-fetch per search. Cache hits do not count toward this limit.
+   * MAX_RD_CONCURRENT: maximum parallel getTrainInfo calls in the prefetch pool.
+   * These are additive to the leg-search budget but never steals from it
+   * because the pre-fetch runs after Phase 2 (leg searches) completes.
+   */
+  private readonly MAX_RD_VALIDATION_CALLS = 12;
+  private readonly MAX_RD_CONCURRENT = 4;
+
   /** Minimum transfer window: 45 minutes — realistic Indian railway minimum */
   private readonly MIN_BUFFER_MINUTES = 45;
 
@@ -1289,6 +1301,142 @@ export class SplitJourneyEngine {
 
   /** P0-006: Coalesce concurrent split searches for the same route key. */
   private routeInFlight = new Map<string, Promise<SplitEngineResult>>();
+
+  // —————————————————————————————————————————————————————————————————————————
+  // PHASE_084H — RUNNING-DAYS PRE-FETCH (Phase 2.5)
+  //
+  // Batch-fetches authoritative running-days for DB-sourced split candidates
+  // before the pairing loop runs. This allows resolveSegmentForAvailability()
+  // to reuse the already-fetched data instead of calling getTrainInfo again
+  // per candidate during the pairing/trust-gate phase.
+  //
+  // Constraints:
+  //   - MAX_RD_CONCURRENT (4): max parallel getTrainInfo calls in the pool
+  //   - MAX_RD_VALIDATION_CALLS (12): max live API calls per search
+  //   - cache hits (irctcService/cacheService) do not count as API calls
+  //   - hard wall: never runs past remainingBudgetMs
+  //   - fail-safe: fetch failure = UNKNOWN entry (conservative reject preserved)
+  //   - deduplicates train numbers before fetching
+  // —————————————————————————————————————————————————————————————————————————
+  private async prefetchRunningDays(
+    candidateTrainNos: Set<string>,
+    remainingBudgetMs: number
+  ): Promise<{ cache: Map<string, RunningDaysEntry>; apiCalls: number; cacheHits: number }> {
+    const result = new Map<string, RunningDaysEntry>();
+    const wallDeadline = Date.now() + Math.min(remainingBudgetMs, 12000); // hard 12s wall
+    let apiCalls = 0;
+    let cacheHits = 0;
+
+    // Build unique list — skip passenger-series trains (they are already filtered in isBasicallyValid)
+    const uniqueNos = [...candidateTrainNos].filter(n => n && n.length >= 4 && !/^[567]/.test(n));
+
+    if (uniqueNos.length === 0) return { cache: result, apiCalls, cacheHits };
+
+    // Check cacheService first (the resolved schedule context already built by irctcService
+    // may have running-days embedded). We use a best-effort check on existing keys.
+    const toFetch: string[] = [];
+    for (const tNo of uniqueNos) {
+      // Check if we already have a schedule context cached from a prior call this search
+      // (the trainStationResolver cacheKey is `sched_ctx_v4_<padded>`)
+      const padded = tNo.padStart(5, '0');
+      const existingCtx = cacheService.get<any>(`sched_ctx_v4_${padded}`);
+      if (existingCtx && existingCtx.runningDaysAuthoritative === true && existingCtx.runningDays) {
+        result.set(padded, {
+          trainNo: padded,
+          runningDays: existingCtx.runningDays,
+          runningDaysAuthoritative: true,
+          isCancelled: existingCtx.is_cancelled ?? null,
+          fetchedAt: Date.now(),
+        });
+        result.set(tNo, result.get(padded)!); // also key by raw number
+        cacheHits++;
+      } else {
+        toFetch.push(tNo);
+      }
+    }
+
+    if (toFetch.length === 0 || apiCalls >= this.MAX_RD_VALIDATION_CALLS) {
+      return { cache: result, apiCalls, cacheHits };
+    }
+
+    // Concurrency pool — process at most MAX_RD_CONCURRENT in parallel
+    const pool: Promise<void>[] = [];
+    let idx = 0;
+
+    const runNext = async (): Promise<void> => {
+      while (idx < toFetch.length && apiCalls < this.MAX_RD_VALIDATION_CALLS) {
+        if (Date.now() >= wallDeadline) break;
+
+        const tNo = toFetch[idx++];
+        const padded = tNo.padStart(5, '0');
+
+        // Skip if already resolved by another concurrent slot
+        if (result.has(padded)) continue;
+
+        apiCalls++;
+        try {
+          const info = await irctcService.getTrainInfo(padded);
+          if (info) {
+            const inner = info.trainInfo || info;
+            const liveRd =
+              inner?.running_days || inner?.runningDays ||
+              info?.running_days || info?.runningDays || null;
+            const liveCancelled =
+              inner?.is_cancelled === true || inner?.isCancelled === true
+                ? true
+                : (inner?.is_cancelled === false || inner?.isCancelled === false ? false : null);
+            const liveStatus = inner?.train_status || inner?.status || info?.train_status || info?.status || '';
+            const isCancelledFromStatus =
+              liveStatus && (liveStatus.toLowerCase().includes('cancel') || liveStatus.toLowerCase().includes('suspend'))
+                ? true
+                : null;
+            const isCancelled = liveCancelled !== null ? liveCancelled : isCancelledFromStatus;
+
+            const entry: RunningDaysEntry = {
+              trainNo: padded,
+              runningDays: liveRd,
+              runningDaysAuthoritative: !!liveRd,
+              isCancelled: isCancelled,
+              fetchedAt: Date.now(),
+            };
+            result.set(padded, entry);
+            result.set(tNo, entry); // also key by raw (unpadded) number
+          } else {
+            // getTrainInfo returned nothing — store UNKNOWN entry (fail closed)
+            const unknownEntry: RunningDaysEntry = {
+              trainNo: padded,
+              runningDays: null,
+              runningDaysAuthoritative: false,
+              isCancelled: null,
+              fetchedAt: Date.now(),
+            };
+            result.set(padded, unknownEntry);
+            result.set(tNo, unknownEntry);
+          }
+        } catch {
+          // Timeout or provider error — store UNKNOWN (fail closed, never fail open)
+          const unknownEntry: RunningDaysEntry = {
+            trainNo: padded,
+            runningDays: null,
+            runningDaysAuthoritative: false,
+            isCancelled: null,
+            fetchedAt: Date.now(),
+          };
+          result.set(padded, unknownEntry);
+          result.set(tNo, unknownEntry);
+        }
+      }
+    };
+
+    // Launch MAX_RD_CONCURRENT workers
+    for (let w = 0; w < this.MAX_RD_CONCURRENT; w++) {
+      pool.push(runNext());
+    }
+
+    await Promise.all(pool);
+
+    return { cache: result, apiCalls, cacheHits };
+  }
 
   // —————————————————————————————————————————————————————————————————————————
   // DETOUR AND DISTANCE LOGIC
@@ -2968,7 +3116,47 @@ export class SplitJourneyEngine {
     }
     winstonLogger.info(`[SPLIT_ENGINE] Phase 2 done: ${leg2KeysToFetch.length} batched leg2 fetches for ${viableHubs.length} hubs`);
 
+    // —— PHASE 2.5: Authoritative running-days pre-fetch (PHASE_084H) ————————
+    // Collect unique train numbers from all leg1 and leg2 candidates.
+    // Batch-fetch getTrainInfo with bounded concurrency before the pairing loop
+    // so resolveSegmentForAvailability can reuse the authoritative data instead
+    // of calling getTrainInfo N times during pairing (which exhausts the budget).
+    const rdCandidateNos = new Set<string>();
+    for (const { trains } of viableHubs) {
+      for (const t of trains) {
+        const num = String(
+          (t as any).train_number || (t as any).trainNo ||
+          (t as any).train_no || (t as any).number || ''
+        ).trim();
+        if (num && num.length >= 4) rdCandidateNos.add(num);
+      }
+    }
+    for (const trains of leg2Cache.values()) {
+      for (const t of trains) {
+        const num = String(
+          (t as any).train_number || (t as any).trainNo ||
+          (t as any).train_no || (t as any).number || ''
+        ).trim();
+        if (num && num.length >= 4) rdCandidateNos.add(num);
+      }
+    }
+    // Leave at least 15s for the pairing loop; cap prefetch budget at 10s
+    const rdElapsed = Date.now() - startTime;
+    const rdBudgetMs = Math.max(0, Math.min(10000, this.MAX_ENGINE_TIME_MS - rdElapsed - 15000));
+    const { cache: runningDaysCache, apiCalls: rdApiCalls, cacheHits: rdCacheHits } =
+      rdBudgetMs > 100 && rdCandidateNos.size > 0
+        ? await this.prefetchRunningDays(rdCandidateNos, rdBudgetMs)
+        : { cache: new Map<string, RunningDaysEntry>(), apiCalls: 0, cacheHits: 0 };
+
+    // Observability: one WARN-level summary per split search (not per candidate)
+    winstonLogger.warn(
+      `[RD_PREFETCH] src=${sCode}→${dCode}/${date} candidates=${rdCandidateNos.size}` +
+      ` fetched=${runningDaysCache.size / 2}` +  // /2 because each entry is keyed by padded AND raw
+      ` apiCalls=${rdApiCalls} cacheHits=${rdCacheHits} budgetMs=${rdBudgetMs}`
+    );
+
     // —— PHASE 3: In-memory pairing — no more API calls ———————————————————
+
     const directTrainsForFilter = directTrainsRef || await this.getDirectTrainsForCity(sCodes, dCodes, date);
 
     // —— Parse direct train durations correctly —————————————————————————————
@@ -3311,9 +3499,10 @@ export class SplitJourneyEngine {
             }
 
             const { resolveSegmentForAvailability } = await import('./trainStationResolver');
+            const rdHints = { runningDaysCache };
             const [v1, v2] = await Promise.all([
-              resolveSegmentForAvailability(l1.trainNo, l1.fromCode, l1.toCode, date),
-              resolveSegmentForAvailability(l2.trainNo, l2.fromCode, l2.toCode, leg2DepDateStr)
+              resolveSegmentForAvailability(l1.trainNo, l1.fromCode, l1.toCode, date, rdHints),
+              resolveSegmentForAvailability(l2.trainNo, l2.fromCode, l2.toCode, leg2DepDateStr, rdHints)
             ]);
 
             if (!v1.success) {
