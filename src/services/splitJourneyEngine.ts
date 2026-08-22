@@ -1876,10 +1876,25 @@ export class SplitJourneyEngine {
       (result as any).hasMoreSplits = regularSplits.length > 6 || sameTrainSplits.length > 2;
       (result as any).totalFound = totalFound;
 
-      // Diagnostic structure for split monitoring and missing route telemetry
+      // PHASE_084K — Diagnostic structure for split monitoring and missing route telemetry.
+      // topRejectionReason must reflect the actual inner rejection reason — never
+      // collapse to ROUTE_NOT_FOUND when candidates were generated and then rejected.
       let topRejectionReason = 'NONE';
       if (finalSanitized.length === 0) {
-        if (rawSplits.length === 0) {
+        // Pull inner rejection stats propagated from findSplitJourneys
+        const innerStats: Record<string, number> = (result as any)._innerRejectionStats || {};
+        // Determine the dominant failure reason ordered by priority
+        const dominant = (
+          (innerStats.running_days_unknown  || 0) > 0 ? 'RUNNING_DAYS_UNKNOWN'     :
+          (innerStats.train_not_running      || 0) > 0 ? 'TRAIN_NOT_RUNNING'         :
+          (innerStats.db_unverified_stop_data || 0) > 0 ? 'DB_UNVERIFIED_STOP_DATA'  :
+          (innerStats.stop_not_found         || 0) > 0 ? 'STOP_NOT_FOUND'            :
+          (innerStats.trust_gate_reject       || 0) > 0 ? 'TRUST_GATE_REJECT'         :
+          null
+        );
+        if (dominant) {
+          topRejectionReason = dominant;
+        } else if (rawSplits.length === 0) {
           topRejectionReason = 'ROUTE_NOT_FOUND';
         } else if (rejectedCount > 0) {
           topRejectionReason = 'TRANSFER_BUFFER_FAILURE';
@@ -1895,8 +1910,16 @@ export class SplitJourneyEngine {
           rawCandidates: rawSplits.length,
           sanitizedCandidates: sanitizedSplits.length,
           recoveredCandidates: finalSanitized.length,
-          sanitizerRejected: rejectedCount
+          sanitizerRejected: rejectedCount,
+          // PHASE_084K — inner stage breakdown
+          ...((result as any)._innerRejectionStats || {}),
         },
+        // PHASE_084K — granular running-days and stop counts for admin observability
+        runningDaysUnknown: ((result as any)._innerRejectionStats || {}).running_days_unknown || 0,
+        runningDaysRejected: (((result as any)._innerRejectionStats || {}).running_days_unknown || 0) +
+                             (((result as any)._innerRejectionStats || {}).train_not_running || 0),
+        stopNotFound: ((result as any)._innerRejectionStats || {}).stop_not_found || 0,
+        dbUnverifiedStopData: ((result as any)._innerRejectionStats || {}).db_unverified_stop_data || 0,
         topRejectionReason: finalSanitized.length > 0 ? 'NONE' : topRejectionReason
       };
 
@@ -2149,8 +2172,13 @@ export class SplitJourneyEngine {
       });
 
     splitJourneys = await this.findSplitJourneys(sName, dName, sCodes, dCodes, date, directTrains);
+    // PHASE_084K — harvest the per-stage rejection stats attached by findSplitJourneys
+    const innerRejectionStats: Record<string, number> = (splitJourneys as any)._rejectionStats || {};
 
     winstonLogger.info(`[SPLIT_ENGINE] Engine completed in ${Date.now() - engineStart}ms | direct=${directTrains.length} split=${splitJourneys.length}`);
+    if (Object.keys(innerRejectionStats).some(k => innerRejectionStats[k] > 0)) {
+      winstonLogger.info(`[SPLIT_ENGINE] Inner rejection stats: ${JSON.stringify(innerRejectionStats)}`);
+    }
 
     // —— TWO-TIER VALIDATION: STRICT → RELAXED FALLBACK ——
     let rawSplits = Array.isArray(splitJourneys) ? splitJourneys : [];
@@ -2411,6 +2439,8 @@ export class SplitJourneyEngine {
       split_recommended: safeSplits.length > 0 && shouldRecommendSplit,
       message
     };
+    // PHASE_084K — propagate inner rejection stats for diagnostic aggregation in _runFindCombinedRoutes
+    (result as any)._innerRejectionStats = innerRejectionStats;
 
     // —— PHASE_5B109 CACHE PAYLOAD (TRUST-GATED) ——————————————————————————————
     // The cache is a SINK, and sinks are fail-closed regardless of gate mode.
@@ -3215,7 +3245,13 @@ export class SplitJourneyEngine {
       reverse_or_disconnected: 0,
       same_train: 0,
       availability_issue: 0,
-      invalid_time: 0
+      invalid_time: 0,
+      // PHASE_084K — per-stage resolution rejection counters
+      running_days_unknown: 0,
+      train_not_running: 0,
+      stop_not_found: 0,
+      db_unverified_stop_data: 0,
+      trust_gate_reject: 0,
     };
 
     // Pre-calculate geography constraints OUTSIDE the loops
@@ -3506,11 +3542,23 @@ export class SplitJourneyEngine {
             ]);
 
             if (!v1.success) {
+              // PHASE_084K — track per-reason rejection counts for diagnostic aggregation
+              const r1 = (v1 as any).reason as string | undefined;
+              if (r1 === 'RUNNING_DAYS_UNKNOWN') rejectionStats.running_days_unknown++;
+              else if (r1 === 'TRAIN_NOT_RUNNING') rejectionStats.train_not_running++;
+              else if (r1 === 'DB_UNVERIFIED_STOP_DATA') rejectionStats.db_unverified_stop_data++;
+              else if (r1 === 'INVALID_BOARDING_STATION' || r1 === 'INVALID_DESTINATION_STATION') rejectionStats.stop_not_found++;
               winstonLogger.info(`[SPLIT_PHYSICAL_STOP_GATE_REJECTED] Leg1 ${l1.trainNo} (${l1.fromCode}->${l1.toCode}): ${v1.reason} - ${v1.message}`);
               continue;
             }
 
             if (!v2.success) {
+              // PHASE_084K — track per-reason rejection counts for diagnostic aggregation
+              const r2 = (v2 as any).reason as string | undefined;
+              if (r2 === 'RUNNING_DAYS_UNKNOWN') rejectionStats.running_days_unknown++;
+              else if (r2 === 'TRAIN_NOT_RUNNING') rejectionStats.train_not_running++;
+              else if (r2 === 'DB_UNVERIFIED_STOP_DATA') rejectionStats.db_unverified_stop_data++;
+              else if (r2 === 'INVALID_BOARDING_STATION' || r2 === 'INVALID_DESTINATION_STATION') rejectionStats.stop_not_found++;
               winstonLogger.info(`[SPLIT_PHYSICAL_STOP_GATE_REJECTED] Leg2 ${l2.trainNo} (${l2.fromCode}->${l2.toCode}): ${v2.reason} - ${v2.message}`);
               continue;
             }
@@ -4183,6 +4231,10 @@ export class SplitJourneyEngine {
     if (process.env.NODE_ENV !== 'production') console.log(`[SPLIT_DEBUG] Total time taken by split engine: ${Date.now() - this.engineStartMs}ms`);
     if (process.env.NODE_ENV !== 'production') console.log(`[SPLIT_DEBUG] Rejection Stats:`, rejectionStats);
     if (process.env.NODE_ENV !== 'production') console.log(`[SPLIT_DEBUG] Cache Stats: ${this.legSearchStats.hits} hits, ${this.legSearchStats.misses} misses`);
+
+    // PHASE_084K — attach rejection stats to the returned array so the caller
+    // (_findCombinedRoutesInternal) can surface them in diagnostic telemetry.
+    (normalizedSplits as any)._rejectionStats = rejectionStats;
 
     return normalizedSplits;
   }

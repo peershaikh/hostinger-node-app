@@ -32,7 +32,19 @@ export type AvailabilityRejectReason =
   | 'TRAIN_NOT_RUNNING'
   | 'TRAIN_CANCELLED'
   | 'CLASS_NOT_AVAILABLE'
-  | 'PROVIDER_UNAVAILABLE';
+  | 'PROVIDER_UNAVAILABLE'
+  /**
+   * PHASE_084K — Running-days authority was unavailable (IRCTC timeout/DB fallback).
+   * DB running_days is a placeholder (e.g. "Daily") and live data was not fetched.
+   * Candidate fails closed but reason is NOT equivalent to "train does not run".
+   */
+  | 'RUNNING_DAYS_UNKNOWN'
+  /**
+   * PHASE_084K — Physical stop was absent from DB schedule, live schedule was also
+   * unavailable (IRCTC timeout). Cannot confirm stop presence, cannot confirm absence.
+   * Candidate fails closed but reason is NOT equivalent to a confirmed missing stop.
+   */
+  | 'DB_UNVERIFIED_STOP_DATA';
 
 export interface ResolvedSegment {
   success: true;
@@ -453,12 +465,27 @@ export async function resolveSegmentForAvailability(
     });
 
     if (verdict !== 'YES') {
-      const detail = verdict === 'NO' ? 'does not operate' : 'service-date truth unknown';
+      // PHASE_084K — Distinguish between "confirmed not running" (NO) and
+      // "authoritative data unavailable" (UNKNOWN). Both fail closed, but
+      // UNKNOWN must NOT be labelled TRAIN_NOT_RUNNING — that implies the
+      // train genuinely does not operate, which is fabricated without evidence.
+      if (verdict === 'UNKNOWN') {
+        winstonLogger.info(
+          `[STATION_RESOLVER] RUNNING_DAYS_UNKNOWN train=${tNo} boarding=${fromIn} date=${date}` +
+          ` rd=${ctx.runningDays} auth=${ctx.runningDaysAuthoritative}`
+        );
+        return {
+          success: false,
+          reason: 'RUNNING_DAYS_UNKNOWN',
+          message: `Train ${tNo} running-days not authoritative on ${date} — cannot confirm operation (DB placeholder, IRCTC unavailable)`,
+        };
+      }
+      // verdict === 'NO' — authoritative data says train does not operate
       winstonLogger.info(`[STATION_RESOLVER] TRAIN_NOT_RUNNING train=${tNo} boarding=${fromIn} date=${date} verdict=${verdict}`);
       return {
         success: false,
         reason: 'TRAIN_NOT_RUNNING',
-        message: `Train ${tNo} ${detail} on ${date}`,
+        message: `Train ${tNo} does not operate on ${date}`,
       };
     }
   }
@@ -508,8 +535,25 @@ export async function resolveSegmentForAvailability(
   }
 
   // PHASE_5B057: Require exact physical stop on train schedule for availability checks
+  // PHASE_084K: When the schedule came from DB and live was unavailable, a missing stop
+  // may reflect incomplete DB coverage rather than a confirmed physical absence.
+  // In that case emit DB_UNVERIFIED_STOP_DATA (still fail-closed) so upstream diagnostics
+  // can distinguish "stop confirmed absent" from "stop absent in DB, live not checked".
+  const scheduleIsDbOnly = ctx.source === 'db' && !ctx.runningDaysAuthoritative;
+
   const fromStop = ctx.stops.find(s => (s.Station_Code || '').toUpperCase().trim() === fromIn);
   if (!fromStop) {
+    if (scheduleIsDbOnly) {
+      winstonLogger.info(
+        `[STATION_RESOLVER] DB_UNVERIFIED_STOP_DATA train=${tNo} from=${fromIn}` +
+        ` — stop absent in DB schedule, live schedule was not available`
+      );
+      return {
+        success: false,
+        reason: 'DB_UNVERIFIED_STOP_DATA',
+        message: `Station ${fromIn} not found in DB schedule for train ${tNo} (live schedule unavailable — cannot confirm physical absence)`,
+      };
+    }
     winstonLogger.info(`[STATION_RESOLVER] INVALID_BOARDING train=${tNo} from=${fromIn}`);
     return {
       success: false,
@@ -520,6 +564,17 @@ export async function resolveSegmentForAvailability(
 
   const toStop = ctx.stops.find(s => (s.Station_Code || '').toUpperCase().trim() === toIn);
   if (!toStop) {
+    if (scheduleIsDbOnly) {
+      winstonLogger.info(
+        `[STATION_RESOLVER] DB_UNVERIFIED_STOP_DATA train=${tNo} to=${toIn}` +
+        ` — stop absent in DB schedule, live schedule was not available`
+      );
+      return {
+        success: false,
+        reason: 'DB_UNVERIFIED_STOP_DATA',
+        message: `Station ${toIn} not found in DB schedule for train ${tNo} (live schedule unavailable — cannot confirm physical absence)`,
+      };
+    }
     winstonLogger.info(`[STATION_RESOLVER] INVALID_DESTINATION train=${tNo} to=${toIn}`);
     return {
       success: false,

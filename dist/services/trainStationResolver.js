@@ -113,7 +113,7 @@ function mapIrctcInfoToStops(info) {
         };
     }).filter((s) => s.Station_Code.length > 0);
 }
-async function loadTrainScheduleContext(trainNo, fromIn, toIn) {
+async function loadTrainScheduleContext(trainNo, fromIn, toIn, runningDaysHint) {
     const tNo = padTrainNo(trainNo);
     // PHASE_5B129 — v2 → v3. Entries written before this phase may contain a DB origin
     // that an `inferred` (train-name parsed) code overwrote, and they carry a 7200s TTL.
@@ -172,13 +172,31 @@ async function loadTrainScheduleContext(trainNo, fromIn, toIn) {
     let validFrom = null;
     let validTo = null;
     let runningDaysAuthoritative = false;
+    // PHASE_084H — apply pre-fetched running-days hint from Split Engine Phase 2.5
+    // when available. This avoids calling getTrainInfo a second time solely for
+    // service-date truth when the Split Engine already fetched it. Physical stop
+    // validation (scheduleFetchNeeded) is separate and still triggers its own fetch.
+    let runningDaysFromHint = false;
+    if (runningDaysHint && runningDaysHint.runningDaysAuthoritative) {
+        // Apply the pre-fetched authoritative running days directly.
+        runningDays = runningDaysHint.runningDays;
+        runningDaysAuthoritative = true;
+        if (runningDaysHint.isCancelled !== null)
+            is_cancelled = runningDaysHint.isCancelled;
+        runningDaysFromHint = true;
+        logger_1.winstonLogger.debug(`[STATION_RESOLVER] RD_HINT applied for ${tNo}: rd=${runningDays} auth=true isCancelled=${runningDaysHint.isCancelled}`);
+    }
     const scheduleFetchNeeded = (0, stationResolutionUtils_1.isLiveScheduleRequired)({
         dbStopCount: dbStops.length,
         originCorrected: dbOriginSuspect,
         hasFrom,
         hasTo,
     });
-    if (scheduleFetchNeeded || needsServiceWindow) {
+    // Only call getTrainInfo when:
+    // - physical stop validation needs a live schedule (scheduleFetchNeeded), OR
+    // - service-date truth still needs resolving AND we have no pre-fetched hint
+    const serviceWindowNeeded = needsServiceWindow && !runningDaysFromHint;
+    if (scheduleFetchNeeded || serviceWindowNeeded) {
         try {
             const info = await irctcService_1.irctcService.getTrainInfo(tNo);
             if (info) {
@@ -199,13 +217,15 @@ async function loadTrainScheduleContext(trainNo, fromIn, toIn) {
                     validFrom = liveValidFrom;
                 if (liveValidTo)
                     validTo = liveValidTo;
-                if (liveRunningDays) {
+                // Only apply live running-days if we don't already have an authoritative hint
+                if (liveRunningDays && !runningDaysFromHint) {
                     runningDays = liveRunningDays;
                     runningDaysAuthoritative = true;
                 }
                 if (liveStatus)
                     status = liveStatus;
-                if (liveCancelled !== undefined)
+                // Only override isCancelled from live if hint didn't already set it
+                if (liveCancelled !== undefined && !runningDaysFromHint)
                     is_cancelled = liveCancelled;
             }
         }
@@ -265,7 +285,7 @@ function getDayOffsetForStop(stops, stop) {
 /**
  * Validate and resolve from/to for a train segment before calling IRCTC availability.
  */
-async function resolveSegmentForAvailability(trainNo, from, to, date) {
+async function resolveSegmentForAvailability(trainNo, from, to, date, hints) {
     const tNo = padTrainNo(trainNo);
     const fromIn = from.toUpperCase().trim();
     const toIn = to.toUpperCase().trim();
@@ -276,7 +296,9 @@ async function resolveSegmentForAvailability(trainNo, from, to, date) {
             message: 'Missing train number or station codes',
         };
     }
-    const ctx = await loadTrainScheduleContext(tNo, fromIn, toIn);
+    // PHASE_084H — look up pre-fetched running-days from Split Engine Phase 2.5
+    const rdHint = hints?.runningDaysCache?.get(tNo) ?? hints?.runningDaysCache?.get(trainNo);
+    const ctx = await loadTrainScheduleContext(tNo, fromIn, toIn, rdHint);
     // PHASE_5B167 — generic cancellation gate. Cancelled/suspended trains fail closed.
     if (ctx.is_cancelled === true || (ctx.status && (ctx.status.toLowerCase().includes('cancel') || ctx.status.toLowerCase().includes('suspend')))) {
         logger_1.winstonLogger.info(`[STATION_RESOLVER] TRAIN_CANCELLED train=${tNo} boarding=${fromIn} date=${date}`);
@@ -299,12 +321,25 @@ async function resolveSegmentForAvailability(trainNo, from, to, date) {
             dayOffset,
         });
         if (verdict !== 'YES') {
-            const detail = verdict === 'NO' ? 'does not operate' : 'service-date truth unknown';
+            // PHASE_084K — Distinguish between "confirmed not running" (NO) and
+            // "authoritative data unavailable" (UNKNOWN). Both fail closed, but
+            // UNKNOWN must NOT be labelled TRAIN_NOT_RUNNING — that implies the
+            // train genuinely does not operate, which is fabricated without evidence.
+            if (verdict === 'UNKNOWN') {
+                logger_1.winstonLogger.info(`[STATION_RESOLVER] RUNNING_DAYS_UNKNOWN train=${tNo} boarding=${fromIn} date=${date}` +
+                    ` rd=${ctx.runningDays} auth=${ctx.runningDaysAuthoritative}`);
+                return {
+                    success: false,
+                    reason: 'RUNNING_DAYS_UNKNOWN',
+                    message: `Train ${tNo} running-days not authoritative on ${date} — cannot confirm operation (DB placeholder, IRCTC unavailable)`,
+                };
+            }
+            // verdict === 'NO' — authoritative data says train does not operate
             logger_1.winstonLogger.info(`[STATION_RESOLVER] TRAIN_NOT_RUNNING train=${tNo} boarding=${fromIn} date=${date} verdict=${verdict}`);
             return {
                 success: false,
                 reason: 'TRAIN_NOT_RUNNING',
-                message: `Train ${tNo} ${detail} on ${date}`,
+                message: `Train ${tNo} does not operate on ${date}`,
             };
         }
     }
@@ -350,8 +385,22 @@ async function resolveSegmentForAvailability(trainNo, from, to, date) {
         };
     }
     // PHASE_5B057: Require exact physical stop on train schedule for availability checks
+    // PHASE_084K: When the schedule came from DB and live was unavailable, a missing stop
+    // may reflect incomplete DB coverage rather than a confirmed physical absence.
+    // In that case emit DB_UNVERIFIED_STOP_DATA (still fail-closed) so upstream diagnostics
+    // can distinguish "stop confirmed absent" from "stop absent in DB, live not checked".
+    const scheduleIsDbOnly = ctx.source === 'db' && !ctx.runningDaysAuthoritative;
     const fromStop = ctx.stops.find(s => (s.Station_Code || '').toUpperCase().trim() === fromIn);
     if (!fromStop) {
+        if (scheduleIsDbOnly) {
+            logger_1.winstonLogger.info(`[STATION_RESOLVER] DB_UNVERIFIED_STOP_DATA train=${tNo} from=${fromIn}` +
+                ` — stop absent in DB schedule, live schedule was not available`);
+            return {
+                success: false,
+                reason: 'DB_UNVERIFIED_STOP_DATA',
+                message: `Station ${fromIn} not found in DB schedule for train ${tNo} (live schedule unavailable — cannot confirm physical absence)`,
+            };
+        }
         logger_1.winstonLogger.info(`[STATION_RESOLVER] INVALID_BOARDING train=${tNo} from=${fromIn}`);
         return {
             success: false,
@@ -361,6 +410,15 @@ async function resolveSegmentForAvailability(trainNo, from, to, date) {
     }
     const toStop = ctx.stops.find(s => (s.Station_Code || '').toUpperCase().trim() === toIn);
     if (!toStop) {
+        if (scheduleIsDbOnly) {
+            logger_1.winstonLogger.info(`[STATION_RESOLVER] DB_UNVERIFIED_STOP_DATA train=${tNo} to=${toIn}` +
+                ` — stop absent in DB schedule, live schedule was not available`);
+            return {
+                success: false,
+                reason: 'DB_UNVERIFIED_STOP_DATA',
+                message: `Station ${toIn} not found in DB schedule for train ${tNo} (live schedule unavailable — cannot confirm physical absence)`,
+            };
+        }
         logger_1.winstonLogger.info(`[STATION_RESOLVER] INVALID_DESTINATION train=${tNo} to=${toIn}`);
         return {
             success: false,

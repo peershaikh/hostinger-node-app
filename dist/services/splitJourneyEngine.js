@@ -1082,6 +1082,16 @@ class SplitJourneyEngine {
         /** Hard budget for API fallback calls inside searchLeg. After this many ms
          *  from engine start, searchLeg skips live APIs and uses DB-only. */
         this.API_BUDGET_MS = 2000;
+        /**
+         * PHASE_084H — Running-days validation limits.
+         * MAX_RD_VALIDATION_CALLS: maximum live getTrainInfo calls for running-days
+         *   pre-fetch per search. Cache hits do not count toward this limit.
+         * MAX_RD_CONCURRENT: maximum parallel getTrainInfo calls in the prefetch pool.
+         * These are additive to the leg-search budget but never steals from it
+         * because the pre-fetch runs after Phase 2 (leg searches) completes.
+         */
+        this.MAX_RD_VALIDATION_CALLS = 12;
+        this.MAX_RD_CONCURRENT = 4;
         /** Minimum transfer window: 45 minutes — realistic Indian railway minimum */
         this.MIN_BUFFER_MINUTES = 45;
         /** Maximum transfer window: 8 hours — overnight stays are valid but 12h is too long */
@@ -1094,6 +1104,128 @@ class SplitJourneyEngine {
         this.legSearchStats = { hits: 0, misses: 0 };
         /** P0-006: Coalesce concurrent split searches for the same route key. */
         this.routeInFlight = new Map();
+    }
+    // —————————————————————————————————————————————————————————————————————————
+    // PHASE_084H — RUNNING-DAYS PRE-FETCH (Phase 2.5)
+    //
+    // Batch-fetches authoritative running-days for DB-sourced split candidates
+    // before the pairing loop runs. This allows resolveSegmentForAvailability()
+    // to reuse the already-fetched data instead of calling getTrainInfo again
+    // per candidate during the pairing/trust-gate phase.
+    //
+    // Constraints:
+    //   - MAX_RD_CONCURRENT (4): max parallel getTrainInfo calls in the pool
+    //   - MAX_RD_VALIDATION_CALLS (12): max live API calls per search
+    //   - cache hits (irctcService/cacheService) do not count as API calls
+    //   - hard wall: never runs past remainingBudgetMs
+    //   - fail-safe: fetch failure = UNKNOWN entry (conservative reject preserved)
+    //   - deduplicates train numbers before fetching
+    // —————————————————————————————————————————————————————————————————————————
+    async prefetchRunningDays(candidateTrainNos, remainingBudgetMs) {
+        const result = new Map();
+        const wallDeadline = Date.now() + Math.min(remainingBudgetMs, 12000); // hard 12s wall
+        let apiCalls = 0;
+        let cacheHits = 0;
+        // Build unique list — skip passenger-series trains (they are already filtered in isBasicallyValid)
+        const uniqueNos = [...candidateTrainNos].filter(n => n && n.length >= 4 && !/^[567]/.test(n));
+        if (uniqueNos.length === 0)
+            return { cache: result, apiCalls, cacheHits };
+        // Check cacheService first (the resolved schedule context already built by irctcService
+        // may have running-days embedded). We use a best-effort check on existing keys.
+        const toFetch = [];
+        for (const tNo of uniqueNos) {
+            // Check if we already have a schedule context cached from a prior call this search
+            // (the trainStationResolver cacheKey is `sched_ctx_v4_<padded>`)
+            const padded = tNo.padStart(5, '0');
+            const existingCtx = cacheService_1.cacheService.get(`sched_ctx_v4_${padded}`);
+            if (existingCtx && existingCtx.runningDaysAuthoritative === true && existingCtx.runningDays) {
+                result.set(padded, {
+                    trainNo: padded,
+                    runningDays: existingCtx.runningDays,
+                    runningDaysAuthoritative: true,
+                    isCancelled: existingCtx.is_cancelled ?? null,
+                    fetchedAt: Date.now(),
+                });
+                result.set(tNo, result.get(padded)); // also key by raw number
+                cacheHits++;
+            }
+            else {
+                toFetch.push(tNo);
+            }
+        }
+        if (toFetch.length === 0 || apiCalls >= this.MAX_RD_VALIDATION_CALLS) {
+            return { cache: result, apiCalls, cacheHits };
+        }
+        // Concurrency pool — process at most MAX_RD_CONCURRENT in parallel
+        const pool = [];
+        let idx = 0;
+        const runNext = async () => {
+            while (idx < toFetch.length && apiCalls < this.MAX_RD_VALIDATION_CALLS) {
+                if (Date.now() >= wallDeadline)
+                    break;
+                const tNo = toFetch[idx++];
+                const padded = tNo.padStart(5, '0');
+                // Skip if already resolved by another concurrent slot
+                if (result.has(padded))
+                    continue;
+                apiCalls++;
+                try {
+                    const info = await irctcService_1.irctcService.getTrainInfo(padded);
+                    if (info) {
+                        const inner = info.trainInfo || info;
+                        const liveRd = inner?.running_days || inner?.runningDays ||
+                            info?.running_days || info?.runningDays || null;
+                        const liveCancelled = inner?.is_cancelled === true || inner?.isCancelled === true
+                            ? true
+                            : (inner?.is_cancelled === false || inner?.isCancelled === false ? false : null);
+                        const liveStatus = inner?.train_status || inner?.status || info?.train_status || info?.status || '';
+                        const isCancelledFromStatus = liveStatus && (liveStatus.toLowerCase().includes('cancel') || liveStatus.toLowerCase().includes('suspend'))
+                            ? true
+                            : null;
+                        const isCancelled = liveCancelled !== null ? liveCancelled : isCancelledFromStatus;
+                        const entry = {
+                            trainNo: padded,
+                            runningDays: liveRd,
+                            runningDaysAuthoritative: !!liveRd,
+                            isCancelled: isCancelled,
+                            fetchedAt: Date.now(),
+                        };
+                        result.set(padded, entry);
+                        result.set(tNo, entry); // also key by raw (unpadded) number
+                    }
+                    else {
+                        // getTrainInfo returned nothing — store UNKNOWN entry (fail closed)
+                        const unknownEntry = {
+                            trainNo: padded,
+                            runningDays: null,
+                            runningDaysAuthoritative: false,
+                            isCancelled: null,
+                            fetchedAt: Date.now(),
+                        };
+                        result.set(padded, unknownEntry);
+                        result.set(tNo, unknownEntry);
+                    }
+                }
+                catch {
+                    // Timeout or provider error — store UNKNOWN (fail closed, never fail open)
+                    const unknownEntry = {
+                        trainNo: padded,
+                        runningDays: null,
+                        runningDaysAuthoritative: false,
+                        isCancelled: null,
+                        fetchedAt: Date.now(),
+                    };
+                    result.set(padded, unknownEntry);
+                    result.set(tNo, unknownEntry);
+                }
+            }
+        };
+        // Launch MAX_RD_CONCURRENT workers
+        for (let w = 0; w < this.MAX_RD_CONCURRENT; w++) {
+            pool.push(runNext());
+        }
+        await Promise.all(pool);
+        return { cache: result, apiCalls, cacheHits };
     }
     // —————————————————————————————————————————————————————————————————————————
     // DETOUR AND DISTANCE LOGIC
@@ -1469,10 +1601,24 @@ class SplitJourneyEngine {
             result.smart_routes = fullySanitizedSplits;
             result.hasMoreSplits = regularSplits.length > 6 || sameTrainSplits.length > 2;
             result.totalFound = totalFound;
-            // Diagnostic structure for split monitoring and missing route telemetry
+            // PHASE_084K — Diagnostic structure for split monitoring and missing route telemetry.
+            // topRejectionReason must reflect the actual inner rejection reason — never
+            // collapse to ROUTE_NOT_FOUND when candidates were generated and then rejected.
             let topRejectionReason = 'NONE';
             if (finalSanitized.length === 0) {
-                if (rawSplits.length === 0) {
+                // Pull inner rejection stats propagated from findSplitJourneys
+                const innerStats = result._innerRejectionStats || {};
+                // Determine the dominant failure reason ordered by priority
+                const dominant = ((innerStats.running_days_unknown || 0) > 0 ? 'RUNNING_DAYS_UNKNOWN' :
+                    (innerStats.train_not_running || 0) > 0 ? 'TRAIN_NOT_RUNNING' :
+                        (innerStats.db_unverified_stop_data || 0) > 0 ? 'DB_UNVERIFIED_STOP_DATA' :
+                            (innerStats.stop_not_found || 0) > 0 ? 'STOP_NOT_FOUND' :
+                                (innerStats.trust_gate_reject || 0) > 0 ? 'TRUST_GATE_REJECT' :
+                                    null);
+                if (dominant) {
+                    topRejectionReason = dominant;
+                }
+                else if (rawSplits.length === 0) {
                     topRejectionReason = 'ROUTE_NOT_FOUND';
                 }
                 else if (rejectedCount > 0) {
@@ -1489,8 +1635,16 @@ class SplitJourneyEngine {
                     rawCandidates: rawSplits.length,
                     sanitizedCandidates: sanitizedSplits.length,
                     recoveredCandidates: finalSanitized.length,
-                    sanitizerRejected: rejectedCount
+                    sanitizerRejected: rejectedCount,
+                    // PHASE_084K — inner stage breakdown
+                    ...(result._innerRejectionStats || {}),
                 },
+                // PHASE_084K — granular running-days and stop counts for admin observability
+                runningDaysUnknown: (result._innerRejectionStats || {}).running_days_unknown || 0,
+                runningDaysRejected: ((result._innerRejectionStats || {}).running_days_unknown || 0) +
+                    ((result._innerRejectionStats || {}).train_not_running || 0),
+                stopNotFound: (result._innerRejectionStats || {}).stop_not_found || 0,
+                dbUnverifiedStopData: (result._innerRejectionStats || {}).db_unverified_stop_data || 0,
                 topRejectionReason: finalSanitized.length > 0 ? 'NONE' : topRejectionReason
             };
             if (combinedSplits.length > 0) {
@@ -1711,7 +1865,12 @@ class SplitJourneyEngine {
             return [];
         });
         splitJourneys = await this.findSplitJourneys(sName, dName, sCodes, dCodes, date, directTrains);
+        // PHASE_084K — harvest the per-stage rejection stats attached by findSplitJourneys
+        const innerRejectionStats = splitJourneys._rejectionStats || {};
         logger_1.winstonLogger.info(`[SPLIT_ENGINE] Engine completed in ${Date.now() - engineStart}ms | direct=${directTrains.length} split=${splitJourneys.length}`);
+        if (Object.keys(innerRejectionStats).some(k => innerRejectionStats[k] > 0)) {
+            logger_1.winstonLogger.info(`[SPLIT_ENGINE] Inner rejection stats: ${JSON.stringify(innerRejectionStats)}`);
+        }
         // —— TWO-TIER VALIDATION: STRICT → RELAXED FALLBACK ——
         let rawSplits = Array.isArray(splitJourneys) ? splitJourneys : [];
         let safeSplits = [];
@@ -1947,6 +2106,8 @@ class SplitJourneyEngine {
             split_recommended: safeSplits.length > 0 && shouldRecommendSplit,
             message
         };
+        // PHASE_084K — propagate inner rejection stats for diagnostic aggregation in _runFindCombinedRoutes
+        result._innerRejectionStats = innerRejectionStats;
         // —— PHASE_5B109 CACHE PAYLOAD (TRUST-GATED) ——————————————————————————————
         // The cache is a SINK, and sinks are fail-closed regardless of gate mode.
         // In `enforce` mode this is identical to `result`. In `shadow`/`off` mode the
@@ -2591,6 +2752,38 @@ class SplitJourneyEngine {
             }));
         }
         logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 2 done: ${leg2KeysToFetch.length} batched leg2 fetches for ${viableHubs.length} hubs`);
+        // —— PHASE 2.5: Authoritative running-days pre-fetch (PHASE_084H) ————————
+        // Collect unique train numbers from all leg1 and leg2 candidates.
+        // Batch-fetch getTrainInfo with bounded concurrency before the pairing loop
+        // so resolveSegmentForAvailability can reuse the authoritative data instead
+        // of calling getTrainInfo N times during pairing (which exhausts the budget).
+        const rdCandidateNos = new Set();
+        for (const { trains } of viableHubs) {
+            for (const t of trains) {
+                const num = String(t.train_number || t.trainNo ||
+                    t.train_no || t.number || '').trim();
+                if (num && num.length >= 4)
+                    rdCandidateNos.add(num);
+            }
+        }
+        for (const trains of leg2Cache.values()) {
+            for (const t of trains) {
+                const num = String(t.train_number || t.trainNo ||
+                    t.train_no || t.number || '').trim();
+                if (num && num.length >= 4)
+                    rdCandidateNos.add(num);
+            }
+        }
+        // Leave at least 15s for the pairing loop; cap prefetch budget at 10s
+        const rdElapsed = Date.now() - startTime;
+        const rdBudgetMs = Math.max(0, Math.min(10000, this.MAX_ENGINE_TIME_MS - rdElapsed - 15000));
+        const { cache: runningDaysCache, apiCalls: rdApiCalls, cacheHits: rdCacheHits } = rdBudgetMs > 100 && rdCandidateNos.size > 0
+            ? await this.prefetchRunningDays(rdCandidateNos, rdBudgetMs)
+            : { cache: new Map(), apiCalls: 0, cacheHits: 0 };
+        // Observability: one WARN-level summary per split search (not per candidate)
+        logger_1.winstonLogger.warn(`[RD_PREFETCH] src=${sCode}→${dCode}/${date} candidates=${rdCandidateNos.size}` +
+            ` fetched=${runningDaysCache.size / 2}` + // /2 because each entry is keyed by padded AND raw
+            ` apiCalls=${rdApiCalls} cacheHits=${rdCacheHits} budgetMs=${rdBudgetMs}`);
         // —— PHASE 3: In-memory pairing — no more API calls ———————————————————
         const directTrainsForFilter = directTrainsRef || await this.getDirectTrainsForCity(sCodes, dCodes, date);
         // —— Parse direct train durations correctly —————————————————————————————
@@ -2645,7 +2838,13 @@ class SplitJourneyEngine {
             reverse_or_disconnected: 0,
             same_train: 0,
             availability_issue: 0,
-            invalid_time: 0
+            invalid_time: 0,
+            // PHASE_084K — per-stage resolution rejection counters
+            running_days_unknown: 0,
+            train_not_running: 0,
+            stop_not_found: 0,
+            db_unverified_stop_data: 0,
+            trust_gate_reject: 0,
         };
         // Pre-calculate geography constraints OUTSIDE the loops
         const isReverseLoopGlobal = isNearAnyDestStationLocal(dCode, sCodes, 50);
@@ -2895,15 +3094,36 @@ class SplitJourneyEngine {
                             continue;
                         }
                         const { resolveSegmentForAvailability } = await Promise.resolve().then(() => __importStar(require('./trainStationResolver')));
+                        const rdHints = { runningDaysCache };
                         const [v1, v2] = await Promise.all([
-                            resolveSegmentForAvailability(l1.trainNo, l1.fromCode, l1.toCode, date),
-                            resolveSegmentForAvailability(l2.trainNo, l2.fromCode, l2.toCode, leg2DepDateStr)
+                            resolveSegmentForAvailability(l1.trainNo, l1.fromCode, l1.toCode, date, rdHints),
+                            resolveSegmentForAvailability(l2.trainNo, l2.fromCode, l2.toCode, leg2DepDateStr, rdHints)
                         ]);
                         if (!v1.success) {
+                            // PHASE_084K — track per-reason rejection counts for diagnostic aggregation
+                            const r1 = v1.reason;
+                            if (r1 === 'RUNNING_DAYS_UNKNOWN')
+                                rejectionStats.running_days_unknown++;
+                            else if (r1 === 'TRAIN_NOT_RUNNING')
+                                rejectionStats.train_not_running++;
+                            else if (r1 === 'DB_UNVERIFIED_STOP_DATA')
+                                rejectionStats.db_unverified_stop_data++;
+                            else if (r1 === 'INVALID_BOARDING_STATION' || r1 === 'INVALID_DESTINATION_STATION')
+                                rejectionStats.stop_not_found++;
                             logger_1.winstonLogger.info(`[SPLIT_PHYSICAL_STOP_GATE_REJECTED] Leg1 ${l1.trainNo} (${l1.fromCode}->${l1.toCode}): ${v1.reason} - ${v1.message}`);
                             continue;
                         }
                         if (!v2.success) {
+                            // PHASE_084K — track per-reason rejection counts for diagnostic aggregation
+                            const r2 = v2.reason;
+                            if (r2 === 'RUNNING_DAYS_UNKNOWN')
+                                rejectionStats.running_days_unknown++;
+                            else if (r2 === 'TRAIN_NOT_RUNNING')
+                                rejectionStats.train_not_running++;
+                            else if (r2 === 'DB_UNVERIFIED_STOP_DATA')
+                                rejectionStats.db_unverified_stop_data++;
+                            else if (r2 === 'INVALID_BOARDING_STATION' || r2 === 'INVALID_DESTINATION_STATION')
+                                rejectionStats.stop_not_found++;
                             logger_1.winstonLogger.info(`[SPLIT_PHYSICAL_STOP_GATE_REJECTED] Leg2 ${l2.trainNo} (${l2.fromCode}->${l2.toCode}): ${v2.reason} - ${v2.message}`);
                             continue;
                         }
@@ -3556,6 +3776,9 @@ class SplitJourneyEngine {
             console.log(`[SPLIT_DEBUG] Rejection Stats:`, rejectionStats);
         if (process.env.NODE_ENV !== 'production')
             console.log(`[SPLIT_DEBUG] Cache Stats: ${this.legSearchStats.hits} hits, ${this.legSearchStats.misses} misses`);
+        // PHASE_084K — attach rejection stats to the returned array so the caller
+        // (_findCombinedRoutesInternal) can surface them in diagnostic telemetry.
+        normalizedSplits._rejectionStats = rejectionStats;
         return normalizedSplits;
     }
     // ── CANCELLED TRAINS + FABRICATED NAME FILTER ──

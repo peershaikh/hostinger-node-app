@@ -815,8 +815,27 @@ class SelfLearningService {
         const rejectionStats = diag.rejectionStats || {};
         let topRejectionReason = 'NONE';
         if (validSplitCount === 0) {
+            // PHASE_084K — check inner rejection stats before falling back to ROUTE_NOT_FOUND.
+            // The diagnostic block from _runFindCombinedRoutes now carries granular counts;
+            // prefer the most specific reason available.
+            const runningDaysUnknown = diag.runningDaysUnknown || rejectionStats.running_days_unknown || 0;
+            const trainNotRunning = diag.runningDaysRejected ? Math.max(0, (diag.runningDaysRejected || 0) - runningDaysUnknown) : (rejectionStats.train_not_running || 0);
+            const dbUnverified = diag.dbUnverifiedStopData || rejectionStats.db_unverified_stop_data || 0;
+            const stopNotFound = diag.stopNotFound || rejectionStats.stop_not_found || 0;
             if (candidateCount === 0) {
-                topRejectionReason = directCount === 0 ? 'ROUTE_NOT_FOUND' : 'ROUTE_NOT_FOUND';
+                topRejectionReason = 'ROUTE_NOT_FOUND';
+            }
+            else if (runningDaysUnknown > 0) {
+                topRejectionReason = 'RUNNING_DAYS_UNKNOWN';
+            }
+            else if (trainNotRunning > 0) {
+                topRejectionReason = 'TRAIN_NOT_RUNNING';
+            }
+            else if (dbUnverified > 0) {
+                topRejectionReason = 'DB_UNVERIFIED_STOP_DATA';
+            }
+            else if (stopNotFound > 0) {
+                topRejectionReason = 'STOP_NOT_FOUND';
             }
             else if (diag.topRejectionReason && diag.topRejectionReason !== 'NONE') {
                 topRejectionReason = diag.topRejectionReason;
@@ -853,7 +872,10 @@ class SelfLearningService {
                             .from('missing_routes')
                             .update({
                             direct_count: directCount,
+                            candidate_count: candidateCount,
+                            valid_split_count: validSplitCount,
                             top_rejection_reason: topRejectionReason,
+                            rejection_stats: rejectionStats,
                             last_seen: verificationTimestamp
                         })
                             .eq('id', rec.id);

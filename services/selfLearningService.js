@@ -33,7 +33,7 @@ class SelfLearningService {
     }
     ensureDataDir() {
         if (!fs_1.default.existsSync(DATA_DIR)) {
-            fs_1.default.mkdirSync(DATA_DIR, { recursive: true });
+            (0, supabase_1.safeMkdirSync)(DATA_DIR, { recursive: true });
         }
     }
     getFilePath(filename) {
@@ -70,7 +70,8 @@ class SelfLearningService {
     saveLocalData(filename, data) {
         try {
             const filePath = this.getFilePath(filename);
-            fs_1.default.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+            // PHASE 5B136: suppressed when LOCAL_E2E_NO_WRITE=true (existing file untouched)
+            (0, supabase_1.safeWriteFileSync)(filePath, JSON.stringify(data, null, 2), 'utf8');
         }
         catch (err) {
             logger_1.winstonLogger.error(`[SELF_LEARNING] Failed to save local file ${filename}: ${err.message}`);
@@ -218,6 +219,22 @@ class SelfLearningService {
             this.missingQueries.push(existing);
         }
         this.saveLocalData('missing_queries.json', this.missingQueries);
+        // Telemetry Integration
+        try {
+            const { universalEventEmitter } = require('./universalEventEmitter');
+            const { UniversalEventNames } = require('../constants/eventTaxonomy');
+            universalEventEmitter.emit({
+                eventName: UniversalEventNames.MISSING_ROUTE_DETECTED,
+                searchId: dbId,
+                userId: userId || undefined,
+                mode: 'rail',
+                route: `${cleanSource}-${cleanDestination}`,
+                metadata: { source: cleanSource, destination: cleanDestination, date, query_id: dbId }
+            });
+        }
+        catch {
+            // Non-blocking telemetry
+        }
         // Supabase Dual Write
         if ((0, supabase_1.isSupabaseConfigured)()) {
             try {
@@ -278,23 +295,48 @@ class SelfLearningService {
             }
         }
     }
-    async logMissingRoute(source, destination, userId) {
-        const key = `route:${source}:${destination}`;
-        if (this.isDuplicate(key))
-            return;
+    async logMissingRoute(source, destination, userId, meta) {
         const cleanSource = source.toUpperCase().trim();
         const cleanDestination = destination.toUpperCase().trim();
-        let existing = this.missingRoutes.find(r => r.source === cleanSource && r.destination === cleanDestination && r.status === 'pending');
+        const category = meta?.category || 'SPLIT_ROUTE_MISS';
+        const key = `route:${category}:${cleanSource}:${cleanDestination}`;
+        if (this.isDuplicate(key))
+            return;
+        let existing = this.missingRoutes.find(r => r.source === cleanSource &&
+            r.destination === cleanDestination &&
+            r.status === 'pending' &&
+            (r.category === category || (!r.category && category === 'SPLIT_ROUTE_MISS')));
         const dbId = existing ? existing.id : crypto_1.default.randomUUID();
         if (existing) {
             existing.count += 1;
             existing.last_seen = new Date().toISOString();
+            if (meta?.date)
+                existing.date = meta.date;
+            if (meta?.direct_count != null)
+                existing.direct_count = meta.direct_count;
+            if (meta?.source_code)
+                existing.source_code = meta.source_code;
+            if (meta?.destination_code)
+                existing.destination_code = meta.destination_code;
+            if (meta?.top_rejection_reason)
+                existing.top_rejection_reason = meta.top_rejection_reason;
+            if (meta?.rejection_reasons && meta.rejection_reasons.length > 0) {
+                const mergedReasons = Array.from(new Set([...(existing.rejection_reasons || []), ...meta.rejection_reasons]));
+                existing.rejection_reasons = mergedReasons;
+            }
         }
         else {
             existing = {
                 id: dbId,
                 source: cleanSource,
                 destination: cleanDestination,
+                category,
+                date: meta?.date,
+                source_code: meta?.source_code,
+                destination_code: meta?.destination_code,
+                direct_count: meta?.direct_count ?? 0,
+                rejection_reasons: meta?.rejection_reasons || (meta?.top_rejection_reason ? [meta.top_rejection_reason] : []),
+                top_rejection_reason: meta?.top_rejection_reason || 'ROUTE_NOT_FOUND',
                 user_id: userId,
                 count: 1,
                 last_seen: new Date().toISOString(),
@@ -304,6 +346,29 @@ class SelfLearningService {
             this.missingRoutes.push(existing);
         }
         this.saveLocalData('missing_routes.json', this.missingRoutes);
+        // Telemetry Integration
+        try {
+            const { universalEventEmitter } = require('./universalEventEmitter');
+            const { UniversalEventNames } = require('../constants/eventTaxonomy');
+            universalEventEmitter.emit({
+                eventName: UniversalEventNames.MISSING_ROUTE_DETECTED,
+                searchId: dbId,
+                userId: userId || undefined,
+                mode: 'rail',
+                route: `${cleanSource}-${cleanDestination}`,
+                metadata: {
+                    source: cleanSource,
+                    destination: cleanDestination,
+                    category,
+                    date: meta?.date,
+                    top_rejection_reason: existing.top_rejection_reason,
+                    query_id: dbId
+                }
+            });
+        }
+        catch {
+            // Non-blocking telemetry
+        }
         if ((0, supabase_1.isSupabaseConfigured)()) {
             try {
                 const { data, error } = await supabase_1.supabase
@@ -316,7 +381,12 @@ class SelfLearningService {
                 if (!error && data) {
                     await supabase_1.supabase
                         .from('missing_routes')
-                        .update({ count: data.count + 1, last_seen: new Date().toISOString() })
+                        .update({
+                        count: data.count + 1,
+                        last_seen: new Date().toISOString(),
+                        top_rejection_reason: existing.top_rejection_reason,
+                        category
+                    })
                         .eq('id', data.id);
                 }
                 else {
@@ -326,6 +396,10 @@ class SelfLearningService {
                         id: dbId,
                         source: cleanSource,
                         destination: cleanDestination,
+                        category,
+                        date: meta?.date,
+                        direct_count: meta?.direct_count ?? 0,
+                        top_rejection_reason: existing.top_rejection_reason,
                         user_id: userId,
                         count: 1,
                         status: 'pending',
@@ -418,6 +492,21 @@ class SelfLearningService {
             this.missingStations.push(existing);
         }
         this.saveLocalData('missing_stations.json', this.missingStations);
+        // Telemetry Integration
+        try {
+            const { universalEventEmitter } = require('./universalEventEmitter');
+            const { UniversalEventNames } = require('../constants/eventTaxonomy');
+            universalEventEmitter.emit({
+                eventName: UniversalEventNames.MISSING_STATION_DETECTED,
+                searchId: dbId,
+                userId: userId || undefined,
+                mode: 'rail',
+                metadata: { query: cleanQuery, query_id: dbId }
+            });
+        }
+        catch {
+            // Non-blocking telemetry
+        }
         if ((0, supabase_1.isSupabaseConfigured)()) {
             try {
                 const { data, error } = await supabase_1.supabase
@@ -460,7 +549,7 @@ class SelfLearningService {
         try {
             const pnrFailuresFile = this.getFilePath('pnr_failures.jsonl');
             const logEntry = JSON.stringify({ pnr: cleanPnr, user_id: userId, timestamp }) + '\n';
-            fs_1.default.appendFileSync(pnrFailuresFile, logEntry, 'utf8');
+            (0, supabase_1.safeAppendFileSync)(pnrFailuresFile, logEntry, 'utf8');
             logger_1.winstonLogger.info(`[SELF_LEARNING] Logged failed PNR lookup: ${cleanPnr}`);
         }
         catch (err) {
@@ -532,7 +621,40 @@ class SelfLearningService {
     getLocalDataForTable(table) {
         switch (table) {
             case 'missing_queries': return this.missingQueries;
-            case 'missing_routes': return this.missingRoutes;
+            case 'missing_routes': {
+                const now = Date.now();
+                const SEVEN_DAYS_MS = 7 * 24 * 3600 * 1000;
+                return this.missingRoutes.map(r => {
+                    let currentState = 'HISTORICAL_MISS';
+                    if (r.last_verified_at) {
+                        const ageMs = now - new Date(r.last_verified_at).getTime();
+                        if (ageMs > SEVEN_DAYS_MS) {
+                            currentState = 'STALE';
+                        }
+                        else if (r.valid_split_count != null && r.valid_split_count > 0) {
+                            currentState = 'RESOLVED';
+                        }
+                        else {
+                            currentState = 'CURRENT_MISS';
+                        }
+                    }
+                    else if (r.status === 'approved' || r.status === 'merged') {
+                        currentState = 'RESOLVED';
+                    }
+                    else {
+                        currentState = 'HISTORICAL_MISS';
+                    }
+                    return {
+                        ...r,
+                        current_state: r.current_state || currentState,
+                        // Do NOT show 0 direct for unverified historical records
+                        direct_count: r.last_verified_at ? r.direct_count : undefined,
+                        top_rejection_reason: r.last_verified_at
+                            ? (r.top_rejection_reason || ((r.valid_split_count && r.valid_split_count > 0) ? 'NONE' : 'DIAGNOSTIC_UNAVAILABLE'))
+                            : (r.top_rejection_reason || 'NOT_REVALIDATED')
+                    };
+                });
+            }
             case 'missing_trains': return this.missingTrains;
             case 'missing_stations': return this.missingStations;
             case 'route_memory': return this.routeMemory;
@@ -653,6 +775,130 @@ class SelfLearningService {
             }
         }
         return true;
+    }
+    async revalidateSplitRoute(params) {
+        const { id, source, destination, date } = params;
+        const { stationService } = require('./stationService');
+        const { trainService } = require('./trainService');
+        const { splitJourneyEngine } = require('./splitJourneyEngine');
+        let matchingRecords = [];
+        if (id) {
+            const rec = this.missingRoutes.find(r => r.id === id);
+            if (rec)
+                matchingRecords.push(rec);
+        }
+        else if (source && destination) {
+            const cleanSrc = stationService.normalizeInput(source);
+            const cleanDst = stationService.normalizeInput(destination);
+            matchingRecords = this.missingRoutes.filter(r => (r.source === source || r.source_code === cleanSrc || stationService.normalizeInput(r.source) === cleanSrc || (cleanSrc === 'CSMT' && stationService.normalizeInput(r.source) === 'CSTM') || (cleanSrc === 'CSTM' && stationService.normalizeInput(r.source) === 'CSMT')) &&
+                (r.destination === destination || r.destination_code === cleanDst || stationService.normalizeInput(r.destination) === cleanDst));
+        }
+        const rawSource = source || matchingRecords[0]?.source;
+        const rawDestination = destination || matchingRecords[0]?.destination;
+        if (!rawSource || !rawDestination) {
+            throw new Error('Source and destination are required for split route revalidation');
+        }
+        const cleanSource = stationService.normalizeInput(rawSource);
+        const cleanDestination = stationService.normalizeInput(rawDestination);
+        const travelDate = date || matchingRecords[0]?.date || '2026-08-28';
+        logger_1.winstonLogger.info(`[REVALIDATE_SPLIT] Running read-only diagnostic for ${cleanSource} → ${cleanDestination} on ${travelDate}`);
+        // 1. Fetch direct trains
+        const directRes = await trainService.getTrainData(cleanSource, cleanDestination, travelDate);
+        const directTrains = directRes?.direct || [];
+        const directCount = directTrains.length;
+        // 2. Run Split Engine in diagnostic mode (read-only)
+        const splitRes = await splitJourneyEngine.findCombinedRoutes(cleanSource, cleanDestination, travelDate, directTrains, undefined, { classType: '3A', quota: 'GN' });
+        const validSplits = splitRes?.split || splitRes?.smart_routes || [];
+        const validSplitCount = Array.isArray(validSplits) ? validSplits.length : 0;
+        const diag = splitRes?.diagnostic || {};
+        const candidateCount = diag.candidateCount || 0;
+        const rejectionStats = diag.rejectionStats || {};
+        let topRejectionReason = 'NONE';
+        if (validSplitCount === 0) {
+            // PHASE_084K — check inner rejection stats before falling back to ROUTE_NOT_FOUND.
+            // The diagnostic block from _runFindCombinedRoutes now carries granular counts;
+            // prefer the most specific reason available.
+            const runningDaysUnknown = diag.runningDaysUnknown || rejectionStats.running_days_unknown || 0;
+            const trainNotRunning = diag.runningDaysRejected ? Math.max(0, (diag.runningDaysRejected || 0) - runningDaysUnknown) : (rejectionStats.train_not_running || 0);
+            const dbUnverified = diag.dbUnverifiedStopData || rejectionStats.db_unverified_stop_data || 0;
+            const stopNotFound = diag.stopNotFound || rejectionStats.stop_not_found || 0;
+            if (candidateCount === 0) {
+                topRejectionReason = 'ROUTE_NOT_FOUND';
+            }
+            else if (runningDaysUnknown > 0) {
+                topRejectionReason = 'RUNNING_DAYS_UNKNOWN';
+            }
+            else if (trainNotRunning > 0) {
+                topRejectionReason = 'TRAIN_NOT_RUNNING';
+            }
+            else if (dbUnverified > 0) {
+                topRejectionReason = 'DB_UNVERIFIED_STOP_DATA';
+            }
+            else if (stopNotFound > 0) {
+                topRejectionReason = 'STOP_NOT_FOUND';
+            }
+            else if (diag.topRejectionReason && diag.topRejectionReason !== 'NONE') {
+                topRejectionReason = diag.topRejectionReason;
+            }
+            else {
+                topRejectionReason = 'TRANSFER_BUFFER_FAILURE';
+            }
+        }
+        const currentState = validSplitCount > 0 ? 'RESOLVED' : 'CURRENT_MISS';
+        const verificationTimestamp = new Date().toISOString();
+        // 3. Update the matching record in telemetry if it exists (OBSERVABILITY ONLY — no auto learning)
+        for (const rec of matchingRecords) {
+            rec.source_code = cleanSource;
+            rec.destination_code = cleanDestination;
+            rec.date = travelDate;
+            rec.direct_count = directCount;
+            rec.valid_split_count = validSplitCount;
+            rec.candidate_count = candidateCount;
+            rec.top_rejection_reason = topRejectionReason;
+            rec.rejection_stats = rejectionStats;
+            rec.rejection_reasons = Object.keys(rejectionStats).filter(k => rejectionStats[k] > 0);
+            rec.current_state = currentState;
+            rec.last_verified_at = verificationTimestamp;
+            if (validSplitCount > 0) {
+                rec.last_successful_at = verificationTimestamp;
+            }
+        }
+        if (matchingRecords.length > 0) {
+            this.saveLocalData('missing_routes.json', this.missingRoutes);
+            if ((0, supabase_1.isSupabaseConfigured)()) {
+                try {
+                    for (const rec of matchingRecords) {
+                        await supabase_1.supabase
+                            .from('missing_routes')
+                            .update({
+                            direct_count: directCount,
+                            candidate_count: candidateCount,
+                            valid_split_count: validSplitCount,
+                            top_rejection_reason: topRejectionReason,
+                            rejection_stats: rejectionStats,
+                            last_seen: verificationTimestamp
+                        })
+                            .eq('id', rec.id);
+                    }
+                }
+                catch (err) {
+                    logger_1.winstonLogger.warn(`[SELF_LEARNING] Supabase revalidate update failed: ${err.message}`);
+                }
+            }
+        }
+        return {
+            success: true,
+            record: matchingRecords[0],
+            diagnostic: {
+                directCount,
+                candidateCount,
+                validSplitCount,
+                topRejectionReason,
+                rejectionStats,
+                verificationTimestamp,
+                currentState
+            }
+        };
     }
     async getAnalytics() {
         // Computes analytics: counts + top N elements
