@@ -1608,24 +1608,40 @@ class SplitJourneyEngine {
             if (finalSanitized.length === 0) {
                 // Pull inner rejection stats propagated from findSplitJourneys
                 const innerStats = result._innerRejectionStats || {};
-                // Determine the dominant failure reason ordered by priority
-                const dominant = ((innerStats.running_days_unknown || 0) > 0 ? 'RUNNING_DAYS_UNKNOWN' :
+                // PHASE_085C — getDominantRejectionReason rewrite.
+                // Priority order: severity (train literally cancelled/not-running) > physical
+                // impossibility > topology > routing > time/transfer > system > soft.
+                // INVARIANT: ROUTE_NOT_FOUND may only be returned when ALL specific counters
+                // are zero — i.e. no candidate was generated AND no rejection was recorded.
+                const dominant = ((innerStats.cancellation || 0) > 0 ? 'CANCELLATION' :
                     (innerStats.train_not_running || 0) > 0 ? 'TRAIN_NOT_RUNNING' :
-                        (innerStats.db_unverified_stop_data || 0) > 0 ? 'DB_UNVERIFIED_STOP_DATA' :
+                        (innerStats.running_days_unknown || 0) > 0 ? 'RUNNING_DAYS_UNKNOWN' :
                             (innerStats.stop_not_found || 0) > 0 ? 'STOP_NOT_FOUND' :
-                                (innerStats.trust_gate_reject || 0) > 0 ? 'TRUST_GATE_REJECT' :
-                                    null);
+                                (innerStats.db_unverified_stop_data || 0) > 0 ? 'DB_UNVERIFIED_STOP_DATA' :
+                                    (innerStats.trust_gate_reject || 0) > 0 ? 'TRUST_GATE_REJECT' :
+                                        (innerStats.source_stop_missing || 0) > 0 ? 'SOURCE_STOP_MISSING' :
+                                            (innerStats.dest_stop_missing || 0) > 0 ? 'DEST_STOP_MISSING' :
+                                                (innerStats.reverse_or_disconnected || 0) > 0 ? 'REVERSE_OR_DISCONNECTED' :
+                                                    (innerStats.same_train || 0) > 0 ? 'SAME_TRAIN_REDUNDANCY' :
+                                                        (innerStats.wait_time_invalid || 0) > 0 ? 'TRANSFER_BUFFER_FAILURE' :
+                                                            (innerStats.invalid_time || 0) > 0 ? 'INVALID_TIME' :
+                                                                (innerStats.api_budget_exhausted || 0) > 0 ? 'API_BUDGET_EXHAUSTED' :
+                                                                    (innerStats.provider_timeout || 0) > 0 ? 'PROVIDER_TIMEOUT' :
+                                                                        (innerStats.availability_issue || 0) > 0 ? 'AVAILABILITY_ISSUE' :
+                                                                            null);
                 if (dominant) {
                     topRejectionReason = dominant;
                 }
-                else if (rawSplits.length === 0) {
-                    topRejectionReason = 'ROUTE_NOT_FOUND';
-                }
                 else if (rejectedCount > 0) {
+                    // Candidates existed but were rejected by the sanitizer — use TRANSFER_BUFFER_FAILURE
+                    // as the legacy bucket (wait-time is the sanitizer's primary filter).
                     topRejectionReason = 'TRANSFER_BUFFER_FAILURE';
                 }
                 else {
-                    topRejectionReason = 'ROUTE_NOT_FOUND';
+                    // INVARIANT enforced: ROUTE_NOT_FOUND is only legal when every specific
+                    // counter is zero AND no candidates were generated at all.
+                    const anySpecificRejection = Object.values(innerStats).some(v => v > 0);
+                    topRejectionReason = anySpecificRejection ? 'UNKNOWN_REJECTION' : 'ROUTE_NOT_FOUND';
                 }
             }
             result.diagnostic = {
@@ -2642,7 +2658,23 @@ class SplitJourneyEngine {
         // enforced before every chunk. Tier 2/3 widen the envelope by continuing the
         // NEXT chunk instead of re-filtering already-generated candidates.
         const hubPool = hubs;
-        logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 1: up to ${hubPool.length} ranked hubs (chunk=${this.MAX_HUBS}, batch=2)`);
+        // —— PHASE_085F: Phase-separated API budget ————————————————————————————————
+        // Phase 1 fan-out (sourceCodes × hubs) was exhausting MAX_TOTAL_CALLS before
+        // Phase 2 could run any leg2 searches, producing zero candidates.
+        // Fix: cap Phase 1 at 55% of the total call budget; reserve 45% for Phase 2.
+        // Derived from MAX_TOTAL_CALLS — no corridor-specific constants.
+        //
+        // With MAX_TOTAL_CALLS=40:
+        //   phase1CallCap     = 22  (≤55% for Phase 1 leg1 searches)
+        //   phase2MinReserved = 18  (≥45% available for Phase 2 leg2 searches)
+        //
+        // Phase 2 continues to use the full MAX_TOTAL_CALLS ceiling so it can
+        // consume whatever Phase 1 did not use. The reservation is a Phase 1 ceiling,
+        // not a Phase 2 floor that over-allocates.
+        const phase1CallCap = Math.floor(this.MAX_TOTAL_CALLS * 0.55); // 22 when MAX=40
+        const phase2MinReserved = this.MAX_TOTAL_CALLS - phase1CallCap; // 18 when MAX=40
+        logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 1: up to ${hubPool.length} ranked hubs (chunk=${this.MAX_HUBS}, batch=2) ` +
+            `| budget: phase1Cap=${phase1CallCap} phase2Reserved=${phase2MinReserved} total=${this.MAX_TOTAL_CALLS}`);
         // —— Fix E: Process hubs in batches of 2 to cap parallel concurrency ——
         const leg1Results = [];
         const BATCH_SIZE = 2;
@@ -2651,8 +2683,11 @@ class SplitJourneyEngine {
                 logger_1.winstonLogger.info('[SPLIT_ENGINE] Phase 1 time governor reached');
                 break;
             }
-            if (this.apiCallCount >= this.MAX_TOTAL_CALLS) {
-                logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 1 API call governor reached (${this.apiCallCount})`);
+            // PHASE_085F: Use phase1CallCap (not MAX_TOTAL_CALLS) so Phase 2 always
+            // receives a minimum reserved share of the API budget.
+            if (this.apiCallCount >= phase1CallCap) {
+                logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 1 budget cap reached (calls=${this.apiCallCount}/${phase1CallCap}) ` +
+                    `— ${phase2MinReserved} calls reserved for Phase 2. Hubs processed: ${i}/${hubPool.length}`);
                 break;
             }
             const batch = hubPool.slice(i, i + BATCH_SIZE);
@@ -2693,7 +2728,10 @@ class SplitJourneyEngine {
         }
         // Keep only hubs that actually have leg1 trains
         const viableHubs = leg1Results.filter(h => h.trains.length > 0);
-        logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 1 done: ${viableHubs.length}/${hubPool.length} hubs have leg1 trains`);
+        const phase1CallsUsed = this.apiCallCount;
+        logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 1 done: ${viableHubs.length}/${leg1Results.length} hubs viable ` +
+            `| PHASE1_CALLS=${phase1CallsUsed}/${phase1CallCap} PHASE2_RESERVED=${Math.max(0, this.MAX_TOTAL_CALLS - phase1CallsUsed)} ` +
+            `| PHASE1_HUBS_CONSIDERED=${hubPool.length} PHASE1_HUBS_USED=${leg1Results.length}`);
         // —— PHASE 2: Parallel-fetch leg2 for all viable hubs across ALL dest station codes ——
         const leg2Cache = new Map();
         const nextDate = this.incrementDate(date, 1);
@@ -2722,10 +2760,16 @@ class SplitJourneyEngine {
             }
         }
         // —— Fix E: Process Phase 2 leg searches in batches of 3 to cap parallel concurrency ——
+        // PHASE_085F: Phase 2 uses the full MAX_TOTAL_CALLS ceiling (not phase1CallCap)
+        // so it can consume whatever Phase 1 did not use, up to the hard global limit.
+        const phase2CallsAtStart = this.apiCallCount;
+        logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 2 start: tasks=${leg2KeysToFetch.length} viable_hubs=${viableHubs.length} ` +
+            `| PHASE2_CALLS_AVAILABLE=${this.MAX_TOTAL_CALLS - phase2CallsAtStart} TOTAL_SO_FAR=${phase2CallsAtStart}`);
         const LEG2_BATCH_SIZE = 3;
         for (let i = 0; i < leg2KeysToFetch.length; i += LEG2_BATCH_SIZE) {
             if (Date.now() - startTime > this.MAX_ENGINE_TIME_MS || this.apiCallCount >= this.MAX_TOTAL_CALLS) {
-                logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 2 governor reached (time=${Date.now() - startTime}ms calls=${this.apiCallCount})`);
+                logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 2 governor reached (time=${Date.now() - startTime}ms ` +
+                    `PHASE2_CALLS=${this.apiCallCount - phase2CallsAtStart} TOTAL_API_CALLS=${this.apiCallCount})`);
                 break;
             }
             const batch = leg2KeysToFetch.slice(i, i + LEG2_BATCH_SIZE);
@@ -2751,7 +2795,9 @@ class SplitJourneyEngine {
                 }
             }));
         }
-        logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 2 done: ${leg2KeysToFetch.length} batched leg2 fetches for ${viableHubs.length} hubs`);
+        const phase2CallsUsed = this.apiCallCount - phase2CallsAtStart;
+        logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 2 done: ${leg2KeysToFetch.length} tasks for ${viableHubs.length} hubs ` +
+            `| PHASE2_CALLS=${phase2CallsUsed} TOTAL_API_CALLS=${this.apiCallCount} TOTAL_ENGINE_TIME=${Date.now() - startTime}ms`);
         // —— PHASE 2.5: Authoritative running-days pre-fetch (PHASE_084H) ————————
         // Collect unique train numbers from all leg1 and leg2 candidates.
         // Batch-fetch getTrainInfo with bounded concurrency before the pairing loop
@@ -2845,6 +2891,10 @@ class SplitJourneyEngine {
             stop_not_found: 0,
             db_unverified_stop_data: 0,
             trust_gate_reject: 0,
+            // PHASE_085C — previously log-only counters now tracked for telemetry
+            cancellation: 0,
+            provider_timeout: 0,
+            api_budget_exhausted: 0,
         };
         // Pre-calculate geography constraints OUTSIDE the loops
         const isReverseLoopGlobal = isNearAnyDestStationLocal(dCode, sCodes, 50);
@@ -3087,10 +3137,12 @@ class SplitJourneyEngine {
                         const l2Cancellation = classifyCancellationState(l2);
                         if (l1Cancellation === 'CANCELLED') {
                             logger_1.winstonLogger.info(`[SPLIT_CANCELLATION_GATE_REJECTED] Leg1 ${l1.trainNo} (${l1.fromCode}->${l1.toCode}): cancellation=${l1Cancellation}`);
+                            rejectionStats.cancellation++; // PHASE_085C — was log-only
                             continue;
                         }
                         if (l2Cancellation === 'CANCELLED') {
                             logger_1.winstonLogger.info(`[SPLIT_CANCELLATION_GATE_REJECTED] Leg2 ${l2.trainNo} (${l2.fromCode}->${l2.toCode}): cancellation=${l2Cancellation}`);
+                            rejectionStats.cancellation++; // PHASE_085C — was log-only
                             continue;
                         }
                         const { resolveSegmentForAvailability } = await Promise.resolve().then(() => __importStar(require('./trainStationResolver')));
@@ -3616,7 +3668,8 @@ class SplitJourneyEngine {
                             continue;
                         try {
                             logger_1.winstonLogger.debug(`[SPLIT_TRACE] FALLBACK_HUB: trying ${hub}`);
-                            const hubSplits = await this.findSplitsThroughHub(sCode, sName, hub, dCode, dName, date);
+                            // PHASE_085C — pass rejectionStats so hub-fallback rejects propagate upward
+                            const hubSplits = await this.findSplitsThroughHub(sCode, sName, hub, dCode, dName, date, rejectionStats);
                             debugData.fallbackAttempts.push({ hub, success: hubSplits.length > 0 });
                             logger_1.winstonLogger.debug(`[SPLIT_TRACE] FALLBACK_HUB ${hub}: found ${hubSplits.length} splits`);
                             if (hubSplits.length > 0) {
@@ -5452,7 +5505,9 @@ class SplitJourneyEngine {
     /**
      * Find splits through a specific hub as a fallback
      */
-    async findSplitsThroughHub(sourceCode, sourceName, hubCode, destCode, destName, date) {
+    // PHASE_085C — rejectionStats is passed by reference so hub-fallback rejections
+    // propagate upward instead of being silently lost to winstonLogger only.
+    async findSplitsThroughHub(sourceCode, sourceName, hubCode, destCode, destName, date, rejectionStats) {
         try {
             // Get hub name
             const hubName = (await stationService_1.stationService.getStationName(hubCode)) || hubCode;
@@ -5591,10 +5646,16 @@ class SplitJourneyEngine {
                         const l2Cancellation = classifyCancellationState(l2);
                         if (l1Cancellation === 'CANCELLED') {
                             logger_1.winstonLogger.info(`[SPLIT_CANCELLATION_GATE_REJECTED] Hub Fallback Leg1 ${l1.trainNo} (${l1.fromCode}->${l1.toCode}): cancellation=${l1Cancellation}`);
+                            // PHASE_085C — propagate cancellation count upward
+                            if (rejectionStats)
+                                rejectionStats.cancellation = (rejectionStats.cancellation || 0) + 1;
                             continue;
                         }
                         if (l2Cancellation === 'CANCELLED') {
                             logger_1.winstonLogger.info(`[SPLIT_CANCELLATION_GATE_REJECTED] Hub Fallback Leg2 ${l2.trainNo} (${l2.fromCode}->${l2.toCode}): cancellation=${l2Cancellation}`);
+                            // PHASE_085C — propagate cancellation count upward
+                            if (rejectionStats)
+                                rejectionStats.cancellation = (rejectionStats.cancellation || 0) + 1;
                             continue;
                         }
                         const { resolveSegmentForAvailability } = await Promise.resolve().then(() => __importStar(require('./trainStationResolver')));
@@ -5604,10 +5665,34 @@ class SplitJourneyEngine {
                         ]);
                         if (!v1.success) {
                             logger_1.winstonLogger.info(`[SPLIT_PHYSICAL_STOP_GATE_REJECTED] Hub Fallback Leg1 ${l1.trainNo} (${l1.fromCode}->${l1.toCode}): ${v1.reason}`);
+                            // PHASE_085C — propagate physical-stop reason upward instead of losing it
+                            if (rejectionStats) {
+                                const r1 = v1.reason;
+                                if (r1 === 'RUNNING_DAYS_UNKNOWN')
+                                    rejectionStats.running_days_unknown = (rejectionStats.running_days_unknown || 0) + 1;
+                                else if (r1 === 'TRAIN_NOT_RUNNING')
+                                    rejectionStats.train_not_running = (rejectionStats.train_not_running || 0) + 1;
+                                else if (r1 === 'DB_UNVERIFIED_STOP_DATA')
+                                    rejectionStats.db_unverified_stop_data = (rejectionStats.db_unverified_stop_data || 0) + 1;
+                                else if (r1 === 'INVALID_BOARDING_STATION' || r1 === 'INVALID_DESTINATION_STATION')
+                                    rejectionStats.stop_not_found = (rejectionStats.stop_not_found || 0) + 1;
+                            }
                             continue;
                         }
                         if (!v2.success) {
                             logger_1.winstonLogger.info(`[SPLIT_PHYSICAL_STOP_GATE_REJECTED] Hub Fallback Leg2 ${l2.trainNo} (${l2.fromCode}->${l2.toCode}): ${v2.reason}`);
+                            // PHASE_085C — propagate physical-stop reason upward instead of losing it
+                            if (rejectionStats) {
+                                const r2 = v2.reason;
+                                if (r2 === 'RUNNING_DAYS_UNKNOWN')
+                                    rejectionStats.running_days_unknown = (rejectionStats.running_days_unknown || 0) + 1;
+                                else if (r2 === 'TRAIN_NOT_RUNNING')
+                                    rejectionStats.train_not_running = (rejectionStats.train_not_running || 0) + 1;
+                                else if (r2 === 'DB_UNVERIFIED_STOP_DATA')
+                                    rejectionStats.db_unverified_stop_data = (rejectionStats.db_unverified_stop_data || 0) + 1;
+                                else if (r2 === 'INVALID_BOARDING_STATION' || r2 === 'INVALID_DESTINATION_STATION')
+                                    rejectionStats.stop_not_found = (rejectionStats.stop_not_found || 0) + 1;
+                            }
                             continue;
                         }
                         // PHASE_5B109 — typed provenance (see deriveProvenance).
