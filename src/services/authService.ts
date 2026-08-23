@@ -129,6 +129,8 @@ export class AuthService {
           user = {
             ...localUser,
             ...user,
+            // Preserve admin flag: if either local or DB-derived resolves true, keep it
+            isAdmin: (localUser.isAdmin === true) || (user.isAdmin === true),
             avatarUrl: user.avatarUrl || localUser.avatarUrl || '',
             mobileNumber: user.mobileNumber || localUser.mobileNumber || '',
             mobileVerified: user.mobileVerified || localUser.mobileVerified || false,
@@ -157,6 +159,8 @@ export class AuthService {
           user = {
             ...localUser,
             ...user,
+            // Preserve admin flag: if either local or DB-derived resolves true, keep it
+            isAdmin: (localUser.isAdmin === true) || (user.isAdmin === true),
             avatarUrl: user.avatarUrl || localUser.avatarUrl || '',
             mobileNumber: user.mobileNumber || localUser.mobileNumber || '',
             mobileVerified: user.mobileVerified || localUser.mobileVerified || false,

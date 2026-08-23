@@ -106,7 +106,7 @@ class UserRepository {
       adsWatchedToday: dbUser.ads_watched_today ?? dbUser.adsWatchedToday ?? 0,
       lastAdWatchTime: dbUser.last_ad_watch_time ?? dbUser.lastAdWatchTime ?? 0,
       
-      isAdmin: dbUser.is_admin ?? dbUser.isAdmin ?? false,
+      isAdmin: dbUser.is_admin ?? dbUser.isAdmin ?? (dbUser.role === 'admin'),
       isBlocked: dbUser.is_blocked ?? dbUser.isBlocked ?? false,
       tokenVersion: dbUser.token_version ?? dbUser.tokenVersion ?? 1,
       sessionEpoch: dbUser.session_epoch ?? dbUser.sessionEpoch ?? 1,
