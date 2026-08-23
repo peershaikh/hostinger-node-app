@@ -13,75 +13,25 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 class UserRepository {
   private mapToDB(user: Partial<User>): any {
-    const payload: any = { ...user };
+    const payload: any = {};
     
-    // Map application casing to database casing if needed
-    if (user.dailySearchCount !== undefined) payload.daily_search_count = user.dailySearchCount;
-    if (user.dailyPnrCount !== undefined) payload.daily_pnr_count = user.dailyPnrCount;
-    if (user.dailyLiveCount !== undefined) payload.daily_live_count = user.dailyLiveCount;
-    if (user.lastUsageReset !== undefined) payload.last_usage_reset = user.lastUsageReset;
-    if (user.splitAccessUntil !== undefined) payload.split_access_until = user.splitAccessUntil;
-    if (user.planType !== undefined) payload.plan_type = user.planType;
-    if (user.planExpiry !== undefined) payload.plan_expiry = user.planExpiry;
-    if (user.lastSubscriptionDate !== undefined) payload.last_subscription_date = user.lastSubscriptionDate;
-    if (user.aiSplitSearches !== undefined) payload.ai_split_searches = user.aiSplitSearches;
-    if (user.adsWatchedToday !== undefined) payload.ads_watched_today = user.adsWatchedToday;
-    if (user.lastAdWatchTime !== undefined) payload.last_ad_watch_time = user.lastAdWatchTime;
-    if (user.isAdmin !== undefined) payload.is_admin = user.isAdmin;
-    if (user.isBlocked !== undefined) payload.is_blocked = user.isBlocked;
-    if (user.tokenVersion !== undefined) payload.token_version = user.tokenVersion;
-    if (user.sessionEpoch !== undefined) payload.session_epoch = user.sessionEpoch;
+    if (user.email !== undefined) payload.email = user.email;
+    if (user.password !== undefined) payload.password = user.password;
+    if (user.fullName !== undefined) payload.full_name = user.fullName;
+    if (user.mobileNumber !== undefined) payload.phone = user.mobileNumber;
     if (user.referralCode !== undefined) payload.referral_code = user.referralCode;
     if (user.referredBy !== undefined) payload.referred_by = user.referredBy;
-    if (user.deviceId !== undefined) payload.device_id = user.deviceId;
-    if (user.createdAt !== undefined) payload.created_at = user.createdAt;
-    if (user.fullName !== undefined) payload.full_name = user.fullName;
-    if (user.mobileNumber !== undefined) payload.mobile_number = user.mobileNumber;
-    if (user.dob !== undefined) payload.dob = user.dob;
-    if (user.avatarUrl !== undefined) payload.avatar_url = user.avatarUrl;
-    if (user.notifyEmail !== undefined) payload.notify_email = user.notifyEmail;
-    if (user.notifyBirthday !== undefined) payload.notify_birthday = user.notifyBirthday;
-    if (user.notifyMarketing !== undefined) payload.notify_marketing = user.notifyMarketing;
-    if (user.mobileVerified !== undefined) payload.mobile_verified = user.mobileVerified;
-    if (user.mobileVerificationMethod !== undefined) payload.mobile_verification_method = user.mobileVerificationMethod;
-    if (user.mobileVerifiedAt !== undefined) payload.mobile_verified_at = user.mobileVerifiedAt;
-    if (user.birthdayRewardLastClaimedYear !== undefined) payload.birthday_reward_last_claimed_year = user.birthdayRewardLastClaimedYear;
-
-    // Delete camelCase fields to avoid DB errors
-    delete payload.dailySearchCount;
-    delete payload.dailyPnrCount;
-    delete payload.dailyLiveCount;
-    delete payload.lastUsageReset;
-    delete payload.splitAccessUntil;
-    delete payload.planType;
-    delete payload.planExpiry;
-    delete payload.lastSubscriptionDate;
-    delete payload.aiSplitSearches;
-    delete payload.adsWatchedToday;
-    delete payload.lastAdWatchTime;
-    delete payload.isAdmin;
-    delete payload.isBlocked;
-    delete payload.tokenVersion;
-    delete payload.sessionEpoch;
-    delete payload.referralCode;
-    delete payload.referredBy;
-    delete payload.deviceId;
-    delete payload.createdAt;
-    delete payload.fullName;
-    delete payload.mobileNumber;
-    delete payload.avatarUrl;
-    delete payload.notifyEmail;
-    delete payload.notifyBirthday;
-    delete payload.notifyMarketing;
-    delete payload.mobileVerified;
-    delete payload.mobileVerificationMethod;
-    delete payload.mobileVerifiedAt;
-    delete payload.birthdayRewardLastClaimedYear;
+    if (user.tokenVersion !== undefined) payload.token_version = user.tokenVersion;
+    if (user.isAdmin !== undefined) payload.role = user.isAdmin ? 'admin' : 'user';
+    if (user.mobileVerified !== undefined) payload.is_verified = user.mobileVerified;
 
     return payload;
   }
 
   private mapToApp(dbUser: any): User {
+    const isAdmin = dbUser.role === 'admin' || dbUser.is_admin === true || dbUser.isAdmin === true;
+    const planType = isAdmin ? 'admin' : (dbUser.plan_type || dbUser.planType || 'free');
+
     return {
       id: dbUser.id,
       email: dbUser.email,
@@ -97,7 +47,7 @@ class UserRepository {
       lastUsageReset: dbUser.last_usage_reset || dbUser.lastUsageReset,
       
       splitAccessUntil: dbUser.split_access_until || dbUser.splitAccessUntil || null,
-      planType: dbUser.plan_type || dbUser.planType || 'free',
+      planType: planType,
       planExpiry: dbUser.plan_expiry || dbUser.planExpiry || null,
       lastSubscriptionDate: dbUser.last_subscription_date || dbUser.lastSubscriptionDate || null,
       credits: dbUser.credits ?? 0,
@@ -106,7 +56,7 @@ class UserRepository {
       adsWatchedToday: dbUser.ads_watched_today ?? dbUser.adsWatchedToday ?? 0,
       lastAdWatchTime: dbUser.last_ad_watch_time ?? dbUser.lastAdWatchTime ?? 0,
       
-      isAdmin: dbUser.is_admin ?? dbUser.isAdmin ?? (dbUser.role === 'admin'),
+      isAdmin: isAdmin,
       isBlocked: dbUser.is_blocked ?? dbUser.isBlocked ?? false,
       tokenVersion: dbUser.token_version ?? dbUser.tokenVersion ?? 1,
       sessionEpoch: dbUser.session_epoch ?? dbUser.sessionEpoch ?? 1,
