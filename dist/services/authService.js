@@ -651,12 +651,13 @@ class AuthService {
         for (const adminEmail of adminEmails) {
             const existingAdmin = this.users.find(u => u.email === adminEmail);
             if (existingAdmin) {
+                // Only update admin flags — do NOT overwrite password.
+                // Password is managed via direct sync scripts to avoid hash drift on reboots.
                 existingAdmin.isAdmin = true;
                 existingAdmin.planType = 'admin';
-                existingAdmin.password = bcryptjs_1.default.hashSync(adminPassword, 10);
                 if ((0, supabase_1.isSupabaseConfigured)()) {
                     try {
-                        await userRepository_1.userRepository.update(existingAdmin.id, { isAdmin: true, planType: 'admin', password: existingAdmin.password });
+                        await userRepository_1.userRepository.update(existingAdmin.id, { isAdmin: true, planType: 'admin' });
                     }
                     catch (e) {
                         logger_1.winstonLogger.warn(`[ensureAdmin] Failed to persist admin flag for ${adminEmail}:`, e);
