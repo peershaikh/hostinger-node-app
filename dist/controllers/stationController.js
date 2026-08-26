@@ -71,27 +71,75 @@ class StationController {
                     { Station_Code: 'KCG', Station_Name: 'Kacheguda' }
                 ]
             };
+            // 1. Exact Major City Match
             if (majorCities[upper]) {
                 const data = majorCities[upper];
                 cacheService_1.cacheService.set(cacheKey, data, 3600);
                 return res.json(data);
             }
-            // General Database Search
-            const { data, error } = await supabase_1.supabase
-                .from('station_registry')
-                .select('Station_Code, Station_Name, city_name')
-                .or(`Station_Name.ilike.%${query}%,Station_Code.ilike.%${query}%,city_name.ilike.%${query}%`)
-                .limit(40) // Fetched more for better sorting
-                .order('Station_Name', { ascending: true });
-            if (error)
-                throw error;
-            let results = data || [];
-            // 🔥 Prioritize Exact Matches (Fix 4.4)
-            results = results.sort((a, b) => {
-                const aCode = a.Station_Code.toUpperCase();
-                const bCode = b.Station_Code.toUpperCase();
-                const aName = a.Station_Name.toUpperCase();
-                const bName = b.Station_Name.toUpperCase();
+            // 2. City Prefix Match (e.g. "mumb" -> MUMBAI, "del" -> DELHI, "beng" -> BENGALURU)
+            const cityKey = Object.keys(majorCities).find(c => c.startsWith(upper) && upper.length >= 3);
+            let cityDirect = cityKey ? majorCities[cityKey] : [];
+            // 3. Database Search with proper lowercase column names
+            const [registryRes, aliasRes] = await Promise.all([
+                supabase_1.supabase
+                    .from('station_registry')
+                    .select('station_code, station_name, city_name')
+                    .or(`station_name.ilike.%${query}%,station_code.ilike.%${query}%,city_name.ilike.%${query}%`)
+                    .limit(40)
+                    .order('station_name', { ascending: true }),
+                supabase_1.supabase
+                    .from('station_aliases')
+                    .select('station_code, alias_name')
+                    .or(`alias_name.ilike.%${query}%,station_code.ilike.%${query}%`)
+                    .limit(10)
+            ]);
+            if (registryRes.error)
+                throw registryRes.error;
+            const dbResults = (registryRes.data || []).map((r) => ({
+                Station_Code: r.station_code,
+                Station_Name: r.station_name,
+                station_code: r.station_code,
+                station_name: r.station_name,
+                city_name: r.city_name
+            }));
+            // Resolve any alias codes not already in dbResults
+            let aliasStations = [];
+            if (aliasRes.data && aliasRes.data.length > 0) {
+                const aliasCodes = [...new Set(aliasRes.data.map((a) => a.station_code))];
+                const missingCodes = aliasCodes.filter(c => !dbResults.some((r) => r.Station_Code === c));
+                if (missingCodes.length > 0) {
+                    for (const mCity of Object.values(majorCities)) {
+                        for (const stn of mCity) {
+                            if (missingCodes.includes(stn.Station_Code) && !aliasStations.some(s => s.Station_Code === stn.Station_Code)) {
+                                aliasStations.push(stn);
+                            }
+                        }
+                    }
+                }
+            }
+            // Combine and deduplicate
+            const seen = new Set();
+            const combined = [];
+            for (const item of [...cityDirect, ...aliasStations, ...dbResults]) {
+                const code = (item.Station_Code || item.station_code || '').toUpperCase();
+                if (code && !seen.has(code)) {
+                    seen.add(code);
+                    combined.push({
+                        Station_Code: item.Station_Code || item.station_code,
+                        Station_Name: item.Station_Name || item.station_name,
+                        station_code: item.station_code || item.Station_Code,
+                        station_name: item.station_name || item.Station_Name,
+                        city_name: item.city_name
+                    });
+                }
+            }
+            // 🔥 Prioritize Matches
+            combined.sort((a, b) => {
+                const aCode = (a.Station_Code || '').toUpperCase();
+                const bCode = (b.Station_Code || '').toUpperCase();
+                const aName = (a.Station_Name || '').toUpperCase();
+                const bName = (b.Station_Name || '').toUpperCase();
                 // Exact Code Match First
                 if (aCode === upper && bCode !== upper)
                     return -1;
@@ -102,7 +150,12 @@ class StationController {
                     return -1;
                 if (bName === upper && aName !== upper)
                     return 1;
-                // Starts With Match Third
+                // Starts With Code Match Third
+                if (aCode.startsWith(upper) && !bCode.startsWith(upper))
+                    return -1;
+                if (bCode.startsWith(upper) && !aCode.startsWith(upper))
+                    return 1;
+                // Starts With Name Match Fourth
                 if (aName.startsWith(upper) && !bName.startsWith(upper))
                     return -1;
                 if (bName.startsWith(upper) && !aName.startsWith(upper))
@@ -110,7 +163,7 @@ class StationController {
                 return 0;
             });
             // Final Slice (Limit 30 as requested)
-            const finalResults = results.slice(0, 30);
+            const finalResults = combined.slice(0, 30);
             if (finalResults.length > 0) {
                 cacheService_1.cacheService.set(cacheKey, finalResults, 1800); // 30 min cache
             }
@@ -124,7 +177,6 @@ class StationController {
         }
         catch (err) {
             logger_1.winstonLogger.error(`[STATION_SEARCH] Error for "${query}": ${err.message}`);
-            // Graceful fallback remains same...
             // Graceful fallback
             const fallback = [
                 { Station_Code: 'NDLS', Station_Name: 'New Delhi' },

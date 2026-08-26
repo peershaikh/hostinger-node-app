@@ -151,7 +151,7 @@ export async function validateConnection(): Promise<boolean> {
     // Basic connection test
     const { error: connError } = await supabase
       .from('station_registry')
-      .select('Station_Code')
+      .select('station_code')
       .limit(1);
 
     if (connError) {

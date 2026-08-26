@@ -148,7 +148,7 @@ async function validateConnection() {
         // Basic connection test
         const { error: connError } = await exports.supabase
             .from('station_registry')
-            .select('Station_Code')
+            .select('station_code')
             .limit(1);
         if (connError) {
             logger_1.winstonLogger.error(`[HEALTH] Supabase Connection Failed: ${connError.message}`);

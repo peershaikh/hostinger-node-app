@@ -36,7 +36,7 @@ catch (e) {
     try {
         const { data: registryRows, error } = await supabase_1.supabase
             .from('station_registry')
-            .select('Station_Code, city_name')
+            .select('station_code, city_name')
             .not('city_name', 'is', null);
         if (!error && registryRows && registryRows.length > 0) {
             registryRows.forEach((r) => {
