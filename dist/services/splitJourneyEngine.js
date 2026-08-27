@@ -892,53 +892,31 @@ const DETERMINISTIC_CORRIDORS = {
     "coimbatore-mumbai": ["SA", "SC", "NGP", "BSL"],
     "coimbatore-delhi": ["SA", "SC", "NGP", "ET", "BPL", "NDLS"],
 };
-// ——— PHASE_085B: Hub Priority Tier Classification ————————————————————————————
-//
-// Tier 0 — Deterministic priority corridor hubs (curated per-corridor in DETERMINISTIC_CORRIDORS)
-// Tier 1 — National Core Interchanges: major divisional/zonal junctions (~45 stations)
-// Tier 2 — Regional Secondary Junctions: medium-capacity regional junctions
-// Tier 3 — Dynamic 2-hop graph discoveries: DB-discovered hubs, capped at MAX_TIER3_HUBS
-//
-// Ranking invariant: Rank(Tier 0,1) < Rank(Tier 2) < Rank(Tier 3)
-// A Tier-3 dynamic hub will NEVER rank ahead of a Tier-0, Tier-1, or Tier-2 hub.
-/** Maximum dynamic (Tier-3) hubs allowed per route — prevents budget starvation */
-const MAX_TIER3_HUBS = 5;
-// Tier-1: National Core Interchanges — Pan-India high-capacity junctions
-const TIER_1_HUBS = new Set([
-    'NDLS', 'CNB', 'BSL', 'NGP', 'BPL', 'ET', 'JHS', 'PRYJ', 'DDU', 'HWH',
-    'MAS', 'BZA', 'SBC', 'SC', 'ADI', 'BRC', 'RTM', 'KOTA', 'PNBE', 'GHY',
-    'NJP', 'VSKP', 'SUR', 'PUNE', 'GKP', 'LKO', 'BSB', 'ASN', 'TATA', 'KGP',
-    'UBL', 'GTL', 'RU', 'SA', 'ED', 'CBE', 'ERS', 'TVC', 'MDU', 'TPJ',
-    'R', 'BSP', 'JBP', 'AGC', 'GWL', 'MLDT', 'SHM', 'DBRG', 'KCG', 'JP'
-]);
-// Tier-2: Regional Secondary Junctions
-const TIER_2_HUBS = new Set([
-    'GWL', 'AGC', 'BTI', 'CDG', 'ROU', 'DHN', 'BGP', 'GAYA', 'MFP', 'SPJ',
-    'BST', 'GD', 'GNT', 'PGT', 'SRR', 'VM', 'MAO', 'MAJN', 'RJT', 'BVC',
-    'RN', 'CGL', 'BBS', 'TATA', 'RNC', 'MMR', 'NK', 'BVI', 'GR', 'RC',
-    'KPD', 'MGS', 'ST', 'ASN', 'LDH', 'UMB', 'MB', 'CDG', 'NZB', 'KUR',
-    'CTC', 'RJY', 'GDG', 'MYS', 'MRJ', 'BGM', 'JBP'
-]);
-// MAJOR_HUBS: purged of all suburban/local/micro-stations.
-// Contains ONLY genuine interchange junctions (Tier-1 ∪ Tier-2 superset).
-// DO NOT add suburban halts, EMU-only stations, or local commuter stops.
+// ——— Hub Priority Tiers —————————————————————————————————————————————————————
+const A_TIER_HUBS = [
+    'NDLS', 'BRC', 'RTM', 'KOTA', 'PRYJ', 'DDU', 'CNB', 'NGP',
+    'BPL', 'BZA', 'MAS', 'SBC', 'SC', 'ADI', 'PUNE', 'UBL', 'SUR'
+];
+const B_TIER_HUBS = [
+    'BSL', 'GWL', 'ASN', 'TAT', 'ROU', 'JP', 'LKO', 'PNBE', 'VSKP'
+];
 const MAJOR_HUBS = [
-    // National Core (Tier 1)
-    'NDLS', 'HWH', 'SBC', 'MAS', 'SC', 'PNBE', 'LKO', 'CNB', 'ADI',
+    'NDLS', 'CSMT', 'HWH', 'SBC', 'MAS', 'SC', 'PNBE', 'LKO', 'CNB', 'ADI',
     'BPL', 'JP', 'NGP', 'BBS', 'GHY', 'CDG', 'BSB', 'PRYJ', 'DDU', 'KGP',
     'VSKP', 'BZA', 'GNT', 'UBL', 'PUNE', 'ST', 'BRC', 'KOTA', 'AGC', 'GWL',
-    'JHS', 'GKP', 'BSP', 'JBP', 'ET', 'BSL', 'SUR', 'GTL', 'RU', 'KPD',
-    'ED', 'CBE', 'PGT', 'SRR', 'ERS', 'TVC', 'MDU', 'TPJ', 'VM', 'CGL',
+    'JHS', 'GKP', 'BST', 'GD', 'MFP', 'SPJ', 'GAYA', 'BGP', 'MGS', 'ASN',
+    'DHN', 'TATA', 'RNC', 'RYP', 'BSP', 'JBP', 'ET', 'BSL', 'MMR', 'NK',
+    'BVI', 'SUR', 'GR', 'RC', 'GTL', 'RU', 'KPD', 'ED', 'CBE', 'PGT',
+    'SRR', 'ERS', 'TVC', 'MDU', 'TPJ', 'VM', 'CGL',
     'RJT', 'BVC', 'MAO', 'RN', 'MAJN', 'KCG', 'SHM', 'MLDT', 'NJP', 'DBRG',
-    // Regional Secondary (Tier 2)
-    'BST', 'GD', 'MFP', 'SPJ', 'GAYA', 'BGP', 'MGS', 'ASN',
-    'DHN', 'TATA', 'RNC', 'MMR', 'NK', 'BVI', 'GR', 'RC',
-    'BTI', 'ROU', 'CTC', 'BLS', 'RJY', 'GDG', 'MYS', 'MRJ', 'BGM',
+    'BDC', 'BSAE', 'TBAE', 'KJU', 'DMLE', 'KMAE', 'JIT', 'BGAE', 'SOAE', 'BHLA',
+    'GPAE', 'ABKA', 'BGRA', 'DTAE', 'SMAE', 'NDAE', 'BFZ', 'PSAE', 'LKX', 'BQY',
+    'PTAE', 'AGAE', 'DHAE', 'KLNT', 'BTI', 'VSPR', 'MTFA', 'SRP', 'SHE', 'CGR',
+    'CNS', 'SHBA', 'SPRD', 'RGDA', 'STD', 'HNS', 'AUN', 'JKZ', 'BWK', 'BNW',
+    'MHU', 'CKD', 'JRL', 'SDRA', 'KSI', 'NLQ', 'JTS', 'KGBS', 'LLH', 'BEQ'
 ];
 // ——— Micro-hub blacklist — NEVER use these as split hubs ————————————————————
 // These are suburban, local, or too-close stations that produce useless splits.
-// PHASE_085B: Extended to include all forensically-identified micro-stations
-// that caused API budget starvation in the HWH→GHY, NDLS→LKO corridors.
 const MICRO_HUB_BLACKLIST = new Set([
     // Mumbai suburban cluster
     'KYN', 'KHOPOLI', 'KJT', 'KALVA', 'TBSP', 'PNVL', 'MMPN', 'DR', 'LTT',
@@ -949,73 +927,16 @@ const MICRO_HUB_BLACKLIST = new Set([
     'BNC', 'KJM', 'YELK', 'YNK',
     // Chennai suburban
     'TBM', 'PER', 'MSB', 'MMCC', 'MBM',
-    // Kolkata suburban cluster — key forensic offenders for HWH→GHY starvation
-    'DUM', 'BLY', 'BALY', 'LLH', 'BEQ', 'SRP', 'SHE', 'CGR', 'CNS',
-    'BDC', 'BSAE', 'TBAE', 'KJU', 'DMLE', 'KMAE', 'JIT', 'BGAE', 'SOAE', 'BHLA',
-    'GPAE', 'ABKA', 'BGRA', 'DTAE', 'SMAE', 'NDAE', 'BFZ', 'PSAE', 'LKX', 'BQY',
-    'PTAE', 'AGAE', 'DHAE', 'KLNT', 'VSPR', 'MTFA',
-    // North UP/Bihar local halts — forensic offenders for NDLS→LKO starvation
-    'AUN', 'JKZ', 'BWK', 'BNW', 'MHU', 'CKD', 'JRL', 'SDRA', 'KSI',
-    'NLQ', 'JTS', 'KGBS', 'SHBA', 'SPRD', 'RGDA', 'STD', 'HNS',
+    // Kolkata suburban
+    'DUM', 'BLY', 'BALY',
     // Generic micro-stations (1-2 char codes often = small stops)
 ]);
-// ——— PHASE_085B: Tiered Hub Sort —————————————————————————————————————————————
-//
-// Returns the tier number for a hub station code.
-// Deterministic corridor hubs passed in `tier0Set` are Tier 0.
-// TIER_1_HUBS → 1, TIER_2_HUBS → 2, everything else → 3.
-function getHubTier(hub, tier0Set) {
-    if (tier0Set?.has(hub))
-        return 0;
-    if (TIER_1_HUBS.has(hub))
-        return 1;
-    if (TIER_2_HUBS.has(hub))
-        return 2;
-    return 3;
-}
-/**
- * PHASE_085B — sortHubsByTierAndDetour
- *
- * Sorts hubs using the compound key:
- *   Rank(h) = Tier(h) × 1_000_000 + DetourScore(h)
- *
- * Invariant: Tier-0/1 hubs always rank before Tier-2, which always rank before Tier-3.
- * Uses sortViaByDetourScore to compute the detour order within each tier,
- * then interleaves the tiers in priority order.
- *
- * @param sCode        Source station code
- * @param dCode        Destination station code
- * @param hubs         Hub codes to sort (already geo-filtered)
- * @param tier0Set     Optional set of Tier-0 deterministic corridor hubs
- * @param detourLimit  Passed to sortViaByDetourScore (km limit)
- */
-function sortHubsByTierAndDetour(sCode, dCode, hubs, tier0Set, detourLimit = 600) {
-    // Group by tier
-    const byTier = { 0: [], 1: [], 2: [], 3: [] };
-    for (const h of hubs) {
-        const tier = getHubTier(h, tier0Set);
-        byTier[tier].push(h);
-    }
-    // Sort within each tier by detour score
-    const sortTier = (tierHubs) => tierHubs.length > 0
-        ? (0, routeEngine_1.sortViaByDetourScore)(sCode, dCode, tierHubs, detourLimit)
-        : [];
-    return [
-        ...sortTier(byTier[0]),
-        ...sortTier(byTier[1]),
-        ...sortTier(byTier[2]),
-        ...sortTier(byTier[3]),
-    ];
-}
 // MIN distance from SOURCE for a hub to be valid (km)
 const MIN_HUB_DISTANCE_KM = 100;
 // Valid hubs — used for broad filtering (all major junctions)
 const VALID_HUBS = [...new Set([...MAJOR_HUBS])];
 // Backward-compat alias used in findCombinedRoutes console.log
 const CORRIDOR_HUBS = PAN_INDIA_CORRIDOR_HUBS;
-// Backward-compat shims for code that still references the old tier names
-const A_TIER_HUBS = [...TIER_1_HUBS];
-const B_TIER_HUBS = [...TIER_2_HUBS];
 class RouteMemoryStore {
     constructor() {
         this.memory = new Map();
@@ -1173,8 +1094,11 @@ class SplitJourneyEngine {
         this.MAX_RD_CONCURRENT = 4;
         /** Minimum transfer window: 45 minutes — realistic Indian railway minimum */
         this.MIN_BUFFER_MINUTES = 45;
-        /** Maximum transfer window: 8 hours — overnight stays are valid but 12h is too long */
-        this.MAX_BUFFER_MINUTES = 360;
+        /** Maximum transfer window: 14 hours — overnight hub stays are valid for Indian rail.
+         * PHASE_087L: raised from 360→840 to match the actual runtime guard in findSplitsThroughHub
+         * and to restore valid overnight hub connections (e.g. CSMT night arrival at PUNE,
+         * next-afternoon departure to HYB) that were incorrectly rejected at the old 720-min ceiling. */
+        this.MAX_BUFFER_MINUTES = 840;
         this.TARGET_RESULTS = 15; // was 10
         this.apiCallCount = 0;
         this.engineStartMs = 0;
@@ -1687,58 +1611,24 @@ class SplitJourneyEngine {
             if (finalSanitized.length === 0) {
                 // Pull inner rejection stats propagated from findSplitJourneys
                 const innerStats = result._innerRejectionStats || {};
-                // PHASE_085B/085C — getDominantRejectionReason rewrite.
-                //
-                // CRITICAL INVARIANT: When 0 candidates reached the pairing stage because the
-                // API budget was exhausted before major junctions were queried, the rejection
-                // reason MUST reflect the upstream infrastructure failure, not ROUTE_NOT_FOUND.
-                //
-                // Priority order (two-tier evaluation):
-                //   Tier A — Upstream search discovery failures (budget / provider / no-hubs):
-                //     These take priority over pairing-stage counters when viable_hubs > 0
-                //     but 0 combinations were generated, indicating live search was incomplete.
-                //   Tier B — Pairing-stage specific rejections (train-level physical/schedule issues).
-                //   Tier C — ROUTE_NOT_FOUND only when all counters are zero.
-                const viableHubsCount = (innerStats.viable_hubs_count || 0);
-                const phase1HubsSearched = (innerStats.phase1_hubs_searched || 0);
-                // Tier A: upstream discovery failures — checked first when 0 combinations formed
-                const upstreamFailure = ((innerStats.api_budget_exhausted || 0) > 0 && viableHubsCount > 0
-                    ? 'API_BUDGET_EXHAUSTED'
-                    : (innerStats.db_leg2_miss || 0) > 0 && viableHubsCount > 0
-                        ? 'DB_LEG2_COVERAGE_MISS'
-                        : viableHubsCount === 0 && phase1HubsSearched > 0
-                            ? 'NO_VIABLE_HUBS'
-                            : (innerStats.provider_timeout || 0) > 0
-                                ? 'PROVIDER_TIMEOUT'
-                                : null);
-                // Tier B: pairing-stage rejections
-                const dominant = upstreamFailure ?? ((innerStats.cancellation || 0) > 0 ? 'CANCELLATION' :
+                // Determine the dominant failure reason ordered by priority
+                const dominant = ((innerStats.running_days_unknown || 0) > 0 ? 'RUNNING_DAYS_UNKNOWN' :
                     (innerStats.train_not_running || 0) > 0 ? 'TRAIN_NOT_RUNNING' :
-                        (innerStats.running_days_unknown || 0) > 0 ? 'RUNNING_DAYS_UNKNOWN' :
+                        (innerStats.db_unverified_stop_data || 0) > 0 ? 'DB_UNVERIFIED_STOP_DATA' :
                             (innerStats.stop_not_found || 0) > 0 ? 'STOP_NOT_FOUND' :
-                                (innerStats.db_unverified_stop_data || 0) > 0 ? 'DB_UNVERIFIED_STOP_DATA' :
-                                    (innerStats.trust_gate_reject || 0) > 0 ? 'TRUST_GATE_REJECT' :
-                                        (innerStats.source_stop_missing || 0) > 0 ? 'SOURCE_STOP_MISSING' :
-                                            (innerStats.dest_stop_missing || 0) > 0 ? 'DEST_STOP_MISSING' :
-                                                (innerStats.reverse_or_disconnected || 0) > 0 ? 'REVERSE_OR_DISCONNECTED' :
-                                                    (innerStats.same_train || 0) > 0 ? 'SAME_TRAIN_REDUNDANCY' :
-                                                        (innerStats.wait_time_invalid || 0) > 0 ? 'TRANSFER_BUFFER_FAILURE' :
-                                                            (innerStats.invalid_time || 0) > 0 ? 'INVALID_TIME' :
-                                                                (innerStats.availability_issue || 0) > 0 ? 'AVAILABILITY_ISSUE' :
-                                                                    null);
+                                (innerStats.trust_gate_reject || 0) > 0 ? 'TRUST_GATE_REJECT' :
+                                    null);
                 if (dominant) {
                     topRejectionReason = dominant;
                 }
+                else if (rawSplits.length === 0) {
+                    topRejectionReason = 'ROUTE_NOT_FOUND';
+                }
                 else if (rejectedCount > 0) {
-                    // Candidates existed but were rejected by the sanitizer — use TRANSFER_BUFFER_FAILURE
-                    // as the legacy bucket (wait-time is the sanitizer's primary filter).
                     topRejectionReason = 'TRANSFER_BUFFER_FAILURE';
                 }
                 else {
-                    // Tier C: ROUTE_NOT_FOUND is only legal when every specific
-                    // counter is zero AND no candidates were generated at all.
-                    const anySpecificRejection = Object.values(innerStats).some(v => v > 0);
-                    topRejectionReason = anySpecificRejection ? 'UNKNOWN_REJECTION' : 'ROUTE_NOT_FOUND';
+                    topRejectionReason = 'ROUTE_NOT_FOUND';
                 }
             }
             result.diagnostic = {
@@ -2556,31 +2446,16 @@ class SplitJourneyEngine {
                 .from('train_schedule').select('Station_Code').in('Train_No', dNos);
             const dSet = new Set((dStations || []).map((t) => String(t.Station_Code)));
             // —— Step 6: intersection = valid hubs ————————————————————————————————
-            // PHASE_085B: Sort by tier so Tier-1/Tier-2 junctions surface first.
-            // Then cap at MAX_TIER3_HUBS to prevent Tier-3 micro-hubs from starving
-            // the API budget when the dynamic graph discovers many local stations.
-            const hubsRaw = [...l2Stations]
-                .filter(s => dSet.has(s) && s !== sourceCode && s !== destCode
-                && !MICRO_HUB_BLACKLIST.has(s));
-            // Sort: Tier-1 → Tier-2 → Tier-3 (all are Tier-3 for dynamic hubs
-            // unless they happen to be known junctions)
-            hubsRaw.sort((a, b) => {
-                const aTier = getHubTier(a);
-                const bTier = getHubTier(b);
-                if (aTier !== bTier)
-                    return aTier - bTier;
-                // Within same tier, prefer stations in MAJOR_HUBS list
+            const hubs = [...l2Stations]
+                .filter(s => dSet.has(s) && s !== sourceCode && s !== destCode)
+                // Prioritise known major junctions first
+                .sort((a, b) => {
                 const aIsMajor = MAJOR_HUBS.includes(a) ? 0 : 1;
                 const bIsMajor = MAJOR_HUBS.includes(b) ? 0 : 1;
                 return aIsMajor - bIsMajor;
             });
-            // Keep Tier-1/Tier-2 discoveries in full; cap Tier-3 dynamic discoveries
-            const tier12Hubs = hubsRaw.filter(h => getHubTier(h) <= 2);
-            const tier3Hubs = hubsRaw.filter(h => getHubTier(h) === 3).slice(0, MAX_TIER3_HUBS);
-            const hubs = [...tier12Hubs, ...tier3Hubs];
             logger_1.winstonLogger.info(`[DYNAMIC_HUB] 2-hop graph: L1=${l1Stations.length} stations, ` +
-                `L2 trains=${hop2Arr.length}, hubs found=${hubs.length} ` +
-                `(tier1/2=${tier12Hubs.length} tier3=${tier3Hubs.length} capped_at=${MAX_TIER3_HUBS})`);
+                `L2 trains=${hop2Arr.length}, hubs found=${hubs.length}`);
             return hubs;
         }
         catch (e) {
@@ -2642,34 +2517,22 @@ class SplitJourneyEngine {
             const cleanDynamic = dynamicHubs.filter(h => !MICRO_HUB_BLACKLIST.has(h) && !exclude.has(h));
             cleanDynamicCount = cleanDynamic.length;
             serviceHubsCount = serviceHubs.length;
-            // PHASE_085B: Dynamic hubs (Tier-3) are appended AFTER static hub pool.
-            // They are already pre-capped inside getDynamicHubs() at MAX_TIER3_HUBS,
-            // but apply an additional cap here in case getDynamicHubs cap is bypassed.
-            const cappedDynamic = cleanDynamic.filter(h => getHubTier(h) <= 2)
-                .concat(cleanDynamic.filter(h => getHubTier(h) === 3).slice(0, MAX_TIER3_HUBS));
-            hubs = [...new Set([...hubs, ...cappedDynamic, ...serviceHubs.filter(h => !MICRO_HUB_BLACKLIST.has(h))])]
+            hubs = [...new Set([...hubs, ...cleanDynamic, ...serviceHubs.filter(h => !MICRO_HUB_BLACKLIST.has(h))])]
                 .filter(h => !exclude.has(h));
         }
-        // —— Step 4: Geo filtering + Tiered Ranking ———————————————————————————
+        // —— Step 4: Geo filtering — direction + within-range —————————————————
         // CHANGED (Fix #2): Geo filter now runs for ALL routes (including deterministic).
-        // PHASE_085B: After geo-filtering, apply compound Tier × 10^6 + DetourScore sort
-        // so Tier-0/1 national junctions always precede Tier-2/3 stations regardless of
-        // their raw detour ratio. This eliminates the micro-hub detour inversion bug.
+        // Previously skipped for deterministic routes — this was safe only when the hub pool
+        // was small. Now that the pool is larger (priority + fallback), geo filter is needed
+        // to prune backtracking hubs and rank by detour score.
         {
             let validHubs = (0, routeEngine_1.getValidViaStations)(sCode, dCode, hubs);
             const rejected = hubs.filter(h => !validHubs.includes(h));
             if (rejected.length > 0) {
                 logger_1.winstonLogger.debug(`[GEO_FILTER] Rejected ${rejected.length} off-path hubs: ${rejected.join(', ')}`);
             }
-            // Build Tier-0 set from deterministic corridor hubs for this route
-            const tier0Set = new Set((DETERMINISTIC_CORRIDORS[pairKey1] || DETERMINISTIC_CORRIDORS[pairKey2] || []));
-            // PHASE_085B: Use tiered sort instead of plain detour sort
-            hubs = sortHubsByTierAndDetour(sCode, dCode, validHubs, tier0Set, isDeterministic ? 600 : 40);
-            logger_1.winstonLogger.info(`[SPLIT_ENGINE] Tiered hub ranking applied: ` +
-                `tier0=${validHubs.filter(h => tier0Set.has(h)).length} ` +
-                `tier1=${validHubs.filter(h => TIER_1_HUBS.has(h) && !tier0Set.has(h)).length} ` +
-                `tier2=${validHubs.filter(h => TIER_2_HUBS.has(h) && !TIER_1_HUBS.has(h) && !tier0Set.has(h)).length} ` +
-                `tier3=${validHubs.filter(h => getHubTier(h, tier0Set) === 3).length}`);
+            // Smart corridor filter: rank by detour score, keep deterministic hubs even if slightly off-path
+            hubs = (0, routeEngine_1.sortViaByDetourScore)(sCode, dCode, validHubs, isDeterministic ? 600 : 40);
         }
         // —— Fix B & C: Preload coordinates in batch to resolve N+1 queries ——
         const allPreloadCodes = [...new Set([...sCodes, ...hubs, ...dCodes])].map(c => c.toUpperCase().trim());
@@ -2753,6 +2616,14 @@ class SplitJourneyEngine {
                 if (distKm >= minDist) {
                     distFiltered.push(h);
                 }
+                else if (SplitJourneyEngine.MAJOR_JUNCTION_BYPASS.has(h)) {
+                    // PHASE_087I — Designated major junction hub bypass.
+                    // PUNE and SUR are verified divisional HQs with train_schedule coverage;
+                    // they are valid split points on the Mumbai–Hyderabad corridor even though
+                    // they fall below the 200km floor computed for this route length.
+                    distFiltered.push(h);
+                    logger_1.winstonLogger.info(`[HUB_ACCEPT_JUNCTION] ${h} is ${Math.round(distKm)}km from source — below generic floor (${minDist}km) but accepted as designated major junction hub`);
+                }
                 else {
                     logger_1.winstonLogger.info(`[HUB_REJECT] ${h} is only ${Math.round(distKm)}km from source — below ${minDist}km minimum floor`);
                 }
@@ -2775,33 +2646,6 @@ class SplitJourneyEngine {
         logger_1.winstonLogger.info(`[SPLIT_ENGINE] Ranked hub list (${hubs.length}): ${hubs.slice(0, 30).join(', ')}${hubs.length > 30 ? '...' : ''}`);
         const allCombinations = [];
         const seenCombos = new Set();
-        // PHASE_085C/D1: Declare rejectionStats HERE (before Phase-1 loop) so budget
-        // and discovery counters can be incremented during Phase-1 and Phase-2.
-        const rejectionStats = {
-            source_stop_missing: 0,
-            dest_stop_missing: 0,
-            wait_time_invalid: 0,
-            reverse_or_disconnected: 0,
-            same_train: 0,
-            availability_issue: 0,
-            invalid_time: 0,
-            // PHASE_084K — per-stage resolution rejection counters
-            running_days_unknown: 0,
-            train_not_running: 0,
-            stop_not_found: 0,
-            db_unverified_stop_data: 0,
-            trust_gate_reject: 0,
-            // PHASE_085C — previously log-only counters now tracked for telemetry
-            cancellation: 0,
-            provider_timeout: 0,
-            api_budget_exhausted: 0,
-            // PHASE_085C/D1 — upstream search discovery counters for diagnostic promotion
-            // Set after Phase-1 completes: viable_hubs_count, phase1_hubs_searched
-            // Set after Phase-2 completes: db_leg2_miss (Tier-0/1 hubs only)
-            viable_hubs_count: 0,
-            phase1_hubs_searched: 0,
-            db_leg2_miss: 0,
-        };
         // —— PHASE 1: Parallel-fetch leg1 for ALL candidate hubs —————————————————
         // PHASE_5B192 — bounded chunked hub search. Search the full ranked list in
         // MAX_HUBS-sized chunks; after each chunk, the pairing/validation loop runs
@@ -2809,23 +2653,7 @@ class SplitJourneyEngine {
         // enforced before every chunk. Tier 2/3 widen the envelope by continuing the
         // NEXT chunk instead of re-filtering already-generated candidates.
         const hubPool = hubs;
-        // —— PHASE_085F: Phase-separated API budget ————————————————————————————————
-        // Phase 1 fan-out (sourceCodes × hubs) was exhausting MAX_TOTAL_CALLS before
-        // Phase 2 could run any leg2 searches, producing zero candidates.
-        // Fix: cap Phase 1 at 55% of the total call budget; reserve 45% for Phase 2.
-        // Derived from MAX_TOTAL_CALLS — no corridor-specific constants.
-        //
-        // With MAX_TOTAL_CALLS=40:
-        //   phase1CallCap     = 22  (≤55% for Phase 1 leg1 searches)
-        //   phase2MinReserved = 18  (≥45% available for Phase 2 leg2 searches)
-        //
-        // Phase 2 continues to use the full MAX_TOTAL_CALLS ceiling so it can
-        // consume whatever Phase 1 did not use. The reservation is a Phase 1 ceiling,
-        // not a Phase 2 floor that over-allocates.
-        const phase1CallCap = Math.floor(this.MAX_TOTAL_CALLS * 0.55); // 22 when MAX=40
-        const phase2MinReserved = this.MAX_TOTAL_CALLS - phase1CallCap; // 18 when MAX=40
-        logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 1: up to ${hubPool.length} ranked hubs (chunk=${this.MAX_HUBS}, batch=2) ` +
-            `| budget: phase1Cap=${phase1CallCap} phase2Reserved=${phase2MinReserved} total=${this.MAX_TOTAL_CALLS}`);
+        logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 1: up to ${hubPool.length} ranked hubs (chunk=${this.MAX_HUBS}, batch=2)`);
         // —— Fix E: Process hubs in batches of 2 to cap parallel concurrency ——
         const leg1Results = [];
         const BATCH_SIZE = 2;
@@ -2834,13 +2662,8 @@ class SplitJourneyEngine {
                 logger_1.winstonLogger.info('[SPLIT_ENGINE] Phase 1 time governor reached');
                 break;
             }
-            // PHASE_085F: Use phase1CallCap (not MAX_TOTAL_CALLS) so Phase 2 always
-            // receives a minimum reserved share of the API budget.
-            if (this.apiCallCount >= phase1CallCap) {
-                logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 1 budget cap reached (calls=${this.apiCallCount}/${phase1CallCap}) ` +
-                    `— ${phase2MinReserved} calls reserved for Phase 2. Hubs processed: ${i}/${hubPool.length}`);
-                // PHASE_085C/D1: Record budget exhaustion once per cap event (not once per skipped hub)
-                rejectionStats.api_budget_exhausted++;
+            if (this.apiCallCount >= this.MAX_TOTAL_CALLS) {
+                logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 1 API call governor reached (${this.apiCallCount})`);
                 break;
             }
             const batch = hubPool.slice(i, i + BATCH_SIZE);
@@ -2881,13 +2704,7 @@ class SplitJourneyEngine {
         }
         // Keep only hubs that actually have leg1 trains
         const viableHubs = leg1Results.filter(h => h.trains.length > 0);
-        const phase1CallsUsed = this.apiCallCount;
-        // PHASE_085C/D1: Record viable hub count and Phase-1 search count for diagnostic promotion
-        rejectionStats.viable_hubs_count = viableHubs.length;
-        rejectionStats.phase1_hubs_searched = leg1Results.length;
-        logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 1 done: ${viableHubs.length}/${leg1Results.length} hubs viable ` +
-            `| PHASE1_CALLS=${phase1CallsUsed}/${phase1CallCap} PHASE2_RESERVED=${Math.max(0, this.MAX_TOTAL_CALLS - phase1CallsUsed)} ` +
-            `| PHASE1_HUBS_CONSIDERED=${hubPool.length} PHASE1_HUBS_USED=${leg1Results.length}`);
+        logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 1 done: ${viableHubs.length}/${hubPool.length} hubs have leg1 trains`);
         // —— PHASE 2: Parallel-fetch leg2 for all viable hubs across ALL dest station codes ——
         const leg2Cache = new Map();
         const nextDate = this.incrementDate(date, 1);
@@ -2916,18 +2733,10 @@ class SplitJourneyEngine {
             }
         }
         // —— Fix E: Process Phase 2 leg searches in batches of 3 to cap parallel concurrency ——
-        // PHASE_085F: Phase 2 uses the full MAX_TOTAL_CALLS ceiling (not phase1CallCap)
-        // so it can consume whatever Phase 1 did not use, up to the hard global limit.
-        const phase2CallsAtStart = this.apiCallCount;
-        logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 2 start: tasks=${leg2KeysToFetch.length} viable_hubs=${viableHubs.length} ` +
-            `| PHASE2_CALLS_AVAILABLE=${this.MAX_TOTAL_CALLS - phase2CallsAtStart} TOTAL_SO_FAR=${phase2CallsAtStart}`);
         const LEG2_BATCH_SIZE = 3;
         for (let i = 0; i < leg2KeysToFetch.length; i += LEG2_BATCH_SIZE) {
             if (Date.now() - startTime > this.MAX_ENGINE_TIME_MS || this.apiCallCount >= this.MAX_TOTAL_CALLS) {
-                logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 2 governor reached (time=${Date.now() - startTime}ms ` +
-                    `PHASE2_CALLS=${this.apiCallCount - phase2CallsAtStart} TOTAL_API_CALLS=${this.apiCallCount})`);
-                // PHASE_085C/D1: Also counts as api_budget_exhausted when Phase-2 terminates early
-                rejectionStats.api_budget_exhausted++;
+                logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 2 governor reached (time=${Date.now() - startTime}ms calls=${this.apiCallCount})`);
                 break;
             }
             const batch = leg2KeysToFetch.slice(i, i + LEG2_BATCH_SIZE);
@@ -2953,33 +2762,7 @@ class SplitJourneyEngine {
                 }
             }));
         }
-        const phase2CallsUsed = this.apiCallCount - phase2CallsAtStart;
-        logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 2 done: ${leg2KeysToFetch.length} tasks for ${viableHubs.length} hubs ` +
-            `| PHASE2_CALLS=${phase2CallsUsed} TOTAL_API_CALLS=${this.apiCallCount} TOTAL_ENGINE_TIME=${Date.now() - startTime}ms`);
-        // PHASE_085C/D1: Count DB Leg-2 coverage misses for Tier-0/Tier-1 viable hubs.
-        // A miss = the hub was viable for Leg-1 AND is Tier-0/1 AND ALL leg2Cache entries
-        // for that hub across all destination codes and travel dates are empty.
-        // This means both live API and DB fallback returned nothing for that junction.
-        for (const { hCode } of viableHubs) {
-            const hubTier = getHubTier(hCode);
-            if (hubTier > 1)
-                continue; // Only track Tier-0 and Tier-1 hubs
-            const allLeg2Empty = dCodes.every(dC => {
-                const keys = [
-                    `${hCode}|${dC}|${date}`,
-                    `${hCode}|${dC}|${nextDate}`,
-                    `${hCode}|${dC}|${nextDate2}`,
-                ];
-                return keys.every(k => {
-                    const entry = leg2Cache.get(k);
-                    return !entry || entry.length === 0;
-                });
-            });
-            if (allLeg2Empty) {
-                rejectionStats.db_leg2_miss++;
-                logger_1.winstonLogger.debug(`[SPLIT_ENGINE] DB_LEG2_MISS: hub=${hCode} (Tier ${hubTier}) has no Leg-2 trains for any dCode on ${date}/${nextDate}/${nextDate2}`);
-            }
-        }
+        logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 2 done: ${leg2KeysToFetch.length} batched leg2 fetches for ${viableHubs.length} hubs`);
         // —— PHASE 2.5: Authoritative running-days pre-fetch (PHASE_084H) ————————
         // Collect unique train numbers from all leg1 and leg2 candidates.
         // Batch-fetch getTrainInfo with bounded concurrency before the pairing loop
@@ -3059,6 +2842,21 @@ class SplitJourneyEngine {
             }).filter(t => t > 0)) :
             Infinity;
         logger_1.winstonLogger.info(`[SPLIT_ENGINE] directTime=${directTime === Infinity ? 'Infinity (no direct trains)' : directTime + 'min'}`);
+        const rejectionStats = {
+            source_stop_missing: 0,
+            dest_stop_missing: 0,
+            wait_time_invalid: 0,
+            reverse_or_disconnected: 0,
+            same_train: 0,
+            availability_issue: 0,
+            invalid_time: 0,
+            // PHASE_084K — per-stage resolution rejection counters
+            running_days_unknown: 0,
+            train_not_running: 0,
+            stop_not_found: 0,
+            db_unverified_stop_data: 0,
+            trust_gate_reject: 0,
+        };
         // Pre-calculate geography constraints OUTSIDE the loops
         const isReverseLoopGlobal = isNearAnyDestStationLocal(dCode, sCodes, 50);
         if (isReverseLoopGlobal) {
@@ -3300,12 +3098,10 @@ class SplitJourneyEngine {
                         const l2Cancellation = classifyCancellationState(l2);
                         if (l1Cancellation === 'CANCELLED') {
                             logger_1.winstonLogger.info(`[SPLIT_CANCELLATION_GATE_REJECTED] Leg1 ${l1.trainNo} (${l1.fromCode}->${l1.toCode}): cancellation=${l1Cancellation}`);
-                            rejectionStats.cancellation++; // PHASE_085C — was log-only
                             continue;
                         }
                         if (l2Cancellation === 'CANCELLED') {
                             logger_1.winstonLogger.info(`[SPLIT_CANCELLATION_GATE_REJECTED] Leg2 ${l2.trainNo} (${l2.fromCode}->${l2.toCode}): cancellation=${l2Cancellation}`);
-                            rejectionStats.cancellation++; // PHASE_085C — was log-only
                             continue;
                         }
                         const { resolveSegmentForAvailability } = await Promise.resolve().then(() => __importStar(require('./trainStationResolver')));
@@ -3831,8 +3627,7 @@ class SplitJourneyEngine {
                             continue;
                         try {
                             logger_1.winstonLogger.debug(`[SPLIT_TRACE] FALLBACK_HUB: trying ${hub}`);
-                            // PHASE_085C — pass rejectionStats so hub-fallback rejects propagate upward
-                            const hubSplits = await this.findSplitsThroughHub(sCode, sName, hub, dCode, dName, date, rejectionStats);
+                            const hubSplits = await this.findSplitsThroughHub(sCode, sName, hub, dCode, dName, date);
                             debugData.fallbackAttempts.push({ hub, success: hubSplits.length > 0 });
                             logger_1.winstonLogger.debug(`[SPLIT_TRACE] FALLBACK_HUB ${hub}: found ${hubSplits.length} splits`);
                             if (hubSplits.length > 0) {
@@ -4720,6 +4515,27 @@ class SplitJourneyEngine {
             }
             catch (e) {
                 logger_1.winstonLogger.warn(`[validateLegAndCorrectAsync] Live service window fetch failed for ${num}: ${e.message}`);
+            }
+        }
+        // PHASE_087N — DB 'Daily' fail-open for regular trains when IRCTC is unavailable.
+        // If the live service-window fetch did not upgrade runningDaysAuthoritative,
+        // and the train is a standard non-special numbered train (not 09xxx),
+        // and its running_days is the 'Daily' placeholder stored in DB,
+        // treat the DB record as authoritative — fail-open, not fail-closed.
+        // This prevents the IRCTC API being unavailable (e.g. missing api_providers table)
+        // from blocking ALL DB-sourced leg candidates with 'UNKNOWN' service-date verdicts.
+        if (!runningDaysAuthoritative && !(0, dayUtils_1.isSpecialTrainNumber)(num)) {
+            const rdCheck = String(runningDaysPattern || '').toLowerCase().trim();
+            const isDbDailyPattern = rdCheck === 'daily' ||
+                rdCheck === 'all days' ||
+                rdCheck === '0,1,2,3,4,5,6' ||
+                rdCheck === '1111111' ||
+                rdCheck.includes('all');
+            // Only apply when stops came from DB (not live IRCTC) — DB-validated schedule
+            if (isDbDailyPattern && stopsSource !== 'irctc') {
+                runningDaysAuthoritative = true;
+                logger_1.winstonLogger.info(`[validateLegAndCorrectAsync] PHASE_087N: DB 'Daily' accepted as authoritative for ` +
+                    `regular train ${num} (IRCTC unavailable, stopsSource=${stopsSource})`);
             }
         }
         // 3. Service-date truth — UNKNOWN must fail closed.
@@ -5668,9 +5484,7 @@ class SplitJourneyEngine {
     /**
      * Find splits through a specific hub as a fallback
      */
-    // PHASE_085C — rejectionStats is passed by reference so hub-fallback rejections
-    // propagate upward instead of being silently lost to winstonLogger only.
-    async findSplitsThroughHub(sourceCode, sourceName, hubCode, destCode, destName, date, rejectionStats) {
+    async findSplitsThroughHub(sourceCode, sourceName, hubCode, destCode, destName, date) {
         try {
             // Get hub name
             const hubName = (await stationService_1.stationService.getStationName(hubCode)) || hubCode;
@@ -5692,13 +5506,18 @@ class SplitJourneyEngine {
                 if (leg2Trains.length === 0) {
                     continue;
                 }
+                // PHASE_087L — Sort leg1 by departure time ascending so morning trains
+                // (e.g. 12127 dep 06:10) always rank before evening trains regardless of
+                // live API return order. Slice increased from 5→8 for broader hub coverage.
+                const _parseDep = (t) => this.parseToMins(String(t.departure || t.departure_time || t.dep_time || '').trim() || '00:00');
+                const sortedLeg1 = [...leg1Trains].sort((a, b) => _parseDep(a) - _parseDep(b));
                 // Try combinations
-                for (const leg1Raw of leg1Trains.slice(0, 5)) { // Limit to top 5
+                for (const leg1Raw of sortedLeg1.slice(0, 8)) { // PHASE_087L: top 5 → top 8
                     const l1 = this.mapToRichLeg(leg1Raw, sourceCode, hubCode, sourceName, hubName);
                     if (!l1.arrival || l1.arrival === '--:--')
                         continue;
                     const seenSameDayLeg2 = new Set();
-                    for (const leg2Raw of leg2Trains.slice(0, 5)) { // Limit to top 5
+                    for (const leg2Raw of leg2Trains.slice(0, 8)) { // PHASE_087L: top 5 → top 8
                         const isNextDay = leg2TrainsSameDay?.includes(leg2Raw) ? false : true;
                         const leg2Date = isNextDay ? this.incrementDate(date, 1) : date;
                         const effectiveDName = dC === destCode ? destName : dC;
@@ -5729,7 +5548,13 @@ class SplitJourneyEngine {
                         }
                         const waitMins = Math.round((adjustedDep2Ms - leg1ArrivalMs) / 60000);
                         // Guard waitMins (non‑finite, NaN, or unreasonable)
-                        if (!Number.isFinite(waitMins) || Number.isNaN(waitMins) || waitMins < 0 || waitMins > 720) {
+                        // PHASE_087L — raised ceiling from 720→840 min (14h).
+                        // Indian overnight hub connections (e.g. CSMT night train arriving PUNE 01:45,
+                        // connecting to HYB-bound train at 14:15 = 750 min wait) are operationally valid
+                        // and were incorrectly rejected by the old 12-hour ceiling.
+                        // 840 min = 14 hours remains a meaningful sanity bound: above this the user
+                        // should book accommodation rather than wait at the station.
+                        if (!Number.isFinite(waitMins) || Number.isNaN(waitMins) || waitMins < 0 || waitMins > 840) {
                             continue;
                         }
                         // Guard durations
@@ -5809,16 +5634,10 @@ class SplitJourneyEngine {
                         const l2Cancellation = classifyCancellationState(l2);
                         if (l1Cancellation === 'CANCELLED') {
                             logger_1.winstonLogger.info(`[SPLIT_CANCELLATION_GATE_REJECTED] Hub Fallback Leg1 ${l1.trainNo} (${l1.fromCode}->${l1.toCode}): cancellation=${l1Cancellation}`);
-                            // PHASE_085C — propagate cancellation count upward
-                            if (rejectionStats)
-                                rejectionStats.cancellation = (rejectionStats.cancellation || 0) + 1;
                             continue;
                         }
                         if (l2Cancellation === 'CANCELLED') {
                             logger_1.winstonLogger.info(`[SPLIT_CANCELLATION_GATE_REJECTED] Hub Fallback Leg2 ${l2.trainNo} (${l2.fromCode}->${l2.toCode}): cancellation=${l2Cancellation}`);
-                            // PHASE_085C — propagate cancellation count upward
-                            if (rejectionStats)
-                                rejectionStats.cancellation = (rejectionStats.cancellation || 0) + 1;
                             continue;
                         }
                         const { resolveSegmentForAvailability } = await Promise.resolve().then(() => __importStar(require('./trainStationResolver')));
@@ -5828,34 +5647,10 @@ class SplitJourneyEngine {
                         ]);
                         if (!v1.success) {
                             logger_1.winstonLogger.info(`[SPLIT_PHYSICAL_STOP_GATE_REJECTED] Hub Fallback Leg1 ${l1.trainNo} (${l1.fromCode}->${l1.toCode}): ${v1.reason}`);
-                            // PHASE_085C — propagate physical-stop reason upward instead of losing it
-                            if (rejectionStats) {
-                                const r1 = v1.reason;
-                                if (r1 === 'RUNNING_DAYS_UNKNOWN')
-                                    rejectionStats.running_days_unknown = (rejectionStats.running_days_unknown || 0) + 1;
-                                else if (r1 === 'TRAIN_NOT_RUNNING')
-                                    rejectionStats.train_not_running = (rejectionStats.train_not_running || 0) + 1;
-                                else if (r1 === 'DB_UNVERIFIED_STOP_DATA')
-                                    rejectionStats.db_unverified_stop_data = (rejectionStats.db_unverified_stop_data || 0) + 1;
-                                else if (r1 === 'INVALID_BOARDING_STATION' || r1 === 'INVALID_DESTINATION_STATION')
-                                    rejectionStats.stop_not_found = (rejectionStats.stop_not_found || 0) + 1;
-                            }
                             continue;
                         }
                         if (!v2.success) {
                             logger_1.winstonLogger.info(`[SPLIT_PHYSICAL_STOP_GATE_REJECTED] Hub Fallback Leg2 ${l2.trainNo} (${l2.fromCode}->${l2.toCode}): ${v2.reason}`);
-                            // PHASE_085C — propagate physical-stop reason upward instead of losing it
-                            if (rejectionStats) {
-                                const r2 = v2.reason;
-                                if (r2 === 'RUNNING_DAYS_UNKNOWN')
-                                    rejectionStats.running_days_unknown = (rejectionStats.running_days_unknown || 0) + 1;
-                                else if (r2 === 'TRAIN_NOT_RUNNING')
-                                    rejectionStats.train_not_running = (rejectionStats.train_not_running || 0) + 1;
-                                else if (r2 === 'DB_UNVERIFIED_STOP_DATA')
-                                    rejectionStats.db_unverified_stop_data = (rejectionStats.db_unverified_stop_data || 0) + 1;
-                                else if (r2 === 'INVALID_BOARDING_STATION' || r2 === 'INVALID_DESTINATION_STATION')
-                                    rejectionStats.stop_not_found = (rejectionStats.stop_not_found || 0) + 1;
-                            }
                             continue;
                         }
                         // PHASE_5B109 — typed provenance (see deriveProvenance).
@@ -5873,4 +5668,23 @@ class SplitJourneyEngine {
     }
 }
 exports.SplitJourneyEngine = SplitJourneyEngine;
+/**
+ * PHASE_087I — Designated major railway junction hubs that are valid corridor
+ * split points even when closer than the computed minimum distance floor.
+ *
+ * Rationale: getMinHubDistance() returns 200km for the 500-1000km corridor tier
+ * (e.g. CSMT→HYB at 622km). PUNE (117km) and SUR (188km) are verified major
+ * junctions with timetable coverage in train_schedule and are legitimate booking
+ * segments. The 200km floor was designed to block trivial micro-splits at
+ * unimportant nearby stations — NOT to exclude major divisional headquarters.
+ *
+ * Safety constraints:
+ *   - Only explicitly validated stations with train_schedule rows may be added.
+ *   - These stations must already survive getValidViaStations() (geo/direction check).
+ *   - Arbitrary nearby stations (not in this set) continue to be distance-filtered.
+ */
+SplitJourneyEngine.MAJOR_JUNCTION_BYPASS = new Set([
+    'PUNE', // Mumbai–Hyderabad/Pune corridor (verified: train_schedule rows, 117km from CSMT)
+    'SUR', // Solapur — Mumbai–Hyderabad corridor (verified: train_schedule rows, 188km from CSMT)
+]);
 exports.splitJourneyEngine = new SplitJourneyEngine();
