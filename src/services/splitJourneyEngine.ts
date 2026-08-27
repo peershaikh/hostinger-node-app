@@ -1307,8 +1307,11 @@ export class SplitJourneyEngine {
   /** Minimum transfer window: 45 minutes — realistic Indian railway minimum */
   private readonly MIN_BUFFER_MINUTES = 45;
 
-  /** Maximum transfer window: 8 hours — overnight stays are valid but 12h is too long */
-  private readonly MAX_BUFFER_MINUTES = 360;
+  /** Maximum transfer window: 14 hours — overnight hub stays are valid for Indian rail.
+   * PHASE_087L: raised from 360→840 to match the actual runtime guard in findSplitsThroughHub
+   * and to restore valid overnight hub connections (e.g. CSMT night arrival at PUNE,
+   * next-afternoon departure to HYB) that were incorrectly rejected at the old 720-min ceiling. */
+  private readonly MAX_BUFFER_MINUTES = 840;
 
   private readonly TARGET_RESULTS = 15;  // was 10
 
@@ -6193,15 +6196,22 @@ export class SplitJourneyEngine {
           continue;
         }
 
+        // PHASE_087L — Sort leg1 by departure time ascending so morning trains
+        // (e.g. 12127 dep 06:10) always rank before evening trains regardless of
+        // live API return order. Slice increased from 5→8 for broader hub coverage.
+        const _parseDep = (t: any): number =>
+          this.parseToMins(String(t.departure || t.departure_time || t.dep_time || '').trim() || '00:00');
+        const sortedLeg1 = [...leg1Trains].sort((a: any, b: any) => _parseDep(a) - _parseDep(b));
+
         // Try combinations
-        for (const leg1Raw of leg1Trains.slice(0, 5)) { // Limit to top 5
+        for (const leg1Raw of sortedLeg1.slice(0, 8)) { // PHASE_087L: top 5 → top 8
           const l1 = this.mapToRichLeg(leg1Raw, sourceCode, hubCode, sourceName, hubName);
 
           if (!l1.arrival || l1.arrival === '--:--') continue;
 
           const seenSameDayLeg2 = new Set<string>();
 
-          for (const leg2Raw of leg2Trains.slice(0, 5)) { // Limit to top 5
+          for (const leg2Raw of leg2Trains.slice(0, 8)) { // PHASE_087L: top 5 → top 8
             const isNextDay = leg2TrainsSameDay?.includes(leg2Raw) ? false : true;
             const leg2Date = isNextDay ? this.incrementDate(date, 1) : date;
             const effectiveDName = dC === destCode ? destName : dC;
@@ -6236,7 +6246,13 @@ export class SplitJourneyEngine {
 
           const waitMins = Math.round((adjustedDep2Ms - leg1ArrivalMs) / 60000);
           // Guard waitMins (non‑finite, NaN, or unreasonable)
-          if (!Number.isFinite(waitMins) || Number.isNaN(waitMins) || waitMins < 0 || waitMins > 720) {
+          // PHASE_087L — raised ceiling from 720→840 min (14h).
+          // Indian overnight hub connections (e.g. CSMT night train arriving PUNE 01:45,
+          // connecting to HYB-bound train at 14:15 = 750 min wait) are operationally valid
+          // and were incorrectly rejected by the old 12-hour ceiling.
+          // 840 min = 14 hours remains a meaningful sanity bound: above this the user
+          // should book accommodation rather than wait at the station.
+          if (!Number.isFinite(waitMins) || Number.isNaN(waitMins) || waitMins < 0 || waitMins > 840) {
             continue;
           }
           // Guard durations
