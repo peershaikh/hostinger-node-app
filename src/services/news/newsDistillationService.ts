@@ -1,4 +1,4 @@
-import { winstonLogger } from '../../middleware/logger';
+﻿import { winstonLogger } from '../../middleware/logger';
 import { aiProviderResolver } from '../ai/aiProviderResolver';
 import { CanonicalNewsArticle } from './newsTypes';
 import { NewsDistillationInput, NewsDistillationOutput, NewsFaqItem } from '../ai/aiProvider';
@@ -12,10 +12,6 @@ export interface ValidationResult {
 }
 
 export class NewsFactValidator {
-  /**
-   * Validates AI-generated structured output against raw source content.
-   * Ensures zero fabrication of train numbers, stations, or operational claims.
-   */
   public static validate(
     source: NewsDistillationInput,
     output: NewsDistillationOutput
@@ -23,7 +19,6 @@ export class NewsFactValidator {
     const rawSource = (source.title + ' ' + source.summary).toLowerCase();
     const unsupportedEntities: string[] = [];
 
-    // 1. Validate Train Numbers
     if (Array.isArray(output.affected_trains)) {
       for (const t of output.affected_trains) {
         const trainStr = String(t).trim();
@@ -33,7 +28,6 @@ export class NewsFactValidator {
       }
     }
 
-    // 2. Validate Station Codes / Names
     if (Array.isArray(output.affected_stations)) {
       const candidates = new Set((source.candidateStations || []).map(s => s.toLowerCase().trim()));
       for (const s of output.affected_stations) {
@@ -44,7 +38,6 @@ export class NewsFactValidator {
       }
     }
 
-    // 3. Reject if hallucinated entities found
     if (unsupportedEntities.length > 0) {
       winstonLogger.warn('[NEWS_AI_VALIDATOR_REJECT] Hallucinated/unsupported entities detected in AI draft', {
         sourceTitle: source.title.slice(0, 50),
@@ -59,7 +52,6 @@ export class NewsFactValidator {
       };
     }
 
-    // 4. Determine factual confidence based on source tier and coverage
     let confidence: 'HIGH' | 'MEDIUM' | 'LOW' = 'MEDIUM';
     if (source.sourceTier === 'TIER_1_OFFICIAL') {
       confidence = 'HIGH';
@@ -67,24 +59,31 @@ export class NewsFactValidator {
       confidence = 'MEDIUM';
     }
 
-    // If summary is suspiciously sparse
     if (!output.key_takeaways || !output.key_takeaways.what_happened) {
       confidence = 'LOW';
     }
 
-    return {
-      isValid: true,
-      confidence,
-    };
+    return { isValid: true, confidence };
   }
+}
+
+// Internal result type — propagates RATE_LIMITED state to batchDistill
+// via typed AiError.code, avoiding any string matching.
+interface DistillResult {
+  article: CanonicalNewsArticle;
+  wasRateLimited: boolean;
+}
+
+const DELAY_NORMAL_MS  = 200;   // Courtesy pause between successful Gemini calls
+const DELAY_BACKOFF_MS = 4000;  // Pause after HTTP 429 to let quota refill
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 export class NewsDistillationService {
   private processedHashes = new Set<string>();
 
-  /**
-   * Generates a deterministic fallback draft when AI is unavailable or fails.
-   */
   public generateDeterministicDraft(article: CanonicalNewsArticle): NewsDistillationOutput {
     const title = article.title;
     const summary = article.summary;
@@ -126,13 +125,13 @@ export class NewsDistillationService {
   }
 
   /**
-   * Distills a single canonical news article through AI fact distillation and post-validation.
+   * Distills a single article. Returns DistillResult with wasRateLimited flag
+   * so batchDistill can apply structured backoff via AiError.code check.
    */
-  public async distillArticle(article: CanonicalNewsArticle): Promise<CanonicalNewsArticle> {
-    // 1. Duplicate AI Call Guard: check content_hash
+  public async distillArticle(article: CanonicalNewsArticle): Promise<DistillResult> {
     if (this.processedHashes.has(article.content_hash) && article.status === 'AI_DRAFTED') {
       winstonLogger.info(`[NEWS_AI_SKIPPED_DUPLICATE] Article ${article.id} hash already processed.`);
-      return article;
+      return { article, wasRateLimited: false };
     }
 
     const input: NewsDistillationInput = {
@@ -148,9 +147,9 @@ export class NewsDistillationService {
     };
 
     let aiOutput: NewsDistillationOutput | null = null;
+    let wasRateLimited = false;
 
     try {
-      // 2. Invoke through canonical AI Provider Resolver (Gemini Adapter)
       const res = await aiProviderResolver.executeWithFallback<NewsDistillationOutput | null>(
         'distillNewsArticle',
         provider => {
@@ -164,64 +163,141 @@ export class NewsDistillationService {
       if (res.result) {
         aiOutput = res.result;
       }
+
+      // Structured check via typed AiError.code — no string matching
+      if (!aiOutput && res.error?.code === 'RATE_LIMITED') {
+        wasRateLimited = true;
+      }
     } catch (err: any) {
       winstonLogger.warn(`[NEWS_AI_DISTILL_ERROR] AI call failed for ${article.id}: ${err.message}`);
     }
 
-    // 3. Fallback if AI output is empty
     if (!aiOutput) {
       winstonLogger.info(`[NEWS_AI_FALLBACK_APPLIED] Using deterministic extraction for ${article.id}`);
       aiOutput = this.generateDeterministicDraft(article);
     }
 
-    // 4. Zero-Hallucination Post-Generation Validator
     const validation = NewsFactValidator.validate(input, aiOutput);
-
     this.processedHashes.add(article.content_hash);
-
     const now = new Date().toISOString();
 
     if (!validation.isValid) {
-      // Flag as rejected draft due to unsupported claims
       return {
-        ...article,
-        status: 'REJECTED',
-        ingestion_status: 'REJECTED',
-        relevance_score: 0,
-        updated_at: now,
+        article: {
+          ...article,
+          status: 'REJECTED',
+          ingestion_status: 'REJECTED',
+          relevance_score: 0,
+          updated_at: now,
+        },
+        wasRateLimited,
       };
     }
 
-    // 5. Successful AI Draft -> REVIEW_REQUIRED (Never auto-published directly)
     return {
-      ...article,
-      title: aiOutput.title || article.title,
-      summary: aiOutput.summary || article.summary,
-      key_takeaways: [
-        aiOutput.key_takeaways.what_happened,
-        aiOutput.key_takeaways.who_is_affected,
-        aiOutput.key_takeaways.what_passengers_should_do,
-      ].filter(Boolean),
-      affected_trains: aiOutput.affected_trains.length > 0 ? aiOutput.affected_trains : article.affected_trains,
-      affected_stations: aiOutput.affected_stations.length > 0 ? aiOutput.affected_stations : article.affected_stations,
-      seo_title: aiOutput.seo_title,
-      meta_description: aiOutput.meta_description,
-      slug: aiOutput.slug || article.slug,
-      status: 'AI_DRAFTED',
-      ingestion_status: 'INGESTION_COMPLETE',
-      updated_at: now,
+      article: {
+        ...article,
+        title: aiOutput.title || article.title,
+        summary: aiOutput.summary || article.summary,
+        key_takeaways: [
+          aiOutput.key_takeaways.what_happened,
+          aiOutput.key_takeaways.who_is_affected,
+          aiOutput.key_takeaways.what_passengers_should_do,
+        ].filter(Boolean),
+        affected_trains: aiOutput.affected_trains.length > 0 ? aiOutput.affected_trains : article.affected_trains,
+        affected_stations: aiOutput.affected_stations.length > 0 ? aiOutput.affected_stations : article.affected_stations,
+        seo_title: aiOutput.seo_title,
+        meta_description: aiOutput.meta_description,
+        slug: aiOutput.slug || article.slug,
+        status: 'AI_DRAFTED',
+        ingestion_status: 'INGESTION_COMPLETE',
+        updated_at: now,
+      },
+      wasRateLimited,
     };
   }
 
   /**
    * Distills multiple articles in batch with rate-limit and cost protection.
+   *
+   * - GEMINI_NEWS_BATCH_MAX (default 10): only first N articles call Gemini.
+   *   Remaining articles get deterministic fallback immediately.
+   * - After a successful Gemini call: 200ms courtesy delay.
+   * - After RATE_LIMITED (HTTP 429): 4000ms backoff before next article.
+   * - No recursive retry. No re-queue. No amplification.
+   *
+   * Env:
+   *   GEMINI_NEWS_BATCH_MAX   — max Gemini calls per cycle (default: 10)
+   *   GEMINI_NEWS_CONCURRENCY — reserved; current concurrency is always 1
    */
   public async batchDistill(articles: CanonicalNewsArticle[]): Promise<CanonicalNewsArticle[]> {
-    const results: CanonicalNewsArticle[] = [];
-    for (const article of articles) {
-      const distilled = await this.distillArticle(article);
-      results.push(distilled);
+    const batchMax      = Math.max(1, parseInt(process.env.GEMINI_NEWS_BATCH_MAX ?? '10', 10));
+    const aiSlice       = articles.slice(0, batchMax);
+    const fallbackSlice = articles.slice(batchMax);
+
+    if (fallbackSlice.length > 0) {
+      winstonLogger.info(
+        `[DISTILL_BATCH_LIMIT] requested=${articles.length} processed=${aiSlice.length} fallback=${fallbackSlice.length}`
+      );
     }
+
+    const results: CanonicalNewsArticle[] = [];
+
+    for (let i = 0; i < aiSlice.length; i++) {
+      const { article, wasRateLimited } = await this.distillArticle(aiSlice[i]);
+      results.push(article);
+
+      if (i < aiSlice.length - 1) {
+        if (wasRateLimited) {
+          winstonLogger.warn(`[RATE_LIMIT_BACKOFF] feature=distillNewsArticle delay_ms=${DELAY_BACKOFF_MS}`);
+          await sleep(DELAY_BACKOFF_MS);
+        } else {
+          await sleep(DELAY_NORMAL_MS);
+        }
+      }
+    }
+
+    const now = new Date().toISOString();
+    for (const article of fallbackSlice) {
+      const aiOutput   = this.generateDeterministicDraft(article);
+      const validation = NewsFactValidator.validate(
+        {
+          title:             article.title,
+          summary:           article.summary,
+          sourceName:        article.source_name,
+          sourceUrl:         article.source_url,
+          sourceTier:        article.source_tier,
+          publishedAt:       article.published_at,
+          category:          article.category,
+          candidateTrains:   article.affected_trains,
+          candidateStations: article.affected_stations,
+        },
+        aiOutput
+      );
+      this.processedHashes.add(article.content_hash);
+      results.push(
+        validation.isValid
+          ? {
+              ...article,
+              title:            aiOutput.title   || article.title,
+              summary:          aiOutput.summary || article.summary,
+              seo_title:        aiOutput.seo_title,
+              meta_description: aiOutput.meta_description,
+              slug:             aiOutput.slug    || article.slug,
+              status:           'AI_DRAFTED',
+              ingestion_status: 'INGESTION_COMPLETE',
+              updated_at:       now,
+            }
+          : {
+              ...article,
+              status:           'REJECTED',
+              ingestion_status: 'REJECTED',
+              relevance_score:  0,
+              updated_at:       now,
+            }
+      );
+    }
+
     return results;
   }
 }
