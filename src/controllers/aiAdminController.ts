@@ -115,10 +115,29 @@ export class AiAdminController {
       });
     } catch (err: any) {
       const latencyMs = Date.now() - startTime;
-      winstonLogger.warn(`[AI_ADMIN] Provider test probe failed: ${err.message}`);
+
+      // Extract upstream provider error details safely.
+      // Never log: request URL (?key=...), API key, headers, or full config.
+      const upstream = (err as any)?.response?.data?.error;
+      const upstreamStatus  = upstream?.status  ?? 'UNKNOWN';
+      const upstreamCode    = upstream?.code    ?? (err as any)?.response?.status ?? 'UNKNOWN';
+      const upstreamMessage = upstream?.message ?? 'no upstream message';
+
+      winstonLogger.warn(
+        `[AI_ADMIN] Provider test probe failed: ${err.message}` +
+        ` | upstream_status=${upstreamStatus}` +
+        ` | upstream_code=${upstreamCode}` +
+        ` | upstream_message=${upstreamMessage}`
+      );
+
       res.status(500).json({
         success: false,
         error: `AI probe failed: ${err.message}`,
+        upstream: {
+          status:  upstreamStatus,
+          code:    upstreamCode,
+          message: upstreamMessage
+        },
         latencyMs
       });
     }

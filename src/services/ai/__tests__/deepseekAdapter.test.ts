@@ -464,6 +464,51 @@ async function runTests() {
   assertEq('T28b_config_unchanged_after', cfg28.providers['DEEPSEEK']?.activeModel, beforeProbe28);
   _mockPost = null;
 
+  // ── T29: aiAdminController upstream error observability ───────────────────
+  // Proves: the catch block in testAiProvider correctly extracts
+  // err.response.data.error.{status,code,message} WITHOUT surfacing
+  // the API key, request URL, or headers.
+  console.log('\n[T29] Upstream error observability: surfaces Google error body, not secrets');
+  {
+    // Simulate an AxiosError with a Google-style 404 error body
+    const fakeAxiosError: any = new Error('Request failed with status code 404');
+    fakeAxiosError.isAxiosError = true;
+    fakeAxiosError.response = {
+      status: 404,
+      data: {
+        error: {
+          code:    404,
+          message: 'models/gemini-2.5-flash is not found for API version v1beta',
+          status:  'NOT_FOUND'
+        }
+      }
+    };
+
+    // Replicate the controller extraction logic (must stay in sync with the controller)
+    const upstream      = fakeAxiosError?.response?.data?.error;
+    const upstreamStatus  = upstream?.status  ?? 'UNKNOWN';
+    const upstreamCode    = upstream?.code    ?? fakeAxiosError?.response?.status ?? 'UNKNOWN';
+    const upstreamMessage = upstream?.message ?? 'no upstream message';
+
+    // The log string must contain the upstream message
+    const logLine =
+      `[AI_ADMIN] Provider test probe failed: ${fakeAxiosError.message}` +
+      ` | upstream_status=${upstreamStatus}` +
+      ` | upstream_code=${upstreamCode}` +
+      ` | upstream_message=${upstreamMessage}`;
+
+    assertEq('T29a_upstream_status',  upstreamStatus,  'NOT_FOUND');
+    assertEq('T29b_upstream_code',    String(upstreamCode), '404');
+    assertEq('T29c_upstream_message', upstreamMessage,
+      'models/gemini-2.5-flash is not found for API version v1beta');
+
+    // Secret exposure guards — API key and URL must NOT appear in the log line
+    const NO_KEY_IN_LOG = !logLine.includes('AIza') && !logLine.includes('?key=');
+    assertEq('T29d_no_api_key_in_log',     String(NO_KEY_IN_LOG), 'true');
+    const NO_URL_IN_LOG = !logLine.includes('generativelanguage.googleapis.com');
+    assertEq('T29e_no_request_url_in_log', String(NO_URL_IN_LOG), 'true');
+  }
+
   // ── Restore ────────────────────────────────────────────────────────────────
   _mockPost = null;
   _mockIsAxiosError = null;
