@@ -58,6 +58,7 @@ import { AiProviderResolver } from '../aiProviderResolver';
 
 // ── Silence observability writes during tests ────────────────────────────────
 import { aiObservabilityService } from '../aiObservabilityService';
+import { calculateAiCost } from '../aiPricingConfig';
 (aiObservabilityService as any).recordAiUsage = () => {};
 
 // ── Test harness ─────────────────────────────────────────────────────────────
@@ -439,7 +440,7 @@ async function runTests() {
   // (We won't make a real HTTP call; just verify config plumbing)
   const currentGeminiModel = (geminiAdapterTest as any).getActiveModel();
   assertEq('T27', currentGeminiModel, 'gemini-1.5-pro');
-  cfg27.providers['GEMINI'].activeModel = 'gemini-2.5-flash'; // restore
+  cfg27.providers['GEMINI'].activeModel = 'gemini-3.6-flash'; // restore
 
   // ── T28: Concurrency regression — probe cannot pollute shared config ────────
   // Proves: a concurrent production request reading aiAdminConfigService.getConfig()
@@ -478,7 +479,7 @@ async function runTests() {
       data: {
         error: {
           code:    404,
-          message: 'models/gemini-2.5-flash is not found for API version v1beta',
+          message: 'models/gemini-3.6-flash is not found for API version v1beta',
           status:  'NOT_FOUND'
         }
       }
@@ -500,13 +501,30 @@ async function runTests() {
     assertEq('T29a_upstream_status',  upstreamStatus,  'NOT_FOUND');
     assertEq('T29b_upstream_code',    String(upstreamCode), '404');
     assertEq('T29c_upstream_message', upstreamMessage,
-      'models/gemini-2.5-flash is not found for API version v1beta');
+      'models/gemini-3.6-flash is not found for API version v1beta');
 
     // Secret exposure guards — API key and URL must NOT appear in the log line
     const NO_KEY_IN_LOG = !logLine.includes('AIza') && !logLine.includes('?key=');
     assertEq('T29d_no_api_key_in_log',     String(NO_KEY_IN_LOG), 'true');
     const NO_URL_IN_LOG = !logLine.includes('generativelanguage.googleapis.com');
     assertEq('T29e_no_request_url_in_log', String(NO_URL_IN_LOG), 'true');
+  }
+
+  // ── T30: Gemini 3.6 Flash migration compliance ────────────────────────────
+  console.log('\n[T30] Gemini 3.6 Flash: adapter, pricing, routing, and sampling compliance');
+  {
+    const gAdapter = new GeminiAdapter();
+    assertEq('T30a_displayName', gAdapter.displayName, 'Google Gemini (Gemini 3.6 Flash)');
+
+    const config = aiAdminConfigService.getConfig();
+    assertEq('T30b_default_active_model', config.providers['GEMINI']?.activeModel, 'gemini-3.6-flash');
+    assertEq('T30c_allowed_models_includes_36', String(config.providers['GEMINI']?.allowedModels.includes('gemini-3.6-flash')), 'true');
+    assertEq('T30d_pnr_route_model', config.routing['PNR_PREDICTION']?.model, 'gemini-3.6-flash');
+    assertEq('T30e_schedule_route_model', config.routing['SCHEDULE_GENERATION']?.model, 'gemini-3.6-flash');
+
+    // Pricing calculation check
+    const cost36 = calculateAiCost('gemini-3.6-flash', 1_000_000, 1_000_000);
+    assertEq('T30f_cost_1M_tokens', String(cost36), '4.5'); // 0.75 + 3.75
   }
 
   // ── Restore ────────────────────────────────────────────────────────────────

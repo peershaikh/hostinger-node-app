@@ -8,9 +8,10 @@ export interface ModelPricing {
 }
 
 export const AI_MODEL_PRICING: Record<string, ModelPricing> = {
-  'gemini-2.5-flash': {
-    inputPerMillionUsd: 0.075,
-    outputPerMillionUsd: 0.30
+  'gemini-3.6-flash': {
+    inputPerMillionUsd: 0.75,
+    outputPerMillionUsd: 3.75,
+    notes: 'Introductory through Dec 31, 2026. Standard $1.50/$7.50.'
   },
   'gemini-1.5-flash': {
     inputPerMillionUsd: 0.075,

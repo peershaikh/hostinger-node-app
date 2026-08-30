@@ -23,7 +23,7 @@ import {
 
 export class GeminiAdapter implements AiProvider {
   public readonly providerId = 'GEMINI';
-  public readonly displayName = 'Google Gemini (Gemini 2.5 Flash)';
+  public readonly displayName = 'Google Gemini (Gemini 3.6 Flash)';
 
   public readonly capabilities: AiCapabilities = {
     predictPnr: true,
@@ -61,7 +61,7 @@ export class GeminiAdapter implements AiProvider {
       if (providerModel) return providerModel;
     } catch { /* config not ready yet — fall through */ }
     // 3. Env / aiConfig fallback (backward compat)
-    return aiConfig.gemini.model || 'gemini-2.5-flash';
+    return aiConfig.gemini.model || 'gemini-3.6-flash';
   }
 
   private getEndpointUrl(featureKey?: string): string {
@@ -94,7 +94,7 @@ export class GeminiAdapter implements AiProvider {
     winstonLogger.info(`[AI_PROBE] [GEMINI] Model: ${model} (isolated probe — no config mutation)`);
     const response = await axios.post(url, {
       contents: [{ parts: [{ text: finalPrompt }] }],
-      generationConfig: { temperature: 0.2, responseMimeType: json ? 'application/json' : 'text/plain' }
+      generationConfig: { responseMimeType: json ? 'application/json' : 'text/plain' }
     }, { timeout });
     const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) throw new AiError({ code: 'INVALID_RESPONSE', message: 'Probe returned empty response', provider: this.providerId });
@@ -148,7 +148,6 @@ export class GeminiAdapter implements AiProvider {
         {
           contents: [{ parts: [{ text: finalPrompt }] }],
           generationConfig: {
-            temperature: 0.2,
             responseMimeType: json ? 'application/json' : 'text/plain'
           }
         },

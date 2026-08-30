@@ -69,8 +69,8 @@ const DEFAULT_AI_CONFIG: AiSystemConfig = {
       providerId: 'GEMINI',
       displayName: 'Google Gemini',
       enabled: true,
-      activeModel: 'gemini-2.5-flash',
-      allowedModels: ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'],
+      activeModel: 'gemini-3.6-flash',
+      allowedModels: ['gemini-3.6-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'],
       capabilities: {
         predictPnr: true,
         analyzeRoute: true,
@@ -142,13 +142,13 @@ const DEFAULT_AI_CONFIG: AiSystemConfig = {
   },
   routing: {
     // GEMINI primary for latency-sensitive, domain-critical features.
-    PNR_PREDICTION:             { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-2.5-flash'   },
-    ROUTE_ANALYSIS:             { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-2.5-flash'   },
-    ROUTE_ENRICHMENT:           { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-2.5-flash'   },
+    PNR_PREDICTION:             { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-3.6-flash'   },
+    ROUTE_ANALYSIS:             { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-3.6-flash'   },
+    ROUTE_ENRICHMENT:           { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-3.6-flash'   },
     // GEMINI primary for schedule until DeepSeek IR domain accuracy validated.
-    SCHEDULE_GENERATION:        { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-2.5-flash'   },
-    AVAILABILITY_NORMALIZATION: { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'deepseek-v4-flash'  },
-    GENERIC_PROMPT:             { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-2.5-flash'   },
+    SCHEDULE_GENERATION:        { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-3.6-flash'   },
+    AVAILABILITY_NORMALIZATION: { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-3.6-flash'   },
+    GENERIC_PROMPT:             { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-3.6-flash'   },
     // DEEPSEEK primary for high-volume, cost-optimized features (when enabled).
     // Falls back to GEMINI while DEEPSEEK.enabled=false.
     FEEDBACK_CATEGORIZATION:    { primaryProvider: 'DEEPSEEK', fallbackProvider: 'GEMINI',   model: 'deepseek-v4-flash'  },
@@ -156,9 +156,12 @@ const DEFAULT_AI_CONFIG: AiSystemConfig = {
   },
   modelRegistry: {
     // Gemini models
-    'gemini-2.5-flash': {
-      modelId: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', providerId: 'GEMINI',
-      pricing: { inputPerMillionUsd: 0.075, outputPerMillionUsd: 0.30 },
+    'gemini-3.6-flash': {
+      modelId: 'gemini-3.6-flash', displayName: 'Gemini 3.6 Flash', providerId: 'GEMINI',
+      pricing: {
+        inputPerMillionUsd: 0.75, outputPerMillionUsd: 3.75,
+        notes: 'Introductory pricing through Dec 31, 2026 ($0.75/$3.75). Standard: $1.50/$7.50.'
+      },
       defaultForHighVolume: true
     },
     'gemini-1.5-flash': {

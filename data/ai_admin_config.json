@@ -1,0 +1,132 @@
+{
+  "defaultProvider": "GEMINI",
+  "providers": {
+    "GEMINI": {
+      "providerId": "GEMINI",
+      "displayName": "Google Gemini",
+      "enabled": true,
+      "activeModel": "gemini-3.6-flash",
+      "allowedModels": [
+        "gemini-3.6-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro"
+      ],
+      "capabilities": {
+        "predictPnr": true,
+        "analyzeRoute": true,
+        "enrichRoute": true,
+        "categorizeFeedback": true,
+        "generateSchedule": true,
+        "normalizeAvailability": true,
+        "suggestAlternatives": true,
+        "genericPrompt": true,
+        "distillNewsArticle": true
+      }
+    },
+    "DEEPSEEK": {
+      "providerId": "DEEPSEEK",
+      "displayName": "DeepSeek",
+      "enabled": false,
+      "activeModel": "deepseek-v4-flash",
+      "allowedModels": [
+        "deepseek-v4-flash",
+        "deepseek-v4-pro"
+      ],
+      "capabilities": {
+        "predictPnr": true,
+        "analyzeRoute": true,
+        "enrichRoute": true,
+        "categorizeFeedback": true,
+        "generateSchedule": true,
+        "normalizeAvailability": true,
+        "suggestAlternatives": true,
+        "genericPrompt": true,
+        "distillNewsArticle": true
+      }
+    },
+    "OPENAI": {
+      "providerId": "OPENAI",
+      "displayName": "OpenAI GPT",
+      "enabled": false,
+      "activeModel": "gpt-4o-mini",
+      "allowedModels": [
+        "gpt-4o-mini",
+        "gpt-4o"
+      ],
+      "capabilities": {
+        "predictPnr": true,
+        "analyzeRoute": true,
+        "enrichRoute": true,
+        "categorizeFeedback": true,
+        "generateSchedule": false,
+        "normalizeAvailability": true,
+        "suggestAlternatives": true,
+        "genericPrompt": true
+      }
+    },
+    "ANTHROPIC": {
+      "providerId": "ANTHROPIC",
+      "displayName": "Anthropic Claude",
+      "enabled": false,
+      "activeModel": "claude-3-5-haiku",
+      "allowedModels": [
+        "claude-3-5-haiku",
+        "claude-3-5-sonnet"
+      ],
+      "capabilities": {
+        "predictPnr": true,
+        "analyzeRoute": true,
+        "enrichRoute": false,
+        "categorizeFeedback": true,
+        "generateSchedule": false,
+        "normalizeAvailability": true,
+        "suggestAlternatives": true,
+        "genericPrompt": true
+      }
+    }
+  },
+  "routing": {
+    "PNR_PREDICTION": {
+      "primaryProvider": "GEMINI",
+      "fallbackProvider": "DEEPSEEK",
+      "model": "gemini-3.6-flash"
+    },
+    "ROUTE_ANALYSIS": {
+      "primaryProvider": "GEMINI",
+      "fallbackProvider": "DEEPSEEK",
+      "model": "gemini-3.6-flash"
+    },
+    "ROUTE_ENRICHMENT": {
+      "primaryProvider": "GEMINI",
+      "fallbackProvider": "DEEPSEEK",
+      "model": "gemini-3.6-flash"
+    },
+    "SCHEDULE_GENERATION": {
+      "primaryProvider": "GEMINI",
+      "fallbackProvider": "DEEPSEEK",
+      "model": "gemini-3.6-flash"
+    },
+    "AVAILABILITY_NORMALIZATION": {
+      "primaryProvider": "GEMINI",
+      "fallbackProvider": "DEEPSEEK",
+      "model": "gemini-3.6-flash"
+    },
+    "GENERIC_PROMPT": {
+      "primaryProvider": "GEMINI",
+      "fallbackProvider": "DEEPSEEK",
+      "model": "gemini-3.6-flash"
+    },
+    "FEEDBACK_CATEGORIZATION": {
+      "primaryProvider": "DEEPSEEK",
+      "fallbackProvider": "GEMINI",
+      "model": "deepseek-v4-flash"
+    },
+    "NEWS_DISTILLATION": {
+      "primaryProvider": "DEEPSEEK",
+      "fallbackProvider": "GEMINI",
+      "model": "deepseek-v4-flash"
+    }
+  },
+  "updatedAt": "2026-08-30T16:30:00.000Z",
+  "updatedBy": "SYSTEM_V3_MIGRATION"
+}
