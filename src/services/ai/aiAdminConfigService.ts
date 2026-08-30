@@ -13,7 +13,9 @@ export type AiFeatureKey =
   | 'ROUTE_ENRICHMENT'
   | 'FEEDBACK_CATEGORIZATION'
   | 'SCHEDULE_GENERATION'
-  | 'AVAILABILITY_NORMALIZATION';
+  | 'AVAILABILITY_NORMALIZATION'
+  | 'NEWS_DISTILLATION'
+  | 'GENERIC_PROMPT';
 
 export interface AiAdminProviderConfig {
   providerId: string;
@@ -32,10 +34,30 @@ export interface AiFeatureRouting {
   model: string;
 }
 
+/**
+ * Per-model metadata exposed to the Admin Panel.
+ * Safe to return via API — contains no key material.
+ */
+export interface AiModelMeta {
+  modelId: string;
+  displayName: string;
+  providerId: string;
+  pricing: {
+    inputPerMillionUsd: number;
+    outputPerMillionUsd: number;
+    cacheHitInputPerMillionUsd?: number;
+    notes?: string;
+  };
+  defaultForHighVolume?: boolean;
+  defaultForReasoning?: boolean;
+}
+
 export interface AiSystemConfig {
   defaultProvider: string;
   providers: Record<string, AiAdminProviderConfig>;
   routing: Record<AiFeatureKey, AiFeatureRouting>;
+  /** Public model metadata for Admin UI display. Contains NO API key material. */
+  modelRegistry: Record<string, AiModelMeta>;
   updatedAt: string;
   updatedBy: string;
 }
@@ -58,6 +80,29 @@ const DEFAULT_AI_CONFIG: AiSystemConfig = {
         normalizeAvailability: true,
         suggestAlternatives: true,
         genericPrompt: true
+      }
+    },
+    DEEPSEEK: {
+      providerId: 'DEEPSEEK',
+      displayName: 'DeepSeek',
+      // enabled=false: must pass admin test probe before enabling in production.
+      // Set to true via admin panel after DEEPSEEK_API_KEY is configured and
+      // POST /api/admin/ai/providers/test returns SUCCESS.
+      enabled: false,
+      // Default: v4-flash (cost-optimized for high-volume features).
+      // Switch to v4-pro per-feature via routing table for complex reasoning.
+      activeModel: 'deepseek-v4-flash',
+      allowedModels: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+      capabilities: {
+        predictPnr: true,
+        analyzeRoute: true,
+        enrichRoute: true,
+        categorizeFeedback: true,
+        generateSchedule: true,
+        normalizeAvailability: true,
+        suggestAlternatives: true,
+        genericPrompt: true,
+        distillNewsArticle: true
       }
     },
     OPENAI: {
@@ -96,12 +141,54 @@ const DEFAULT_AI_CONFIG: AiSystemConfig = {
     }
   },
   routing: {
-    PNR_PREDICTION: { primaryProvider: 'GEMINI', fallbackProvider: 'GEMINI', model: 'gemini-2.5-flash' },
-    ROUTE_ANALYSIS: { primaryProvider: 'GEMINI', fallbackProvider: 'GEMINI', model: 'gemini-2.5-flash' },
-    ROUTE_ENRICHMENT: { primaryProvider: 'GEMINI', fallbackProvider: 'GEMINI', model: 'gemini-2.5-flash' },
-    FEEDBACK_CATEGORIZATION: { primaryProvider: 'GEMINI', fallbackProvider: 'GEMINI', model: 'gemini-2.5-flash' },
-    SCHEDULE_GENERATION: { primaryProvider: 'GEMINI', fallbackProvider: 'GEMINI', model: 'gemini-2.5-flash' },
-    AVAILABILITY_NORMALIZATION: { primaryProvider: 'GEMINI', fallbackProvider: 'GEMINI', model: 'gemini-2.5-flash' }
+    // GEMINI primary for latency-sensitive, domain-critical features.
+    PNR_PREDICTION:             { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-2.5-flash'   },
+    ROUTE_ANALYSIS:             { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-2.5-flash'   },
+    ROUTE_ENRICHMENT:           { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-2.5-flash'   },
+    // GEMINI primary for schedule until DeepSeek IR domain accuracy validated.
+    SCHEDULE_GENERATION:        { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-2.5-flash'   },
+    AVAILABILITY_NORMALIZATION: { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'deepseek-v4-flash'  },
+    GENERIC_PROMPT:             { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-2.5-flash'   },
+    // DEEPSEEK primary for high-volume, cost-optimized features (when enabled).
+    // Falls back to GEMINI while DEEPSEEK.enabled=false.
+    FEEDBACK_CATEGORIZATION:    { primaryProvider: 'DEEPSEEK', fallbackProvider: 'GEMINI',   model: 'deepseek-v4-flash'  },
+    NEWS_DISTILLATION:          { primaryProvider: 'DEEPSEEK', fallbackProvider: 'GEMINI',   model: 'deepseek-v4-flash'  }
+  },
+  modelRegistry: {
+    // Gemini models
+    'gemini-2.5-flash': {
+      modelId: 'gemini-2.5-flash', displayName: 'Gemini 2.5 Flash', providerId: 'GEMINI',
+      pricing: { inputPerMillionUsd: 0.075, outputPerMillionUsd: 0.30 },
+      defaultForHighVolume: true
+    },
+    'gemini-1.5-flash': {
+      modelId: 'gemini-1.5-flash', displayName: 'Gemini 1.5 Flash', providerId: 'GEMINI',
+      pricing: { inputPerMillionUsd: 0.075, outputPerMillionUsd: 0.30 }
+    },
+    'gemini-1.5-pro': {
+      modelId: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro', providerId: 'GEMINI',
+      pricing: { inputPerMillionUsd: 1.25, outputPerMillionUsd: 5.00 },
+      defaultForReasoning: true
+    },
+    // DeepSeek models — official off-peak cache-miss pricing (August 2026)
+    'deepseek-v4-flash': {
+      modelId: 'deepseek-v4-flash', displayName: 'DeepSeek V4 Flash', providerId: 'DEEPSEEK',
+      pricing: {
+        inputPerMillionUsd: 0.22, outputPerMillionUsd: 0.66,
+        cacheHitInputPerMillionUsd: 0.007,
+        notes: 'Off-peak cache-miss rates. Peak is 2x. Cache-hit input $0.007/M.'
+      },
+      defaultForHighVolume: true
+    },
+    'deepseek-v4-pro': {
+      modelId: 'deepseek-v4-pro', displayName: 'DeepSeek V4 Pro', providerId: 'DEEPSEEK',
+      pricing: {
+        inputPerMillionUsd: 0.66, outputPerMillionUsd: 1.98,
+        cacheHitInputPerMillionUsd: 0.022,
+        notes: 'Off-peak cache-miss rates. Peak is 2x. Cache-hit input $0.022/M.'
+      },
+      defaultForReasoning: true
+    }
   },
   updatedAt: new Date().toISOString(),
   updatedBy: 'SYSTEM'
@@ -144,12 +231,14 @@ export class AiAdminConfigService {
     // 2. Validate Routing & Capabilities
     if (newConfig.routing) {
       const featureCapMap: Record<AiFeatureKey, keyof AiCapabilities> = {
-        PNR_PREDICTION: 'predictPnr',
-        ROUTE_ANALYSIS: 'analyzeRoute',
-        ROUTE_ENRICHMENT: 'enrichRoute',
-        FEEDBACK_CATEGORIZATION: 'categorizeFeedback',
-        SCHEDULE_GENERATION: 'generateSchedule',
-        AVAILABILITY_NORMALIZATION: 'normalizeAvailability'
+        PNR_PREDICTION:             'predictPnr',
+        ROUTE_ANALYSIS:             'analyzeRoute',
+        ROUTE_ENRICHMENT:           'enrichRoute',
+        FEEDBACK_CATEGORIZATION:    'categorizeFeedback',
+        SCHEDULE_GENERATION:        'generateSchedule',
+        AVAILABILITY_NORMALIZATION: 'normalizeAvailability',
+        NEWS_DISTILLATION:          'distillNewsArticle',
+        GENERIC_PROMPT:             'genericPrompt'
       };
 
       for (const [feat, route] of Object.entries(newConfig.routing) as [AiFeatureKey, AiFeatureRouting][]) {
@@ -249,6 +338,7 @@ export class AiAdminConfigService {
     return { success: true, config: this.getConfig() };
   }
 
+
   private loadConfig(): void {
     if (fs.existsSync(CONFIG_FILE)) {
       try {
@@ -257,8 +347,9 @@ export class AiAdminConfigService {
         this.config = {
           ...DEFAULT_AI_CONFIG,
           ...parsed,
-          providers: { ...DEFAULT_AI_CONFIG.providers, ...(parsed.providers || {}) },
-          routing: { ...DEFAULT_AI_CONFIG.routing, ...(parsed.routing || {}) }
+          providers:     { ...DEFAULT_AI_CONFIG.providers,     ...(parsed.providers     || {}) },
+          routing:       { ...DEFAULT_AI_CONFIG.routing,       ...(parsed.routing       || {}) },
+          modelRegistry: { ...DEFAULT_AI_CONFIG.modelRegistry, ...(parsed.modelRegistry || {}) }
         };
         winstonLogger.info('[AI_ADMIN_CONFIG] Loaded configuration from file');
       } catch (err: any) {

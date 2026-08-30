@@ -6,6 +6,12 @@ export interface AiConfig {
     baseUrl: string;
     timeoutMs: number;
   };
+  deepseek: {
+    apiKey: string;
+    model: string;
+    baseUrl: string;
+    timeoutMs: number;
+  };
 }
 
 export const aiConfig: AiConfig = {
@@ -15,5 +21,13 @@ export const aiConfig: AiConfig = {
     model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/models',
     timeoutMs: 10000
+  },
+  deepseek: {
+    // API key is set via Hostinger environment variable DEEPSEEK_API_KEY only.
+    // Never hardcode or log this value.
+    apiKey: process.env.DEEPSEEK_API_KEY || '',
+    model: process.env.DEEPSEEK_MODEL || 'deepseek-v4-pro',
+    baseUrl: 'https://api.deepseek.com',
+    timeoutMs: 15000
   }
 };

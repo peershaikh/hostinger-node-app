@@ -1,17 +1,19 @@
 import { winstonLogger } from '../../middleware/logger';
-import { aiConfig } from './aiConfig';
 import {
   AiProvider,
   AiCapabilities,
   AiError
 } from './aiProvider';
+import { aiAdminConfigService, AiFeatureKey } from './aiAdminConfigService';
 import { geminiAdapter } from './geminiAdapter';
+import { deepseekAdapter } from './deepseekAdapter';
 
 export class AiProviderResolver {
   private providers = new Map<string, AiProvider>();
 
   constructor() {
     this.registerProvider(geminiAdapter);
+    this.registerProvider(deepseekAdapter);
   }
 
   public registerProvider(provider: AiProvider): void {
@@ -32,30 +34,75 @@ export class AiProviderResolver {
   }
 
   /**
-   * Resolves the primary active AI provider for a requested capability.
+   * Resolves the primary active AI provider for a capability.
+   * Reads defaultProvider from admin config at call time — no restart needed
+   * after admin switches the default provider.
    */
   public resolveProvider(capability: keyof AiCapabilities): AiProvider | null {
-    const configuredPrimary = (aiConfig.defaultProvider || 'GEMINI').toUpperCase().trim();
-    const candidate = this.providers.get(configuredPrimary);
+    const configuredPrimary = (
+      aiAdminConfigService.getConfig().defaultProvider || 'GEMINI'
+    ).toUpperCase().trim();
 
+    const candidate = this.providers.get(configuredPrimary);
     if (candidate && candidate.capabilities[capability]) {
       return candidate;
     }
 
-    // Fallback: Pick any registered provider supporting this capability
+    // Fallback: any registered provider supporting this capability
     const capable = this.getProvidersByCapability(capability);
     return capable.length > 0 ? capable[0] : null;
   }
 
   /**
-   * Safe execution wrapper with standardized fallback and telemetry
+   * Resolves the best provider for a specific feature key using the routing table.
+   * Runtime — reads from admin config at call time, no restart needed.
+   *
+   * Resolution order:
+   *   1. routing[featureKey].primaryProvider  (if registered + enabled + has capability)
+   *   2. routing[featureKey].fallbackProvider (if registered + enabled + has capability)
+   *   3. resolveProvider(capability)           (default provider + capability scan)
+   */
+  public resolveForFeature(
+    featureKey: AiFeatureKey,
+    capability: keyof AiCapabilities
+  ): AiProvider | null {
+    try {
+      const config = aiAdminConfigService.getConfig();
+      const route = config.routing[featureKey];
+      if (!route) return this.resolveProvider(capability);
+
+      const tryProvider = (providerId: string): AiProvider | null => {
+        const provConfig = config.providers[providerId?.toUpperCase?.()?.trim()];
+        if (!provConfig?.enabled) return null;
+        const adapter = this.providers.get(providerId.toUpperCase().trim());
+        if (!adapter) return null;
+        if (!adapter.capabilities[capability]) return null;
+        return adapter;
+      };
+
+      return tryProvider(route.primaryProvider)
+        ?? tryProvider(route.fallbackProvider)
+        ?? this.resolveProvider(capability);
+    } catch {
+      // Defensive: if config read fails, fall back to default provider
+      return this.resolveProvider(capability);
+    }
+  }
+
+  /**
+   * Safe execution wrapper with standardized fallback and error propagation.
+   * Optional featureKey enables per-feature provider+model routing from admin panel.
+   * All callers that don't pass featureKey continue to work unchanged.
    */
   public async executeWithFallback<T>(
     capability: keyof AiCapabilities,
     fn: (provider: AiProvider) => Promise<T>,
-    fallbackValue?: T
+    fallbackValue?: T,
+    featureKey?: AiFeatureKey
   ): Promise<{ result: T | null; providerUsed: string; error?: AiError }> {
-    const provider = this.resolveProvider(capability);
+    const provider = featureKey
+      ? this.resolveForFeature(featureKey, capability)
+      : this.resolveProvider(capability);
 
     if (!provider) {
       winstonLogger.warn(`[AI_RESOLVER_NO_PROVIDER] No capable provider available for ${capability}`);

@@ -54,8 +54,9 @@ export class AiAdminController {
     const startTime = Date.now();
     try {
       const { providerId = 'GEMINI', model } = req.body;
+      const provIdNorm = String(providerId).toUpperCase().trim();
 
-      const provider = aiProviderResolver.getProvider(providerId);
+      const provider = aiProviderResolver.getProvider(provIdNorm);
       if (!provider) {
         res.status(404).json({
           success: false,
@@ -64,14 +65,39 @@ export class AiAdminController {
         return;
       }
 
+      // Resolve which model to test (explicit request → admin activeModel → sentinel)
+      const config = aiAdminConfigService.getConfig();
+      const provConfig = config.providers[provIdNorm];
+      const testedModel = model || provConfig?.activeModel || 'default';
+
+      // Validate requested model against the provider's allowed list
+      if (model && provConfig) {
+        if (!provConfig.allowedModels.includes(model)) {
+          res.status(400).json({
+            success: false,
+            error: `Model '${model}' is not in the allowed list for provider ${provIdNorm}. Allowed: ${provConfig.allowedModels.join(', ')}`
+          });
+          return;
+        }
+      }
+
       // Safe non-production probe prompt
       const probePrompt = 'Reply with a valid JSON object: { "status": "HEALTHY", "probe": "ai_admin_test" }';
-      
+
       let testOutput: any = null;
-      if (typeof provider.generateText === 'function') {
+      const adapterWithProbe = provider as any;
+
+      if (typeof adapterWithProbe.probeWithModel === 'function') {
+        // Concurrency-safe path: probeWithModel takes model as an explicit stack-local parameter.
+        // It does NOT call getActiveModel() or touch shared config at any await point.
+        // No concurrent production request can observe the probe model.
+        testOutput = await adapterWithProbe.probeWithModel(probePrompt, testedModel, true);
+      } else if (typeof provider.generateText === 'function') {
+        // Fallback for future adapters that predate probeWithModel.
+        // Note: this path does NOT guarantee exact-model probing.
         testOutput = await provider.generateText(probePrompt, { json: true });
       } else {
-        testOutput = { status: 'HEALTHY', note: 'Generic generation capability not implemented' };
+        testOutput = { status: 'HEALTHY', note: 'Adapter does not implement text generation' };
       }
 
       const latencyMs = Date.now() - startTime;
@@ -81,7 +107,7 @@ export class AiAdminController {
         data: {
           providerId: provider.providerId,
           displayName: provider.displayName,
-          testedModel: model || 'default',
+          testedModel,
           responseValid: Boolean(testOutput && typeof testOutput === 'object'),
           latencyMs,
           status: 'SUCCESS'

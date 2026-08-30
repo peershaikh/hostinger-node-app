@@ -1,4 +1,4 @@
-﻿import { winstonLogger } from '../../middleware/logger';
+import { winstonLogger } from '../../middleware/logger';
 import { aiProviderResolver } from '../ai/aiProviderResolver';
 import { CanonicalNewsArticle } from './newsTypes';
 import { NewsDistillationInput, NewsDistillationOutput, NewsFaqItem } from '../ai/aiProvider';
@@ -157,7 +157,9 @@ export class NewsDistillationService {
             return provider.distillNewsArticle(input);
           }
           return Promise.resolve(null);
-        }
+        },
+        null,
+        'NEWS_DISTILLATION'
       );
 
       if (res.result) {

@@ -21,9 +21,10 @@ import {
   NewsDistillationOutput
 } from './aiProvider';
 
-export class GeminiAdapter implements AiProvider {
-  public readonly providerId = 'GEMINI';
-  public readonly displayName = 'Google Gemini (Gemini 2.5 Flash)';
+export class DeepSeekAdapter implements AiProvider {
+  public readonly providerId = 'DEEPSEEK';
+  // displayName is provider-level; model is resolved at runtime from admin config
+  public readonly displayName = 'DeepSeek';
 
   public readonly capabilities: AiCapabilities = {
     predictPnr: true,
@@ -38,36 +39,31 @@ export class GeminiAdapter implements AiProvider {
   };
 
   private getApiKey(): string {
-    return aiConfig.gemini.apiKey || process.env.GEMINI_API_KEY || '';
+    return aiConfig.deepseek.apiKey || process.env.DEEPSEEK_API_KEY || '';
   }
 
   /**
-   * Reads active Gemini model from admin config at call time (runtime, no restart).
+   * Reads active DeepSeek model from admin config at call time (runtime, no restart).
    * featureKey allows per-feature model override via the routing table.
-   * Falls back to GEMINI_MODEL env / aiConfig for backward compatibility.
+   * Example: NEWS_DISTILLATION → deepseek-v4-flash; PNR_PREDICTION fallback → deepseek-v4-pro.
+   * Falls back to DEEPSEEK_MODEL env / aiConfig for backward compatibility.
    */
   private getActiveModel(featureKey?: string): string {
     try {
       const config = aiAdminConfigService.getConfig();
-      // 1. Per-feature model override (only when GEMINI is the primaryProvider for this feature)
+      // 1. Per-feature model override (only when DEEPSEEK is the primaryProvider for this feature)
       if (featureKey) {
         const route = (config.routing as any)[featureKey];
-        if (route && route.primaryProvider === 'GEMINI' && route.model) {
+        if (route && route.primaryProvider === 'DEEPSEEK' && route.model) {
           return route.model;
         }
       }
       // 2. Provider-level activeModel from admin config
-      const providerModel = config.providers['GEMINI']?.activeModel;
+      const providerModel = config.providers['DEEPSEEK']?.activeModel;
       if (providerModel) return providerModel;
     } catch { /* config not ready yet — fall through */ }
     // 3. Env / aiConfig fallback (backward compat)
-    return aiConfig.gemini.model || 'gemini-2.5-flash';
-  }
-
-  private getEndpointUrl(featureKey?: string): string {
-    const model = this.getActiveModel(featureKey);
-    const baseUrl = aiConfig.gemini.baseUrl || 'https://generativelanguage.googleapis.com/v1beta/models';
-    return `${baseUrl}/${model}:generateContent`;
+    return aiConfig.deepseek.model || 'deepseek-v4-pro';
   }
 
   /**
@@ -81,22 +77,30 @@ export class GeminiAdapter implements AiProvider {
     if (!apiKey) {
       throw new AiError({
         code: 'CONFIGURATION_ERROR',
-        message: 'GEMINI_API_KEY is not configured',
+        message: 'DEEPSEEK_API_KEY is not configured',
         provider: this.providerId
       });
     }
-    const baseUrl = aiConfig.gemini.baseUrl || 'https://generativelanguage.googleapis.com/v1beta/models';
-    const url = `${baseUrl}/${model}:generateContent?key=${apiKey}`;
-    const finalPrompt = json
-      ? prompt + '\n\nIMPORTANT: Return ONLY a valid JSON object without markdown formatting, backticks, or extra text.'
-      : prompt;
-    const timeout = aiConfig.gemini.timeoutMs || 10000;
-    winstonLogger.info(`[AI_PROBE] [GEMINI] Model: ${model} (isolated probe — no config mutation)`);
-    const response = await axios.post(url, {
-      contents: [{ parts: [{ text: finalPrompt }] }],
-      generationConfig: { temperature: 0.2, responseMimeType: json ? 'application/json' : 'text/plain' }
-    }, { timeout });
-    const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const timeout = aiConfig.deepseek.timeoutMs || 15000;
+    const requestBody: Record<string, any> = {
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.2
+    };
+    if (json) requestBody.response_format = { type: 'json_object' };
+    winstonLogger.info(`[AI_PROBE] [DEEPSEEK] Model: ${model} (isolated probe — no config mutation)`);
+    const response = await axios.post(
+      `${aiConfig.deepseek.baseUrl}/v1/chat/completions`,
+      requestBody,
+      {
+        timeout,
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    const text = response.data?.choices?.[0]?.message?.content;
     if (!text) throw new AiError({ code: 'INVALID_RESPONSE', message: 'Probe returned empty response', provider: this.providerId });
     if (json) {
       const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -106,9 +110,11 @@ export class GeminiAdapter implements AiProvider {
   }
 
   /**
-   * Internal helper to make raw POST requests to Gemini API
+   * Internal helper to make POST requests to the DeepSeek chat completions API.
+   * Uses the OpenAI-compatible endpoint.
+   * API key is read from env — never logged or returned.
    */
-  private async executeGeminiCall(
+  private async executeDeepSeekCall(
     prompt: string,
     json: boolean = false,
     timeoutMs?: number,
@@ -117,6 +123,7 @@ export class GeminiAdapter implements AiProvider {
     const startTime = Date.now();
     const apiKey = this.getApiKey();
     const model = this.getActiveModel(featureName);
+
     if (!apiKey) {
       aiObservabilityService.recordAiUsage({
         provider: this.providerId,
@@ -129,34 +136,43 @@ export class GeminiAdapter implements AiProvider {
       });
       throw new AiError({
         code: 'CONFIGURATION_ERROR',
-        message: 'GEMINI_API_KEY is not configured',
+        message: 'DEEPSEEK_API_KEY is not configured',
         provider: this.providerId
       });
     }
 
-    const url = `${this.getEndpointUrl(featureName)}?key=${apiKey}`;
-    const finalPrompt = json
-      ? prompt + '\n\nIMPORTANT: Return ONLY a valid JSON object without markdown formatting, backticks, or extra text.'
-      : prompt;
+    const timeout = timeoutMs || aiConfig.deepseek.timeoutMs || 15000;
 
-    const timeout = timeoutMs || aiConfig.gemini.timeoutMs || 10000;
+    const messages = [{ role: 'user', content: prompt }];
+    const requestBody: Record<string, any> = {
+      model,
+      messages,
+      temperature: 0.2
+    };
+
+    if (json) {
+      requestBody.response_format = { type: 'json_object' };
+    }
 
     try {
-      winstonLogger.info(`[AI_CALL] [GEMINI_ACTIVE] Model: ${model}`);
+      winstonLogger.info(`[AI_CALL] [DEEPSEEK_ACTIVE] Model: ${model}`);
       const response = await axios.post(
-        url,
+        `${aiConfig.deepseek.baseUrl}/v1/chat/completions`,
+        requestBody,
         {
-          contents: [{ parts: [{ text: finalPrompt }] }],
-          generationConfig: {
-            temperature: 0.2,
-            responseMimeType: json ? 'application/json' : 'text/plain'
+          timeout,
+          headers: {
+            // Authorization header is built here and never logged
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
           }
-        },
-        { timeout }
+        }
       );
 
-      const candidate = response.data?.candidates?.[0];
-      if (!candidate || !candidate.content?.parts?.[0]?.text) {
+      const choice = response.data?.choices?.[0];
+      const text = choice?.message?.content;
+
+      if (!text) {
         aiObservabilityService.recordAiUsage({
           provider: this.providerId,
           model,
@@ -168,15 +184,15 @@ export class GeminiAdapter implements AiProvider {
         });
         throw new AiError({
           code: 'INVALID_RESPONSE',
-          message: 'Gemini returned an empty candidate or missing text part',
+          message: 'DeepSeek returned an empty response',
           provider: this.providerId
         });
       }
 
-      const usage = response.data?.usageMetadata;
-      const inputTokens = usage?.promptTokenCount;
-      const outputTokens = usage?.candidatesTokenCount;
-      const totalTokens = usage?.totalTokenCount;
+      const usage = response.data?.usage;
+      const inputTokens = usage?.prompt_tokens;
+      const outputTokens = usage?.completion_tokens;
+      const totalTokens = usage?.total_tokens;
       const latencyMs = Date.now() - startTime;
 
       aiObservabilityService.recordAiUsage({
@@ -191,7 +207,6 @@ export class GeminiAdapter implements AiProvider {
         fallbackUsed: false
       });
 
-      const text = candidate.content.parts[0].text;
       if (json) {
         const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim();
         try {
@@ -199,7 +214,7 @@ export class GeminiAdapter implements AiProvider {
         } catch (parseErr: any) {
           throw new AiError({
             code: 'INVALID_RESPONSE',
-            message: `Failed to parse Gemini response as JSON: ${parseErr.message}`,
+            message: `Failed to parse DeepSeek response as JSON: ${parseErr.message}`,
             provider: this.providerId
           });
         }
@@ -224,7 +239,7 @@ export class GeminiAdapter implements AiProvider {
         if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
           throw new AiError({
             code: 'TIMEOUT',
-            message: `Gemini API call timed out after ${timeout}ms`,
+            message: `DeepSeek API call timed out after ${timeout}ms`,
             provider: this.providerId,
             status: 408,
             retryable: true
@@ -232,13 +247,24 @@ export class GeminiAdapter implements AiProvider {
         }
 
         const status = err.response?.status;
+
         if (status === 429) {
           throw new AiError({
             code: 'RATE_LIMITED',
-            message: 'Gemini API rate limit exceeded',
+            message: 'DeepSeek API rate limit exceeded',
             provider: this.providerId,
             status: 429,
             retryable: true
+          });
+        }
+
+        if (status === 401 || status === 403) {
+          throw new AiError({
+            code: 'CONFIGURATION_ERROR',
+            message: 'DeepSeek API key is invalid or unauthorized',
+            provider: this.providerId,
+            status,
+            retryable: false
           });
         }
 
@@ -253,7 +279,7 @@ export class GeminiAdapter implements AiProvider {
 
       throw new AiError({
         code: 'PROVIDER_UNAVAILABLE',
-        message: err?.message || 'Unknown error occurred in GeminiAdapter',
+        message: err?.message || 'Unknown error occurred in DeepSeekAdapter',
         provider: this.providerId
       });
     }
@@ -263,7 +289,7 @@ export class GeminiAdapter implements AiProvider {
     prompt: string,
     options?: { json?: boolean; temperature?: number; timeoutMs?: number }
   ): Promise<any> {
-    return this.executeGeminiCall(prompt, options?.json ?? false, options?.timeoutMs);
+    return this.executeDeepSeekCall(prompt, options?.json ?? false, options?.timeoutMs);
   }
 
   public async predictPnr(input: PnrPredictionInput): Promise<PnrPredictionOutput> {
@@ -333,7 +359,7 @@ export class GeminiAdapter implements AiProvider {
 
     const disclaimer = 'Prediction is based on AI trends and historical patterns. May not be 100% accurate.';
 
-    const result = await this.executeGeminiCall(prompt, true, 8000, 'PNR_PREDICTION');
+    const result = await this.executeDeepSeekCall(prompt, true, 8000, 'PNR_PREDICTION');
     return {
       probability: String(result.probability || '50'),
       prediction: result.prediction || 'Indeterminate',
@@ -358,7 +384,7 @@ export class GeminiAdapter implements AiProvider {
       Return ONLY a JSON object: { "insight": "...", "recommendation_reason": "...", "risk_level": "..." }
     `;
 
-    const response = await this.executeGeminiCall(prompt, true, 8000, 'ROUTE_ANALYSIS');
+    const response = await this.executeDeepSeekCall(prompt, true, 8000, 'ROUTE_ANALYSIS');
     return {
       insight: response.insight || 'Review confirmed real-time availability for this route.',
       recommendation_reason: response.recommendation_reason || 'Primary verified option for your journey.',
@@ -390,7 +416,7 @@ export class GeminiAdapter implements AiProvider {
       }
     `;
 
-    const result = await this.executeGeminiCall(prompt, true, 10000, 'ROUTE_ENRICHMENT');
+    const result = await this.executeDeepSeekCall(prompt, true, 10000, 'ROUTE_ENRICHMENT');
     return {
       candidateRoute: result.candidateRoute || `${input.source} -> ${input.destination}`,
       candidateHub: String(result.candidateHub || '').trim().toUpperCase(),
@@ -437,7 +463,7 @@ Return ONLY a JSON object with these exact keys:
 }
     `.trim();
 
-    const result = await this.executeGeminiCall(prompt, true, 8000, 'FEEDBACK_CATEGORIZATION');
+    const result = await this.executeDeepSeekCall(prompt, true, 8000, 'FEEDBACK_CATEGORIZATION');
     const validCategories = ['BUG', 'UI_ISSUE', 'SEARCH_ISSUE', 'LIVE_TRACKING_ISSUE', 'PNR_ISSUE', 'SPLIT_ROUTE_ISSUE', 'FEATURE_REQUEST', 'PERFORMANCE', 'OTHER'];
     const validPriorities = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
     const validConfidence = ['HIGH', 'MEDIUM', 'LOW'];
@@ -451,6 +477,10 @@ Return ONLY a JSON object with these exact keys:
     };
   }
 
+  /**
+   * generateSchedule is enabled but GEMINI remains the primary provider in routing.
+   * DeepSeek acts as fallback until Indian Railways domain accuracy is validated.
+   */
   public async generateSchedule(trainNo: string): Promise<ScheduleGenerationOutput | null> {
     const prompt = `You are an Indian Railways timetable expert.
 Give me the complete schedule for Indian Railways train number ${trainNo}.
@@ -477,7 +507,7 @@ Rules:
 - Last station departure_time = "--:--"
 - If unknown, return empty stations array.`;
 
-    const parsed = await this.executeGeminiCall(prompt, true, 12000, 'SCHEDULE_GENERATION');
+    const parsed = await this.executeDeepSeekCall(prompt, true, 12000, 'SCHEDULE_GENERATION');
     if (!parsed || !parsed.stations || parsed.stations.length === 0 || !parsed.train_name) {
       return null;
     }
@@ -497,7 +527,7 @@ Input: "${rawAvailString}"
 Extract class (3A, SL, 2A), status (AVAILABLE, WL, RAC), and count.
 Return ONLY a JSON array, e.g., [{"class": "3A", "status": "AVAILABLE", "count": 45}].`;
 
-    const result = await this.executeGeminiCall(prompt, true, 8000, 'AVAILABILITY_NORMALIZATION');
+    const result = await this.executeDeepSeekCall(prompt, true, 8000, 'AVAILABILITY_NORMALIZATION');
     return Array.isArray(result) ? result : [];
   }
 
@@ -548,7 +578,7 @@ Return ONLY valid JSON matching this schema:
   "confidence": "HIGH"
 }`;
 
-    const result = await this.executeGeminiCall(prompt, true, 12000, 'NEWS_DISTILLATION');
+    const result = await this.executeDeepSeekCall(prompt, true, 12000, 'NEWS_DISTILLATION');
     if (!result || !result.title || !result.key_takeaways) {
       return null;
     }
@@ -583,7 +613,7 @@ Based on Indian geography/travel:
 Return ONLY a JSON object: { "alternatives": [ { "type": "Bus/Flight", "reason": "...", "advice": "..." } ] }
     `;
 
-    const result = await this.executeGeminiCall(prompt, true, 8000, 'ROUTE_ANALYSIS');
+    const result = await this.executeDeepSeekCall(prompt, true, 8000, 'ROUTE_ANALYSIS');
     return Array.isArray(result.alternatives) ? result.alternatives : [];
   }
 
@@ -594,26 +624,26 @@ Return ONLY a JSON object: { "alternatives": [ { "type": "Bus/Flight", "reason":
       return {
         status: 'UNHEALTHY',
         latencyMs: 0,
-        message: 'GEMINI_API_KEY is missing'
+        message: 'DEEPSEEK_API_KEY is missing'
       };
     }
 
     try {
-      await this.executeGeminiCall('Reply with single word: OK', false, 5000);
+      await this.executeDeepSeekCall('Reply with a valid JSON object: { "status": "HEALTHY", "probe": "ai_admin_test" }', true, 5000);
       const latencyMs = Date.now() - start;
       return {
-        status: latencyMs < 2000 ? 'HEALTHY' : 'DEGRADED',
+        status: latencyMs < 3000 ? 'HEALTHY' : 'DEGRADED',
         latencyMs,
-        message: `Gemini active (${latencyMs}ms)`
+        message: `DeepSeek active (${latencyMs}ms)`
       };
     } catch (err: any) {
       return {
         status: 'UNHEALTHY',
         latencyMs: Date.now() - start,
-        message: err.message || 'Gemini health check probe failed'
+        message: err.message || 'DeepSeek health check probe failed'
       };
     }
   }
 }
 
-export const geminiAdapter = new GeminiAdapter();
+export const deepseekAdapter = new DeepSeekAdapter();

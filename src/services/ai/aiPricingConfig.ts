@@ -1,6 +1,10 @@
 export interface ModelPricing {
   inputPerMillionUsd: number;
   outputPerMillionUsd: number;
+  /** Cache-hit input token price (e.g. DeepSeek prompt cache). Optional. */
+  cacheHitInputPerMillionUsd?: number;
+  /** Human-readable pricing notes for Admin UI display. */
+  notes?: string;
 }
 
 export const AI_MODEL_PRICING: Record<string, ModelPricing> = {
@@ -31,8 +35,27 @@ export const AI_MODEL_PRICING: Record<string, ModelPricing> = {
   'claude-3-5-sonnet': {
     inputPerMillionUsd: 3.00,
     outputPerMillionUsd: 15.00
+  },
+  // DeepSeek V4-Flash — official off-peak cache-miss rates (August 2026).
+  // Cache-hit input: $0.007/M. Peak rates are 2x higher.
+  // Source: https://api.deepseek.com (pricing page, verified August 2026).
+  'deepseek-v4-flash': {
+    inputPerMillionUsd: 0.22,
+    outputPerMillionUsd: 0.66,
+    cacheHitInputPerMillionUsd: 0.007,
+    notes: 'Off-peak cache-miss. Peak is 2x. Cache-hit $0.007/M.'
+  },
+  // DeepSeek V4-Pro — official off-peak cache-miss rates (August 2026).
+  // Cache-hit input: $0.022/M. Peak rates are 2x higher.
+  // Source: https://api.deepseek.com (pricing page, verified August 2026).
+  'deepseek-v4-pro': {
+    inputPerMillionUsd: 0.66,
+    outputPerMillionUsd: 1.98,
+    cacheHitInputPerMillionUsd: 0.022,
+    notes: 'Off-peak cache-miss. Peak is 2x. Cache-hit $0.022/M.'
   }
 };
+
 
 /**
  * Computes estimated cost in USD based on input/output tokens.
