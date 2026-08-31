@@ -1,7 +1,7 @@
 import { winstonLogger } from '../../middleware/logger';
 import { aiProviderResolver } from '../ai/aiProviderResolver';
 import { CanonicalNewsArticle } from './newsTypes';
-import { NewsDistillationInput, NewsDistillationOutput, NewsFaqItem } from '../ai/aiProvider';
+import { NewsDistillationInput, NewsDistillationOutput, NewsFaqItem, AiErrorCode } from '../ai/aiProvider';
 
 export interface ValidationResult {
   isValid: boolean;
@@ -75,11 +75,11 @@ export class NewsFactValidator {
 // Internal result type — propagates circuit-open state to batchDistill.
 // wasRateLimited = true when the provider returns RATE_LIMITED (429),
 // TIMEOUT, or PROVIDER_UNAVAILABLE — any of which halts Gemini calls for
-// the remainder of the batch. Name kept for backward compatibility with
-// existing tests; semantics are now "circuit should open".
+// the remainder of the batch. triggerReason holds the exact error code.
 interface DistillResult {
   article: CanonicalNewsArticle;
   wasRateLimited: boolean;
+  triggerReason?: AiErrorCode;
 }
 
 const DELAY_NORMAL_MS      = 2000;  // Inter-article pause to stay comfortably below 15 RPM
@@ -191,6 +191,7 @@ export class NewsDistillationService {
 
     let aiOutput: NewsDistillationOutput | null = null;
     let wasRateLimited = false;
+    let triggerReason: AiErrorCode | undefined;
 
     try {
       const res = await aiProviderResolver.executeWithFallback<NewsDistillationOutput | null>(
@@ -214,6 +215,7 @@ export class NewsDistillationService {
       const CIRCUIT_TRIGGER_CODES = new Set(['RATE_LIMITED', 'TIMEOUT', 'PROVIDER_UNAVAILABLE']);
       if (!aiOutput && res.error?.code && CIRCUIT_TRIGGER_CODES.has(res.error.code)) {
         wasRateLimited = true;
+        triggerReason = res.error.code as AiErrorCode;
         this.recordRateLimit(res.error.code);
       }
     } catch (err: any) {
@@ -239,6 +241,7 @@ export class NewsDistillationService {
           updated_at: now,
         },
         wasRateLimited,
+        triggerReason,
       };
     }
 
@@ -262,6 +265,7 @@ export class NewsDistillationService {
         updated_at: now,
       },
       wasRateLimited,
+      triggerReason,
     };
   }
 
@@ -348,13 +352,14 @@ export class NewsDistillationService {
         continue;
       }
 
-      const { article, wasRateLimited } = await this.distillArticle(aiSlice[i]);
+      const { article, wasRateLimited, triggerReason } = await this.distillArticle(aiSlice[i]);
       results.push(article);
 
       if (wasRateLimited) {
         circuitOpen = true;
+        const reason = triggerReason || 'RATE_LIMITED';
         winstonLogger.warn(
-          `[BATCH_CIRCUIT_OPEN] Gemini 429 encountered at article ${i + 1}/${aiSlice.length}. Switching remaining ${aiSlice.length - (i + 1)} articles in this batch to deterministic fallback.`
+          `[BATCH_CIRCUIT_OPEN] Gemini ${reason} encountered at article ${i + 1}/${aiSlice.length}. Switching remaining ${aiSlice.length - (i + 1)} articles in this batch to deterministic fallback.`
         );
       } else if (i < aiSlice.length - 1) {
         await sleep(DELAY_NORMAL_MS);
