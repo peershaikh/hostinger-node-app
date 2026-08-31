@@ -2155,7 +2155,9 @@ export class SplitJourneyEngine {
       return { direct: directTrainsRef || await this.getDirectTrainsForCity(sCodes, dCodes, date), split: [], split_recommended: false, message: 'Source and destination are in the same city' };
     }
 
-    let directTrains = directTrainsRef || await this.getDirectTrainsForCity(sCodes, dCodes, date);
+    const _directTrainsRaw = directTrainsRef ?? await this.getDirectTrainsForCity(sCodes, dCodes, date);
+    let directTrains: Leg[] = Array.isArray(_directTrainsRaw) ? _directTrainsRaw : [];
+
     // M2: drop directs proven reverse on schedule (fail-open if unproven)
     const sanitizedDirects: Leg[] = [];
     for (const leg of directTrains) {
@@ -5133,6 +5135,31 @@ export class SplitJourneyEngine {
         }
       } catch (e: any) {
         winstonLogger.warn(`[validateLegAndCorrectAsync] Live service window fetch failed for ${num}: ${e.message}`);
+      }
+    }
+
+    // PHASE_087N — DB 'Daily' fail-open for regular trains when IRCTC is unavailable.
+    // If the live service-window fetch did not upgrade runningDaysAuthoritative,
+    // and the train is a standard non-special numbered train (not 09xxx),
+    // and its running_days is the 'Daily' placeholder stored in DB,
+    // treat the DB record as authoritative — fail-open, not fail-closed.
+    // This prevents the IRCTC API being unavailable (e.g. missing api_providers table)
+    // from blocking ALL DB-sourced leg candidates with 'UNKNOWN' service-date verdicts.
+    if (!runningDaysAuthoritative && !isSpecialTrainNumber(num)) {
+      const rdCheck = String(runningDaysPattern || '').toLowerCase().trim();
+      const isDbDailyPattern =
+        rdCheck === 'daily' ||
+        rdCheck === 'all days' ||
+        rdCheck === '0,1,2,3,4,5,6' ||
+        rdCheck === '1111111' ||
+        rdCheck.includes('all');
+      // Only apply when stops came from DB (not live IRCTC) — DB-validated schedule
+      if (isDbDailyPattern && stopsSource !== 'irctc') {
+        runningDaysAuthoritative = true;
+        winstonLogger.info(
+          `[validateLegAndCorrectAsync] PHASE_087N: DB 'Daily' accepted as authoritative for ` +
+          `regular train ${num} (IRCTC unavailable, stopsSource=${stopsSource})`
+        );
       }
     }
 

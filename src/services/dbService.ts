@@ -31,37 +31,9 @@ class DbService {
     const sourceCode = this.normalizeStationCode(from);
     const destinationCode = this.normalizeStationCode(to);
 
-    try {
-      const { data, error } = await supabase
-        .from('train_schedule')
-        .select('*')
-        .eq('from_station_code', sourceCode)
-        .eq('to_station_code', destinationCode)
-        .limit(50);
-
-      if (!error && data && data.length > 0) {
-        winstonLogger.info(`[DB_SEARCH] Direct row match ${sourceCode} -> ${destinationCode}: ${data.length}`);
-        return this.enrichWithRunningDays(this.normalizeDirectRows(data, sourceCode, destinationCode, date));
-      }
-    } catch (err: any) {
-      winstonLogger.debug(`[DB_SEARCH] Direct query failed: ${err.message}`);
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from('train_schedule')
-        .select('*')
-        .eq('source', sourceCode)
-        .eq('destination', destinationCode)
-        .limit(50);
-
-      if (!error && data && data.length > 0) {
-        winstonLogger.info(`[DB_SEARCH] Alternate direct row match ${sourceCode} -> ${destinationCode}: ${data.length}`);
-        return this.enrichWithRunningDays(this.normalizeDirectRows(data, sourceCode, destinationCode, date));
-      }
-    } catch (err: any) {
-      winstonLogger.debug(`[DB_SEARCH] Alternate query failed: ${err.message}`);
-    }
+    // NOTE: Queries for non-existent columns (from_station_code, to_station_code, source,
+    // destination) were removed — the live train_schedule schema uses Train_No / Station_Code / SN.
+    // The working path is searchLegacySchedule() below.
 
     winstonLogger.info(`[DB_SEARCH] Performing legacy schedule lookup for ${sourceCode} -> ${destinationCode}`);
     const results = await this.searchLegacySchedule(sourceCode, destinationCode, date);
