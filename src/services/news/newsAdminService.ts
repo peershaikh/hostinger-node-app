@@ -73,7 +73,7 @@ export class NewsAdminService {
     try {
       let query = supabase
         .from('railway_news')
-        .select('id, title, summary, source_name, source_url, source_tier, category, status, relevance_score, affected_trains, affected_stations, published_at, updated_at, ai_confidence, rejection_reason, scheduled_at', { count: 'exact' })
+        .select('id, title, summary, source_name, source_url, source_tier, category, status, relevance_score, affected_trains, affected_stations, published_at, updated_at', { count: 'exact' })
         .order('updated_at', { ascending: false })
         .range(offset, offset + limit - 1);
 
