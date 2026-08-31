@@ -19,16 +19,21 @@ export class NewsFactValidator {
     const rawSource = (source.title + ' ' + source.summary).toLowerCase();
     const unsupportedEntities: string[] = [];
 
+    // Trusted source trains: extracted by ingestion engine from source text before AI.
+    // These are pre-verified — do NOT reject them as hallucinations.
+    const trustedTrains = new Set((source.candidateTrains || []).map(t => String(t).trim()));
+
     if (Array.isArray(output.affected_trains)) {
       for (const t of output.affected_trains) {
         const trainStr = String(t).trim();
-        if (trainStr && !rawSource.includes(trainStr.toLowerCase())) {
+        if (trainStr && !trustedTrains.has(trainStr) && !rawSource.includes(trainStr.toLowerCase())) {
           unsupportedEntities.push(`Train ${trainStr}`);
         }
       }
     }
 
     if (Array.isArray(output.affected_stations)) {
+      // candidateStations: trusted codes extracted by ingestion engine.
       const candidates = new Set((source.candidateStations || []).map(s => s.toLowerCase().trim()));
       for (const s of output.affected_stations) {
         const stationStr = String(s).trim().toLowerCase();
@@ -67,15 +72,19 @@ export class NewsFactValidator {
   }
 }
 
-// Internal result type — propagates RATE_LIMITED state to batchDistill
-// via typed AiError.code, avoiding any string matching.
+// Internal result type — propagates circuit-open state to batchDistill.
+// wasRateLimited = true when the provider returns RATE_LIMITED (429),
+// TIMEOUT, or PROVIDER_UNAVAILABLE — any of which halts Gemini calls for
+// the remainder of the batch. Name kept for backward compatibility with
+// existing tests; semantics are now "circuit should open".
 interface DistillResult {
   article: CanonicalNewsArticle;
   wasRateLimited: boolean;
 }
 
-const DELAY_NORMAL_MS    = 2000;  // Inter-article pause to stay comfortably below 15 RPM
-const GLOBAL_COOLDOWN_MS = 60000; // 60s cooldown after HTTP 429
+const DELAY_NORMAL_MS      = 2000;  // Inter-article pause to stay comfortably below 15 RPM
+const GLOBAL_COOLDOWN_MS   = 60000; // 60s cooldown after HTTP 429 (quota signal)
+const TRANSIENT_COOLDOWN_MS = 30000; // 30s cooldown after TIMEOUT or PROVIDER_UNAVAILABLE
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -83,22 +92,39 @@ function sleep(ms: number): Promise<void> {
 
 export class NewsDistillationService {
   private processedHashes = new Set<string>();
-  private lastRateLimitTimestamp = 0;
+  private lastRateLimitTimestamp  = 0; // set on HTTP 429 — 60s GLOBAL_COOLDOWN_MS
+  private lastTransientFailTimestamp = 0; // set on TIMEOUT or PROVIDER_UNAVAILABLE — 30s TRANSIENT_COOLDOWN_MS
 
-  public recordRateLimit(): void {
-    this.lastRateLimitTimestamp = Date.now();
+  /**
+   * Records a provider failure and selects the appropriate cooldown duration.
+   * - RATE_LIMITED (429): GLOBAL_COOLDOWN_MS (60s) — quota signal
+   * - TIMEOUT / PROVIDER_UNAVAILABLE: TRANSIENT_COOLDOWN_MS (30s) — transient signal
+   */
+  public recordRateLimit(errorCode: string = 'RATE_LIMITED'): void {
+    if (errorCode === 'RATE_LIMITED') {
+      this.lastRateLimitTimestamp = Date.now();
+    } else {
+      this.lastTransientFailTimestamp = Date.now();
+    }
   }
 
   public isCooldownActive(): { active: boolean; remainingMs: number } {
-    const elapsed = Date.now() - this.lastRateLimitTimestamp;
-    if (elapsed < GLOBAL_COOLDOWN_MS) {
-      return { active: true, remainingMs: GLOBAL_COOLDOWN_MS - elapsed };
+    const now = Date.now();
+    const rateLimitElapsed  = now - this.lastRateLimitTimestamp;
+    const transientElapsed  = now - this.lastTransientFailTimestamp;
+
+    if (rateLimitElapsed < GLOBAL_COOLDOWN_MS) {
+      return { active: true, remainingMs: GLOBAL_COOLDOWN_MS - rateLimitElapsed };
+    }
+    if (transientElapsed < TRANSIENT_COOLDOWN_MS) {
+      return { active: true, remainingMs: TRANSIENT_COOLDOWN_MS - transientElapsed };
     }
     return { active: false, remainingMs: 0 };
   }
 
   public resetCooldownForTesting(): void {
-    this.lastRateLimitTimestamp = 0;
+    this.lastRateLimitTimestamp    = 0;
+    this.lastTransientFailTimestamp = 0;
   }
 
   public generateDeterministicDraft(article: CanonicalNewsArticle): NewsDistillationOutput {
@@ -183,10 +209,12 @@ export class NewsDistillationService {
         aiOutput = res.result;
       }
 
-      // Structured check via typed AiError.code — no string matching
-      if (!aiOutput && res.error?.code === 'RATE_LIMITED') {
+      // Structured check via typed AiError.code — no string matching.
+      // Circuit opens on 429 (quota), TIMEOUT (network/load), or PROVIDER_UNAVAILABLE (5xx).
+      const CIRCUIT_TRIGGER_CODES = new Set(['RATE_LIMITED', 'TIMEOUT', 'PROVIDER_UNAVAILABLE']);
+      if (!aiOutput && res.error?.code && CIRCUIT_TRIGGER_CODES.has(res.error.code)) {
         wasRateLimited = true;
-        this.recordRateLimit();
+        this.recordRateLimit(res.error.code);
       }
     } catch (err: any) {
       winstonLogger.warn(`[NEWS_AI_DISTILL_ERROR] AI call failed for ${article.id}: ${err.message}`);

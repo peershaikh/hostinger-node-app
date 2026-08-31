@@ -444,7 +444,11 @@ export const railwayNewsService = {
         // Non-destructive DB persistence (additive upsert with legacy schema fallback)
         if (processedCanonical.length > 0 && isSupabaseConfigured()) {
           try {
-            const payload = transformToDatabasePayload(processedCanonical);
+            const seenUpsertIds = new Set<string>();
+            const dedupedCanonical = processedCanonical.filter(a =>
+              seenUpsertIds.has(a.id) ? false : (seenUpsertIds.add(a.id), true)
+            );
+            const payload = transformToDatabasePayload(dedupedCanonical);
             const { error } = await supabase
               .from('railway_news')
               .upsert(payload, { onConflict: 'id' });

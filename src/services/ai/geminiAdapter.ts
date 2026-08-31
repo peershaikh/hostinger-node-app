@@ -559,7 +559,7 @@ Return ONLY valid JSON matching this schema:
   "confidence": "HIGH"
 }`;
 
-    const result = await this.executeGeminiCall(prompt, true, 12000, 'NEWS_DISTILLATION');
+    const result = await this.executeGeminiCall(prompt, true, 10000, 'NEWS_DISTILLATION');
     if (!result || !result.title || !result.key_takeaways) {
       return null;
     }
