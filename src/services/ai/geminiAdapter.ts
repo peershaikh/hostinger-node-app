@@ -232,6 +232,18 @@ export class GeminiAdapter implements AiProvider {
 
         const status = err.response?.status;
         if (status === 429) {
+          const errData = err.response?.data?.error;
+          const retryAfter = err.response?.headers?.['retry-after'] || err.response?.headers?.['Retry-After'];
+          const quotaReason = (
+            errData?.details?.[0]?.violations?.[0]?.description ||
+            errData?.message ||
+            'Gemini API rate limit exceeded'
+          ).replace(/[\r\n]+/g, ' ');
+
+          winstonLogger.warn(
+            `[GEMINI_RATE_LIMIT_DETAILS] status=429 code=${errData?.code || 'RESOURCE_EXHAUSTED'} retry_after=${retryAfter || 'none'} reason="${quotaReason.slice(0, 150)}"`
+          );
+
           throw new AiError({
             code: 'RATE_LIMITED',
             message: 'Gemini API rate limit exceeded',

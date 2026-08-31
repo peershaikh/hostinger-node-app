@@ -74,8 +74,8 @@ interface DistillResult {
   wasRateLimited: boolean;
 }
 
-const DELAY_NORMAL_MS  = 200;   // Courtesy pause between successful Gemini calls
-const DELAY_BACKOFF_MS = 4000;  // Pause after HTTP 429 to let quota refill
+const DELAY_NORMAL_MS    = 2000;  // Inter-article pause to stay comfortably below 15 RPM
+const GLOBAL_COOLDOWN_MS = 60000; // 60s cooldown after HTTP 429
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -83,6 +83,23 @@ function sleep(ms: number): Promise<void> {
 
 export class NewsDistillationService {
   private processedHashes = new Set<string>();
+  private lastRateLimitTimestamp = 0;
+
+  public recordRateLimit(): void {
+    this.lastRateLimitTimestamp = Date.now();
+  }
+
+  public isCooldownActive(): { active: boolean; remainingMs: number } {
+    const elapsed = Date.now() - this.lastRateLimitTimestamp;
+    if (elapsed < GLOBAL_COOLDOWN_MS) {
+      return { active: true, remainingMs: GLOBAL_COOLDOWN_MS - elapsed };
+    }
+    return { active: false, remainingMs: 0 };
+  }
+
+  public resetCooldownForTesting(): void {
+    this.lastRateLimitTimestamp = 0;
+  }
 
   public generateDeterministicDraft(article: CanonicalNewsArticle): NewsDistillationOutput {
     const title = article.title;
@@ -169,6 +186,7 @@ export class NewsDistillationService {
       // Structured check via typed AiError.code — no string matching
       if (!aiOutput && res.error?.code === 'RATE_LIMITED') {
         wasRateLimited = true;
+        this.recordRateLimit();
       }
     } catch (err: any) {
       winstonLogger.warn(`[NEWS_AI_DISTILL_ERROR] AI call failed for ${article.id}: ${err.message}`);
@@ -222,15 +240,11 @@ export class NewsDistillationService {
   /**
    * Distills multiple articles in batch with rate-limit and cost protection.
    *
+   * - Global Cooldown: If a 429 occurred within the last 60s, bypass Gemini entirely.
+   * - Batch Circuit Breaker: If any article hits 429, immediately switch all remaining
+   *   articles in the batch to deterministic fallback (0 additional Gemini calls).
+   * - Normal spacing: 2000ms delay between successful Gemini calls (< 10 RPM).
    * - GEMINI_NEWS_BATCH_MAX (default 10): only first N articles call Gemini.
-   *   Remaining articles get deterministic fallback immediately.
-   * - After a successful Gemini call: 200ms courtesy delay.
-   * - After RATE_LIMITED (HTTP 429): 4000ms backoff before next article.
-   * - No recursive retry. No re-queue. No amplification.
-   *
-   * Env:
-   *   GEMINI_NEWS_BATCH_MAX   — max Gemini calls per cycle (default: 10)
-   *   GEMINI_NEWS_CONCURRENCY — reserved; current concurrency is always 1
    */
   public async batchDistill(articles: CanonicalNewsArticle[]): Promise<CanonicalNewsArticle[]> {
     const batchMax      = Math.max(1, parseInt(process.env.GEMINI_NEWS_BATCH_MAX ?? '10', 10));
@@ -243,19 +257,79 @@ export class NewsDistillationService {
       );
     }
 
+    const cooldown = this.isCooldownActive();
+    let circuitOpen = cooldown.active;
+
+    if (circuitOpen) {
+      winstonLogger.warn(
+        `[GEMINI_COOLDOWN_ACTIVE] remaining_ms=${cooldown.remainingMs}. Routing entire batch (${articles.length} articles) directly to deterministic fallback.`
+      );
+    }
+
     const results: CanonicalNewsArticle[] = [];
 
     for (let i = 0; i < aiSlice.length; i++) {
+      if (circuitOpen) {
+        // Direct deterministic fallback without calling Gemini
+        const article = aiSlice[i];
+        const aiOutput = this.generateDeterministicDraft(article);
+        const validation = NewsFactValidator.validate(
+          {
+            title:             article.title,
+            summary:           article.summary,
+            sourceName:        article.source_name,
+            sourceUrl:         article.source_url,
+            sourceTier:        article.source_tier,
+            publishedAt:       article.published_at,
+            category:          article.category,
+            candidateTrains:   article.affected_trains,
+            candidateStations: article.affected_stations,
+          },
+          aiOutput
+        );
+        this.processedHashes.add(article.content_hash);
+        const now = new Date().toISOString();
+        results.push(
+          validation.isValid
+            ? {
+                ...article,
+                title:            aiOutput.title   || article.title,
+                summary:          aiOutput.summary || article.summary,
+                key_takeaways:    [
+                  aiOutput.key_takeaways.what_happened,
+                  aiOutput.key_takeaways.who_is_affected,
+                  aiOutput.key_takeaways.what_passengers_should_do,
+                ].filter(Boolean),
+                affected_trains:  aiOutput.affected_trains.length > 0 ? aiOutput.affected_trains : article.affected_trains,
+                affected_stations:aiOutput.affected_stations.length > 0 ? aiOutput.affected_stations : article.affected_stations,
+                seo_title:        aiOutput.seo_title,
+                meta_description: aiOutput.meta_description,
+                slug:             aiOutput.slug    || article.slug,
+                status:           'AI_DRAFTED',
+                ingestion_status: 'INGESTION_COMPLETE',
+                updated_at:       now,
+              }
+            : {
+                ...article,
+                status:           'REJECTED',
+                ingestion_status: 'REJECTED',
+                relevance_score:  0,
+                updated_at:       now,
+              }
+        );
+        continue;
+      }
+
       const { article, wasRateLimited } = await this.distillArticle(aiSlice[i]);
       results.push(article);
 
-      if (i < aiSlice.length - 1) {
-        if (wasRateLimited) {
-          winstonLogger.warn(`[RATE_LIMIT_BACKOFF] feature=distillNewsArticle delay_ms=${DELAY_BACKOFF_MS}`);
-          await sleep(DELAY_BACKOFF_MS);
-        } else {
-          await sleep(DELAY_NORMAL_MS);
-        }
+      if (wasRateLimited) {
+        circuitOpen = true;
+        winstonLogger.warn(
+          `[BATCH_CIRCUIT_OPEN] Gemini 429 encountered at article ${i + 1}/${aiSlice.length}. Switching remaining ${aiSlice.length - (i + 1)} articles in this batch to deterministic fallback.`
+        );
+      } else if (i < aiSlice.length - 1) {
+        await sleep(DELAY_NORMAL_MS);
       }
     }
 
