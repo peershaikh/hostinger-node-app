@@ -5,12 +5,48 @@ export interface Hub {
 }
 
 export const HUB_REGIONS = {
-  MAHARASHTRA: ['MUMBAI', 'PUNE', 'KALYAN', 'NAGPUR', 'SAWANTWADI', 'MANMAD', 'BHUSAVAL', 'WARDHA', 'SOLAPUR', 'AKOLA', 'RATNAGIRI'],
-  NORTH: ['DELHI', 'KANPUR', 'LUCKNOW', 'PRAYAGRAJ', 'AMBALA', 'JHANSI', 'MORADABAD', 'BAREILLY', 'TUNDLA', 'GORAKHPUR', 'GONDA', 'BASTI'],
-  SOUTH: ['CHENNAI', 'VIJAYAWADA', 'SECUNDERABAD', 'BANGALORE', 'HYDERABAD', 'JOLARPETTAI', 'KATPADI', 'GUNTAKAL', 'RENIGUNTA', 'GUDUR', 'HUBLI', 'GADAG', 'MYSORE', 'MANGALORE'],
-  WEST: ['SURAT', 'VADODARA', 'AHMEDABAD', 'RAJKOT', 'RATLAM', 'KOTA', 'JAIPUR', 'JALGAON'],
-  EAST: ['HOWRAH', 'SEALDAH', 'PATNA', 'KHARAGPUR', 'KOLKATA', 'MUGHALSARAI', 'ASANSOL', 'DHANBAD', 'GAYA', 'MUZAFFARPUR', 'BHAGALPUR', 'DARBHANGA'],
-  CENTRAL: ['BHOPAL', 'ITARSI', 'JABALPUR', 'NAGPUR', 'BHUSAVAL', 'WARDHA']
+  // Each array includes both full station names AND IRCTC station codes,
+  // because detectRegion() receives raw codes (SBC, RTM, …) at runtime.
+  MAHARASHTRA: [
+    'MUMBAI', 'PUNE', 'KALYAN', 'NAGPUR', 'SAWANTWADI', 'MANMAD', 'BHUSAVAL',
+    'WARDHA', 'SOLAPUR', 'AKOLA', 'RATNAGIRI',
+    // IRCTC codes
+    'CSMT', 'CST', 'LTT', 'DR', 'KYN', 'NGP', 'MMR', 'BSL', 'WR', 'SUR', 'AK', 'SNDD', 'KOP',
+  ],
+  NORTH: [
+    'DELHI', 'KANPUR', 'LUCKNOW', 'PRAYAGRAJ', 'AMBALA', 'JHANSI', 'MORADABAD',
+    'BAREILLY', 'TUNDLA', 'GORAKHPUR', 'GONDA', 'BASTI',
+    // IRCTC codes
+    'NDLS', 'NZM', 'DLI', 'CNB', 'LKO', 'PRYJ', 'ALD', 'UMB', 'VGLJ', 'JHS', 'MB', 'BE', 'TDL',
+    'GKP', 'GD', 'BST', 'HW', 'SRE', 'ANVT',
+  ],
+  SOUTH: [
+    'CHENNAI', 'VIJAYAWADA', 'SECUNDERABAD', 'BANGALORE', 'HYDERABAD',
+    'JOLARPETTAI', 'KATPADI', 'GUNTAKAL', 'RENIGUNTA', 'GUDUR',
+    'HUBLI', 'GADAG', 'MYSORE', 'MANGALORE',
+    // IRCTC codes
+    'MAS', 'MS', 'BZA', 'SC', 'HYB', 'SBC', 'YPR', 'BAND', 'JTJ', 'KPD', 'GTL', 'RU',
+    'GDR', 'UBL', 'GDG', 'MYS', 'MAQ', 'MAJN', 'CBE', 'SA', 'TPJ', 'MDU', 'NCJ', 'TVC',
+    'QLN', 'ERS', 'SRR', 'CLT', 'PGT', 'CAN',
+  ],
+  WEST: [
+    'SURAT', 'VADODARA', 'AHMEDABAD', 'RAJKOT', 'RATLAM', 'KOTA', 'JAIPUR', 'JALGAON',
+    // IRCTC codes
+    'ST', 'BRC', 'ADI', 'RJT', 'RTM', 'KOTA', 'JP', 'JL', 'BDTS', 'BCT', 'GNC', 'PNU',
+    'AII', 'BKN', 'JU', 'BVC', 'OKHA', 'VRL', 'UDZ',
+  ],
+  EAST: [
+    'HOWRAH', 'SEALDAH', 'PATNA', 'KHARAGPUR', 'KOLKATA', 'MUGHALSARAI', 'ASANSOL',
+    'DHANBAD', 'GAYA', 'MUZAFFARPUR', 'BHAGALPUR', 'DARBHANGA',
+    // IRCTC codes
+    'HWH', 'SDAH', 'KOAA', 'PNBE', 'KGP', 'MGS', 'DDU', 'ASN', 'DHN', 'GAYA', 'MFP',
+    'BGP', 'DBG', 'SPJ', 'MLDT', 'NJP', 'SGUJ', 'RPH', 'BWN',
+  ],
+  CENTRAL: [
+    'BHOPAL', 'ITARSI', 'JABALPUR', 'NAGPUR', 'BHUSAVAL', 'WARDHA',
+    // IRCTC codes
+    'BPL', 'ET', 'JBP', 'NGP', 'BSL', 'WR', 'KTE', 'SGO', 'BIA', 'HBJ',
+  ],
 };
 
 export const GLOBAL_HUBS = ['ITARSI', 'VIJAYAWADA', 'NAGPUR', 'NEW DELHI', 'JHANSI', 'BHOPAL', 'MUGHALSARAI', 'KALYAN'];
