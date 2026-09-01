@@ -3,6 +3,28 @@ import { featureFlags } from '../config/featureFlags';
 import { cacheService } from './cacheService';
 import { providerConfigService } from './providerConfigService';
 
+// ── PHASE_087N49 — Sync-specific classified result type ───────────────────────
+// Used ONLY by getTrainInfoForSync(). All existing public methods are unchanged.
+// This type lives here so the sync job can import it without a separate file.
+
+export type TrainInfoResultKind =
+  | 'VALID_SCHEDULE'
+  | 'EXPECTED_NO_DATA'
+  | 'RATE_LIMITED_429'
+  | 'AUTH_FAILURE'
+  | 'TIMEOUT'
+  | 'NETWORK_FAILURE'
+  | 'PROVIDER_5XX'
+  | 'MALFORMED_RESPONSE';
+
+export interface TrainInfoResult {
+  kind: TrainInfoResultKind;
+  /** Populated only when kind === 'VALID_SCHEDULE'. */
+  data?: any;
+  /** Retry-After seconds parsed from provider header, if available. */
+  retryAfterSeconds?: number;
+}
+
 // PHASE_4C862 — codes passed here are already resolved by trainStationResolver in availabilityProvider.
 function sanitizeStationCode(code: string): string {
   return (code || '').toUpperCase().trim();
@@ -480,6 +502,212 @@ export class IrctcService {
       keySource: process.env.USE_DB_PROVIDERS === 'true' ? 'DB_CONFIG_OR_FALLBACK' : 'ENV_FALLBACK',
       role: "PRIMARY_API"
     };
+  }
+
+  // ── PHASE_087N49 — Sync-only classified fetch ────────────────────────────────
+  //
+  // Returns a TrainInfoResult discriminated union instead of null|data.
+  // Used EXCLUSIVELY by trainScheduleSyncJob. Do NOT call from user-facing paths.
+  //
+  // Classification logic:
+  //   VALID_SCHEDULE     — response contains a non-empty station array
+  //   EXPECTED_NO_DATA   — provider returned success=false / known "no data" error
+  //   RATE_LIMITED_429   — HTTP 429 or rate-limit message in error text
+  //   AUTH_FAILURE       — API key rejected (401/403 or "api key" in error)
+  //   TIMEOUT            — call exceeded the 18s timeout guard
+  //   PROVIDER_5XX       — provider-side server error (5xx)
+  //   NETWORK_FAILURE    — connection-level error (ECONNREFUSED, ENOTFOUND, etc.)
+  //   MALFORMED_RESPONSE — response present but station array missing or unreadable
+  //
+  // Retry-After:
+  //   When the provider surfaces a Retry-After header or embeds the wait seconds in
+  //   the error message we parse it into retryAfterSeconds. The sync job uses this
+  //   value when available; otherwise it falls back to its own backoff schedule.
+  //   We cap the parsed value to SYNC_RETRY_AFTER_MAX_S = 600s (10 min) to prevent
+  //   a misbehaving provider from parking the sync job for an unbounded period.
+  //
+  // Security: credentials and full HTTP headers are never logged here.
+  public async getTrainInfoForSync(trainNo: string): Promise<TrainInfoResult> {
+    await this.ensureInit();
+
+    if (!this.initialized || !irctc) {
+      // Service not ready — treat as a network-level failure so the sync job can
+      // decide whether to skip or retry, rather than misclassifying as no-data.
+      return { kind: 'NETWORK_FAILURE' };
+    }
+
+    // Re-use the 2h NodeCache used by getTrainInfo() — if user traffic already
+    // fetched this train recently the sync job gets a free hit.
+    const cacheKey = `traininfo_${trainNo}`;
+    const cached = cacheService.get(cacheKey);
+    if (cached) {
+      // Extract station array from cached payload.
+      const stations: any[] = (
+        (cached as any)?.route          ??
+        (cached as any)?.stations       ??
+        (cached as any)?.data?.route    ??
+        (cached as any)?.data?.stations ??
+        []
+      );
+      if (stations.length > 0) {
+        return { kind: 'VALID_SCHEDULE', data: cached };
+      }
+      // Cached but no station array — treat as expected no-data (don't hit provider again).
+      return { kind: 'EXPECTED_NO_DATA' };
+    }
+
+    // ── Provider call ──────────────────────────────────────────────────────────
+    try {
+      const infoPromise = irctc.getTrainInfo(trainNo.trim());
+      let infoTimer: NodeJS.Timeout | undefined;
+      const infoTimeout = new Promise<never>((_, reject) => {
+        infoTimer = setTimeout(
+          () => reject(new Error('[SYNC_TIMEOUT] getTrainInfo timeout (18s)')),
+          18000
+        );
+      });
+      const raw = await Promise.race([infoPromise, infoTimeout]).finally(() => {
+        if (infoTimer) clearTimeout(infoTimer);
+      }) as any;
+
+      const result = raw?.data ?? raw;
+
+      // Provider returned a structured failure.
+      if (result && (result.success === false || result.error)) {
+        const errStr = String(result.error || '').toLowerCase();
+        if (errStr.includes('api key') || errStr.includes('invalid key') ||
+            errStr.includes('unauthorized') || errStr.includes('forbidden')) {
+          return { kind: 'AUTH_FAILURE' };
+        }
+        if (errStr.includes('rate') || errStr.includes('429') ||
+            errStr.includes('too many') || errStr.includes('quota')) {
+          const retryAfterSeconds = IrctcService._parseRetryAfter(result);
+          return { kind: 'RATE_LIMITED_429', retryAfterSeconds };
+        }
+        // Known "no data" signals: train not found, does not run, bad request.
+        return { kind: 'EXPECTED_NO_DATA' };
+      }
+
+      // Null/undefined response body.
+      if (!result) {
+        return { kind: 'EXPECTED_NO_DATA' };
+      }
+
+      // Extract station array.
+      const stations: any[] = (
+        result?.route          ??
+        result?.stations       ??
+        result?.data?.route    ??
+        result?.data?.stations ??
+        []
+      );
+
+      if (stations.length > 0) {
+        // Store in shared 2h cache — same as getTrainInfo() — so user-facing paths
+        // benefit from the sync job's fetch.
+        cacheService.set(cacheKey, result, 7200);
+        return { kind: 'VALID_SCHEDULE', data: result };
+      }
+
+      // Response arrived but contained no station data.
+      return { kind: 'MALFORMED_RESPONSE' };
+
+    } catch (e: any) {
+      const msg = String(e?.message || '').toLowerCase();
+
+      // Timeout (thrown by our own guard above).
+      if (msg.includes('[sync_timeout]') || msg.includes('timeout')) {
+        return { kind: 'TIMEOUT' };
+      }
+
+      // 429 / rate-limit surfaced as a thrown error.
+      if (msg.includes('429') || msg.includes('rate') ||
+          msg.includes('too many') || msg.includes('quota')) {
+        const retryAfterSeconds = IrctcService._parseRetryAfter(e);
+        return { kind: 'RATE_LIMITED_429', retryAfterSeconds };
+      }
+
+      // Auth failure surfaced as a thrown error.
+      if (msg.includes('api key') || msg.includes('invalid key') ||
+          msg.includes('unauthorized') || msg.includes('401') ||
+          msg.includes('403') || msg.includes('forbidden')) {
+        return { kind: 'AUTH_FAILURE' };
+      }
+
+      // 5xx server errors.
+      if (msg.includes('500') || msg.includes('502') || msg.includes('503') ||
+          msg.includes('504') || msg.includes('server error') ||
+          msg.includes('internal error') || msg.includes('bad gateway')) {
+        return { kind: 'PROVIDER_5XX' };
+      }
+
+      // Network-level failures.
+      if (msg.includes('econnrefused') || msg.includes('enotfound') ||
+          msg.includes('econnreset') || msg.includes('network') ||
+          msg.includes('socket') || msg.includes('etimedout')) {
+        return { kind: 'NETWORK_FAILURE' };
+      }
+
+      // Catch-all — treat unrecognised errors as network failures so the
+      // sync job retries rather than silently skipping the train.
+      return { kind: 'NETWORK_FAILURE' };
+    }
+  }
+
+  /**
+   * PHASE_087N49 — Parse Retry-After from an error object or provider response.
+   *
+   * Tries, in order:
+   *   1. e.response.headers['retry-after']   (axios-style HTTP response)
+   *   2. e.retryAfter                         (SDK-level property)
+   *   3. Numeric seconds embedded in message  (e.g. "retry after 30 seconds")
+   *
+   * Returns undefined when nothing parseable is found.
+   * Caps the value at SYNC_RETRY_AFTER_MAX_S (600 s) to prevent indefinite parking.
+   * Never logs credential-bearing header values.
+   */
+  private static readonly SYNC_RETRY_AFTER_MAX_S = 600; // 10 minutes hard cap
+
+  private static _parseRetryAfter(e: any): number | undefined {
+    const cap = IrctcService.SYNC_RETRY_AFTER_MAX_S;
+
+    // 1. HTTP response header (axios, node-fetch, etc.)
+    try {
+      const headerVal = e?.response?.headers?.['retry-after'];
+      if (headerVal !== undefined && headerVal !== null) {
+        const parsed = Number(headerVal);
+        if (!Number.isNaN(parsed) && parsed > 0) {
+          return Math.min(parsed, cap);
+        }
+      }
+    } catch { /* non-fatal */ }
+
+    // 2. SDK-level retryAfter property.
+    try {
+      const sdkVal = e?.retryAfter;
+      if (sdkVal !== undefined && sdkVal !== null) {
+        const parsed = Number(sdkVal);
+        if (!Number.isNaN(parsed) && parsed > 0) {
+          return Math.min(parsed, cap);
+        }
+      }
+    } catch { /* non-fatal */ }
+
+    // 3. Embedded numeric in message: "retry after 30 seconds", "wait 45s", etc.
+    try {
+      const msg = String(e?.message || e?.error || '');
+      const m = msg.match(/(\d+)\s*s(?:ec(?:ond)?s?)?/i)
+             ?? msg.match(/retry[\s-]after[:\s]+(\d+)/i)
+             ?? msg.match(/wait[:\s]+(\d+)/i);
+      if (m) {
+        const parsed = Number(m[1]);
+        if (!Number.isNaN(parsed) && parsed > 0) {
+          return Math.min(parsed, cap);
+        }
+      }
+    } catch { /* non-fatal */ }
+
+    return undefined;
   }
 }
 

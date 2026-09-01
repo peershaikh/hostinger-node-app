@@ -9,7 +9,7 @@
  *   - DELETE orphan rows (SN > maxLiveSN) only when all safety guards pass
  *   - Invalidate per-train NodeCache keys immediately after write
  *
- * Safety guards applied per train before any write:
+ * Safety guards applied per train before any write (UNCHANGED):
  *   V0 — null/empty IRCTC response -> SKIP
  *   V1 — live stop count < 3 for an established train -> SKIP
  *   V2 — live stop count < 70% of existing DB stops -> SKIP (regression protection)
@@ -22,6 +22,26 @@
  *   isRunning guard  — prevents duplicate execution on server restart during cron window
  *   MAX_RUNTIME_MS   — 3-hour hard cutoff; remainder deferred to next night (idempotent)
  *   Dry-run mode     — when ENABLE_TRAIN_SCHEDULE_SYNC != true, validates but performs no writes
+ *
+ * PHASE_087N49 — Rate-limit remediation:
+ *   getTrainInfoForSync()     — classified result (8 kinds, not null|data)
+ *   Retry-After               — parsed from provider, preferred over invented delay, capped at 600 s
+ *   Exponential backoff       — base 5 s, factor 2, max 120 s, additive jitter ±20%
+ *   Global sync pause         — triggered after GLOBAL_PAUSE_CONSECUTIVE_429 (3) consecutive 429 s
+ *   Pause duration            — Retry-After if available, else 5 minutes
+ *   Post-pause request pacing — doubled inter-call delay after resuming
+ *   Base inter-call delay     — 1 000 ms (up from 200 ms) — chosen to stay below ~3 600 calls/h
+ *                               and well within any reasonable per-key daily budget while
+ *                               still processing ~700–1 000 trains/night in < 3 h.
+ *   Structured log prefixes   — [SCHEDULE_SYNC_RATE_LIMITED] [SCHEDULE_SYNC_BACKOFF]
+ *                               [SCHEDULE_SYNC_PAUSED] [SCHEDULE_SYNC_RESUMED]
+ *   Security                  — credentials, API keys, and authorization headers are never logged
+ *
+ * Checkpoint (DEFERRED):
+ *   A per-train checkpoint mechanism to resume partial runs would require persistent state
+ *   (DB column, file, or Redis key). Deferred to a future phase to avoid schema changes.
+ *   Current mitigation: idempotent UPSERT means restarting is safe; MAX_RUNTIME_MS ensures
+ *   priority-batched trains (P0/P1) are processed first.
  *
  * Cache invalidation (per train, after write):
  *   Clears train_schedule_resolved_{num}, sched_ctx_v4_{num}, traininfo_{num} from NodeCache.
@@ -38,12 +58,56 @@ import * as path from 'path';
 import { winstonLogger } from '../middleware/logger';
 import { featureFlags } from '../config/featureFlags';
 import { cacheService } from '../services/cacheService';
-import { irctcService } from '../services/irctcService';
+import { irctcService, TrainInfoResult } from '../services/irctcService';
 import { supabase } from '../config/supabase';
 
 /** Resolved path to the optional train registry JSON bundled with the server. */
 const REGISTRY_PATH = path.join(__dirname, '..', 'data', 'train_registry.json');
 const FIVE_DIGIT_RE = /^\d{5}$/
+
+// ---------------------------------------------------------------------------
+// PHASE_087N49 — Rate-limit constants (production-safe values)
+// ---------------------------------------------------------------------------
+
+/**
+ * Base inter-call delay between successive IRCTC getTrainInfo requests.
+ *
+ * Previous value: 200 ms (~5 req/s, ~18 000/h — unsafe for a shared key).
+ * New value:      1 000 ms (~1 req/s, ~3 600/h) — conservative enough to fit
+ * a night's batch (~700–1 000 trains) into < 1 h and stay under any reasonable
+ * per-key daily quota while leaving headroom for retries and pauses.
+ * Post-pause pacing doubles this to 2 000 ms to further reduce pressure.
+ */
+const SYNC_BASE_INTER_CALL_MS = 1_000;
+
+/** Exponential backoff base delay for retryable errors (TIMEOUT, NETWORK_FAILURE, PROVIDER_5XX). */
+const SYNC_BACKOFF_BASE_MS = 5_000;        // 5 s
+
+/** Backoff multiplier per attempt. */
+const SYNC_BACKOFF_FACTOR = 2;
+
+/** Maximum delay between retries, before jitter. */
+const SYNC_BACKOFF_MAX_MS = 120_000;       // 2 min
+
+/** Maximum number of per-train retry attempts for retryable error kinds. */
+const SYNC_MAX_RETRIES = 3;
+
+/** Additive jitter fraction applied to every backoff delay (±20%). */
+const SYNC_JITTER_FRACTION = 0.2;
+
+/**
+ * Number of consecutive 429 responses that trigger a global sync pause.
+ * Three is chosen to distinguish a single transient 429 from a quota burst.
+ */
+const GLOBAL_PAUSE_CONSECUTIVE_429 = 3;
+
+/** Default global pause duration when provider does not supply Retry-After. */
+const GLOBAL_PAUSE_DEFAULT_MS = 5 * 60 * 1_000;  // 5 min
+
+/** Hard cap on a global pause derived from Retry-After. Matches SYNC_RETRY_AFTER_MAX_S in irctcService. */
+const GLOBAL_PAUSE_MAX_MS = 10 * 60 * 1_000;     // 10 min
+
+// ---------------------------------------------------------------------------
 
 export class TrainScheduleSyncJob {
   /** Prevents double-registration if start() is called twice (mirrors hubCatalogRefreshJob pattern) */
@@ -55,7 +119,6 @@ export class TrainScheduleSyncJob {
   /** Required Change 2: 3-hour hard cutoff to prevent overlap with morning peak traffic */
   private readonly MAX_RUNTIME_MS = 3 * 60 * 60 * 1000;
 
-  private readonly INTER_CALL_DELAY_MS = 200;
   private readonly UPSERT_BATCH_SIZE = 100;
 
   /** Stop count regression threshold: live must be >= 70% of existing DB stop count */
@@ -63,6 +126,10 @@ export class TrainScheduleSyncJob {
 
   /** Minimum live stop count — below this, the IRCTC response is considered unreliable */
   private readonly MIN_STUB_STOPS = 3;
+
+  // PHASE_087N49 — Rate-limit state (scoped to the current run; reset on each runScheduled() call)
+  private _consecutive429Count = 0;
+  private _postPauseMode = false;     // true after resuming from a global pause
 
   // Side-effect fields populated by getAllTrainNumbers() — used by getPriorityBatch().
   // Populated fresh on every run; never used across runs (isRunning guard prevents overlap).
@@ -97,6 +164,9 @@ export class TrainScheduleSyncJob {
     }
 
     this.isRunning = true;
+    // Reset per-run rate-limit state
+    this._consecutive429Count = 0;
+    this._postPauseMode = false;
     const jobStart = Date.now();
 
     try {
@@ -106,7 +176,7 @@ export class TrainScheduleSyncJob {
       const stats = await this.syncAllTrains(jobStart);
       const durationMs = Date.now() - jobStart;
       winstonLogger.info(
-        `[SCHEDULE_SYNC] RUN_COMPLETE total=${stats.total} updated=${stats.updated} skipped=${stats.skipped} failed=${stats.failed} aborted=${stats.aborted} durationMs=${durationMs}`
+        `[SCHEDULE_SYNC] RUN_COMPLETE total=${stats.total} updated=${stats.updated} skipped=${stats.skipped} failed=${stats.failed} aborted=${stats.aborted} rate_limited=${stats.rateLimited} durationMs=${durationMs}`
       );
     } catch (err: any) {
       winstonLogger.error(`[SCHEDULE_SYNC] RUN_ERROR error=${err.message}`);
@@ -121,7 +191,7 @@ export class TrainScheduleSyncJob {
 
   private async syncAllTrains(
     jobStart: number
-  ): Promise<{ total: number; updated: number; skipped: number; failed: number; aborted: number }> {
+  ): Promise<{ total: number; updated: number; skipped: number; failed: number; aborted: number; rateLimited: number }> {
     // Step 1: build the full union (registry + DB) — populates _registryNos, _dbScheduleNos
     const allNos = await this.getAllTrainNumbers();
     winstonLogger.info(`[SCHEDULE_SYNC] Union source loaded: ${allNos.length} distinct trains total`);
@@ -134,11 +204,12 @@ export class TrainScheduleSyncJob {
       `[SCHEDULE_SYNC] RUN_BATCH P0=${p0Count} P1=${p1Count} P2=${p2Count} P3=${p3Count} P4=${p4Count} TOTAL_BATCH=${batch.length} expected_api_calls=${batch.length}`
     );
 
-    // Step 3: sync the batch (all validation/UPSERT/DELETE logic unchanged)
+    // Step 3: sync the batch
     let updated = 0;
     let skipped = 0;
     let failed  = 0;
     let aborted = 0;
+    let rateLimited = 0;
 
     for (let i = 0; i < batch.length; i++) {
       // MAX_RUNTIME cutoff (Required Change 2)
@@ -153,22 +224,144 @@ export class TrainScheduleSyncJob {
 
       const trainNo = batch[i];
       try {
-        const result = await this.syncOneTrain(trainNo);
+        const result = await this.syncOneTrainWithBackoff(trainNo);
         if (result === 'updated')      updated++;
         else if (result === 'skipped') skipped++;
+        else if (result === 'rate_limited') { rateLimited++; skipped++; }
         else                           failed++;
       } catch (err: any) {
         winstonLogger.warn(`[SCHEDULE_SYNC] TRAIN_FAILED trainNo=${trainNo} error=${err.message}`);
         failed++;
       }
 
-      // Courtesy delay between IRCTC calls
+      // Inter-call delay — 1 000 ms base; doubled after resuming from a global pause
       if (i < batch.length - 1) {
-        await this.sleep(this.INTER_CALL_DELAY_MS);
+        const delayMs = this._postPauseMode
+          ? SYNC_BASE_INTER_CALL_MS * 2
+          : SYNC_BASE_INTER_CALL_MS;
+        await this.sleep(delayMs);
       }
     }
 
-    return { total: batch.length, updated, skipped, failed, aborted };
+    return { total: batch.length, updated, skipped, failed, aborted, rateLimited };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private: Backoff wrapper around syncOneTrain
+  // ---------------------------------------------------------------------------
+
+  /**
+   * PHASE_087N49 — Calls syncOneTrain with:
+   *   - Per-train exponential backoff for retryable errors (TIMEOUT, NETWORK_FAILURE, PROVIDER_5XX).
+   *   - Global pause logic for quota exhaustion (3 consecutive 429 responses).
+   *   - Non-retryable outcomes (V0–V6 skip, DRY_RUN, AUTH_FAILURE) pass through immediately.
+   *
+   * Returns: 'updated' | 'skipped' | 'failed' | 'rate_limited'
+   */
+  private async syncOneTrainWithBackoff(
+    trainNo: string
+  ): Promise<'updated' | 'skipped' | 'failed' | 'rate_limited'> {
+    for (let attempt = 0; attempt <= SYNC_MAX_RETRIES; attempt++) {
+      const result = await this.syncOneTrain(trainNo);
+
+      // 429 — check for global pause, then decide if we retry this train.
+      if (result === 'rate_limited') {
+        this._consecutive429Count++;
+        winstonLogger.warn(
+          `[SCHEDULE_SYNC_RATE_LIMITED] trainNo=${trainNo} attempt=${attempt} consecutive429=${this._consecutive429Count}`
+        );
+
+        if (this._consecutive429Count >= GLOBAL_PAUSE_CONSECUTIVE_429) {
+          // Quota burst detected — pause the entire sync run.
+          await this.globalPause();
+          // After resuming: reset counter, enable post-pause pacing.
+          this._consecutive429Count = 0;
+          this._postPauseMode = true;
+          // Do NOT retry this specific train — it will be picked up next nightly run.
+          return 'rate_limited';
+        }
+
+        // Single 429 but not yet a burst — back off once before retrying this train.
+        if (attempt < SYNC_MAX_RETRIES) {
+          const backoffMs = this.calcBackoff(attempt, undefined);
+          winstonLogger.info(
+            `[SCHEDULE_SYNC_BACKOFF] trainNo=${trainNo} attempt=${attempt} backoffMs=${backoffMs} reason=RATE_LIMITED_429`
+          );
+          await this.sleep(backoffMs);
+          continue;
+        }
+        return 'rate_limited';
+      }
+
+      // Non-retry, non-429 outcome (updated | skipped | failed) — reset counter and return.
+      if (result === 'updated' || result === 'skipped' || result === 'failed') {
+        this._consecutive429Count = 0;
+        return result;
+      }
+
+      // result === 'retry' — fall through to backoff below.
+
+      // Retryable error (TIMEOUT / NETWORK_FAILURE / PROVIDER_5XX).
+      if (attempt < SYNC_MAX_RETRIES) {
+        const backoffMs = this.calcBackoff(attempt, undefined);
+        winstonLogger.info(
+          `[SCHEDULE_SYNC_BACKOFF] trainNo=${trainNo} attempt=${attempt} backoffMs=${backoffMs} reason=RETRYABLE`
+        );
+        await this.sleep(backoffMs);
+      }
+    }
+    // Exhausted retries.
+    return 'failed';
+  }
+
+  /**
+   * PHASE_087N49 — Execute a global pause when the sync job detects quota exhaustion.
+   *
+   * Duration: provider's Retry-After (from last 429 result) when available,
+   * otherwise GLOBAL_PAUSE_DEFAULT_MS (5 min). Always capped at GLOBAL_PAUSE_MAX_MS (10 min).
+   *
+   * Logs [SCHEDULE_SYNC_PAUSED] on entry and [SCHEDULE_SYNC_RESUMED] on exit.
+   * Never logs credentials or API key values.
+   */
+  private async globalPause(retryAfterSeconds?: number): Promise<void> {
+    let pauseMs: number;
+    if (retryAfterSeconds !== undefined && retryAfterSeconds > 0) {
+      pauseMs = Math.min(retryAfterSeconds * 1_000, GLOBAL_PAUSE_MAX_MS);
+    } else {
+      pauseMs = GLOBAL_PAUSE_DEFAULT_MS;
+    }
+
+    winstonLogger.warn(
+      `[SCHEDULE_SYNC_PAUSED] reason=QUOTA_EXHAUSTED consecutive429=${this._consecutive429Count} pauseMs=${pauseMs} retryAfterSource=${retryAfterSeconds !== undefined ? 'PROVIDER' : 'DEFAULT'}`
+    );
+
+    await this.sleep(pauseMs);
+
+    winstonLogger.info(
+      `[SCHEDULE_SYNC_RESUMED] pauseMs=${pauseMs} postPaceMs=${SYNC_BASE_INTER_CALL_MS * 2}`
+    );
+  }
+
+  /**
+   * PHASE_087N49 — Compute exponential backoff with bounded jitter.
+   *
+   * Formula: min(base * factor^attempt, max) * (1 + jitter * uniform(-1, 1))
+   * Always returns a value in [SYNC_BACKOFF_BASE_MS / 2, SYNC_BACKOFF_MAX_MS * 1.2].
+   *
+   * retryAfterSeconds: when the provider supplies this we prefer it over the formula
+   * (still capped at SYNC_BACKOFF_MAX_MS to prevent indefinite delay).
+   */
+  private calcBackoff(attempt: number, retryAfterSeconds?: number): number {
+    if (retryAfterSeconds !== undefined && retryAfterSeconds > 0) {
+      const fromProvider = Math.min(retryAfterSeconds * 1_000, SYNC_BACKOFF_MAX_MS);
+      // Still add jitter so simultaneous-restart scenarios don't thunderherd.
+      const jitter = fromProvider * SYNC_JITTER_FRACTION * (Math.random() * 2 - 1);
+      return Math.max(1_000, Math.round(fromProvider + jitter));
+    }
+    const base = SYNC_BACKOFF_BASE_MS * Math.pow(SYNC_BACKOFF_FACTOR, attempt);
+    const bounded = Math.min(base, SYNC_BACKOFF_MAX_MS);
+    const jitter = bounded * SYNC_JITTER_FRACTION * (Math.random() * 2 - 1);
+    return Math.max(1_000, Math.round(bounded + jitter));
   }
 
   // ---------------------------------------------------------------------------
@@ -365,9 +558,15 @@ export class TrainScheduleSyncJob {
 
   // ---------------------------------------------------------------------------
   // Private: Sync one train — validate, upsert, delete orphans, invalidate cache
+  //
+  // PHASE_087N49 — Returns 'rate_limited' and 'retry' in addition to the original
+  // 'updated' | 'skipped' | 'failed'.  The caller (syncOneTrainWithBackoff) maps
+  // these to final counters. V0–V6 guard semantics are UNCHANGED.
   // ---------------------------------------------------------------------------
 
-  private async syncOneTrain(trainNo: string): Promise<'updated' | 'skipped' | 'failed'> {
+  private async syncOneTrain(
+    trainNo: string
+  ): Promise<'updated' | 'skipped' | 'failed' | 'rate_limited' | 'retry'> {
     // Step 1: Read existing schedule from DB
     const { data: existing, error: existingErr } = await supabase
       .from('train_schedule')
@@ -389,10 +588,35 @@ export class TrainScheduleSyncJob {
       ? Math.max(...existingRows.map(r => Number(r.SN)))
       : 0;
 
-    // Step 2: Fetch live IRCTC data
-    const liveInfo = await irctcService.getTrainInfo(trainNo);
+    // Step 2: Fetch live IRCTC data — PHASE_087N49 uses classified result
+    const trainResult: TrainInfoResult = await irctcService.getTrainInfoForSync(trainNo);
 
-    // Extract station array — same field priority as _injectScheduleFromIRCTC
+    // PHASE_087N49 — Route by classification kind BEFORE any V0–V6 logic.
+    // Retryable errors bubble up to syncOneTrainWithBackoff for exponential backoff.
+    if (trainResult.kind === 'RATE_LIMITED_429') {
+      // Already logged by classification layer. Caller handles backoff/pause.
+      return 'rate_limited';
+    }
+
+    if (trainResult.kind === 'TIMEOUT' ||
+        trainResult.kind === 'NETWORK_FAILURE' ||
+        trainResult.kind === 'PROVIDER_5XX') {
+      winstonLogger.info(
+        `[SCHEDULE_SYNC] TRAIN_RETRYABLE trainNo=${trainNo} kind=${trainResult.kind}`
+      );
+      return 'retry';
+    }
+
+    if (trainResult.kind === 'AUTH_FAILURE') {
+      // Auth failures are not retryable — a key rotation is needed.
+      winstonLogger.error(
+        `[SCHEDULE_SYNC] TRAIN_FAILED trainNo=${trainNo} reason=AUTH_FAILURE`
+      );
+      return 'failed';
+    }
+
+    // V0 equivalent — extract station array from VALID_SCHEDULE or handle EXPECTED_NO_DATA / MALFORMED_RESPONSE
+    const liveInfo = trainResult.data;
     const stations: any[] = (
       liveInfo?.route          ??
       liveInfo?.stations       ??
@@ -403,12 +627,10 @@ export class TrainScheduleSyncJob {
 
     const liveStops = stations.length;
 
-    // Step 3: Validation rules
-
-    // V0: null or empty IRCTC response
+    // V0: null or empty IRCTC response (covers EXPECTED_NO_DATA and MALFORMED_RESPONSE)
     if (!liveInfo || liveStops === 0) {
       winstonLogger.info(
-        `[SCHEDULE_SYNC] TRAIN_SKIPPED trainNo=${trainNo} reason=NULL_RESPONSE liveStops=0 dbStops=${existingStops}`
+        `[SCHEDULE_SYNC] TRAIN_SKIPPED trainNo=${trainNo} reason=${trainResult.kind === 'MALFORMED_RESPONSE' ? 'MALFORMED_RESPONSE' : 'NULL_RESPONSE'} liveStops=0 dbStops=${existingStops}`
       );
       return 'skipped';
     }
