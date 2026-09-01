@@ -963,6 +963,8 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "bengaluru-goa": ["UBL", "MAO"],
   "bangalore-goa": ["UBL", "MAO"],
   "bengaluru-nagpur": ["SC", "NGP"],
+  "bengaluru-ratlam": ["SC", "NGP", "ET"],
+  "ratlam-bengaluru": ["ET", "NGP", "SC"],
   "bengaluru-guwahati": ["BZA", "KGP", "HWH", "NJP", "GHY"],
 
   // —— Hyderabad/Secunderabad corridors ——
