@@ -9,6 +9,7 @@
 
 import { winstonLogger } from '../../middleware/logger';
 import { supabase, isSupabaseConfigured } from '../../config/supabase';
+import { cacheService } from '../cacheService';
 import { newsSourceRegistry } from './newsSourceRegistry';
 import {
   IngestionStatus,
@@ -269,6 +270,9 @@ export class NewsAdminService {
         updatePayload.admin_reviewed_by = adminId;
         updatePayload.admin_reviewed_at = now;
       }
+      if (newStatus === 'PUBLISHED' && !existing.published_at) {
+        updatePayload.published_at = now;
+      }
       if (newStatus === 'REJECTED' && reason) {
         updatePayload.rejection_reason = reason;
       }
@@ -282,6 +286,7 @@ export class NewsAdminService {
       if (error) {
         if (error.code === 'PGRST204' || error.message?.includes('column')) {
           const safePayload: Record<string, any> = { status: newStatus, updated_at: now };
+          if (newStatus === 'PUBLISHED' && !existing.published_at) safePayload.published_at = now;
           if (newStatus === 'REJECTED' && reason) safePayload.rejection_reason = reason;
           const { error: fallbackErr } = await supabase
             .from('railway_news').update(safePayload).eq('id', id);
@@ -290,6 +295,11 @@ export class NewsAdminService {
           throw error;
         }
       }
+
+      // Invalidate memory cache so public /api/news refreshes instantly
+      try {
+        cacheService.del('railway_news_v2');
+      } catch {}
 
       // Map to audit action
       const actionMap: Partial<Record<IngestionStatus, NewsAuditAction>> = {
