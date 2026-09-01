@@ -67,21 +67,20 @@ export type NewsEditableFields = Partial<{
   affected_stations: string[];
 }>;
 
-/** Valid lifecycle transitions allowed by the CMS */
 export const VALID_NEWS_TRANSITIONS: Record<IngestionStatus, IngestionStatus[]> = {
   DISCOVERED:      ['FILTER_PASSED', 'ARCHIVED'],
   VALIDATED:       ['FILTER_PASSED', 'ARCHIVED'],
   FILTER_PASSED:   ['DEDUPLICATED', 'ARCHIVED'],
   DEDUPLICATED:    ['READY_FOR_AI', 'ARCHIVED'],
   READY_FOR_AI:    ['AI_DRAFTED', 'ARCHIVED'],
-  AI_DRAFTED:      ['REVIEW_REQUIRED', 'REJECTED', 'ARCHIVED'],
+  AI_DRAFTED:      ['REVIEW_REQUIRED', 'APPROVED', 'REJECTED', 'ARCHIVED'],
   REVIEW_REQUIRED: ['APPROVED', 'REJECTED', 'ARCHIVED'],
-  APPROVED:        ['SCHEDULED', 'PUBLISHED', 'ARCHIVED'],
+  APPROVED:        ['SCHEDULED', 'PUBLISHED', 'ARCHIVED', 'AI_DRAFTED'],
   SCHEDULED:       ['PUBLISHED', 'APPROVED', 'ARCHIVED'],
   PUBLISHED:       ['UNPUBLISHED', 'ARCHIVED'],
-  UNPUBLISHED:     ['PUBLISHED', 'ARCHIVED'],
-  REJECTED:        ['ARCHIVED'],
-  ARCHIVED:        [],
+  UNPUBLISHED:     ['PUBLISHED', 'ARCHIVED', 'APPROVED'],
+  REJECTED:        ['ARCHIVED', 'AI_DRAFTED', 'REVIEW_REQUIRED', 'APPROVED'],
+  ARCHIVED:        ['AI_DRAFTED', 'REVIEW_REQUIRED', 'APPROVED'],
 } as const;
 
 export type HealthStatus = 'HEALTHY' | 'DEGRADED' | 'FAILING' | 'CIRCUIT_BROKEN' | 'DISABLED';

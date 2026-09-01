@@ -116,4 +116,11 @@ router.post(
   asyncHandler(newsAdminController.archive.bind(newsAdminController))
 );
 
+router.post(
+  '/:id/restore',
+  adminLimiter as any,
+  requireAdmin as any,
+  asyncHandler(newsAdminController.restore.bind(newsAdminController))
+);
+
 export default router;

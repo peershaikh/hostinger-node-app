@@ -207,6 +207,23 @@ export class NewsAdminController {
     }
   }
 
+  // POST /api/admin/news/:id/restore — ARCHIVED/REJECTED → AI_DRAFTED
+  async restore(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const adminId = getAdminId(req);
+
+      const result = await newsAdminService.transitionStatus(id, 'AI_DRAFTED', adminId);
+      if (!result.success) {
+        return res.status(400).json({ success: false, error: result.error });
+      }
+      res.json({ success: true, message: 'Article restored to draft.' });
+    } catch (err: any) {
+      winstonLogger.error(`[NEWS_ADMIN_CTRL_RESTORE] ${err.message}`);
+      res.status(500).json({ success: false, error: 'Failed to restore article.' });
+    }
+  }
+
   // GET /api/admin/news/analytics — aggregate editorial KPIs, top content, SEO health, and opportunities
   async getAnalytics(req: Request, res: Response) {
     try {
