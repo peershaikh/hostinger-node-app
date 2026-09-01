@@ -15,7 +15,7 @@ export interface AiConfig {
 }
 
 export const aiConfig: AiConfig = {
-  defaultProvider: process.env.AI_DEFAULT_PROVIDER || 'GEMINI',
+  defaultProvider: process.env.AI_DEFAULT_PROVIDER || 'DEEPSEEK',
   gemini: {
     apiKey: process.env.GEMINI_API_KEY || '',
     model: process.env.GEMINI_MODEL || 'gemini-3.6-flash',
@@ -26,7 +26,7 @@ export const aiConfig: AiConfig = {
     // API key is set via Hostinger environment variable DEEPSEEK_API_KEY only.
     // Never hardcode or log this value.
     apiKey: process.env.DEEPSEEK_API_KEY || '',
-    model: process.env.DEEPSEEK_MODEL || 'deepseek-v4-pro',
+    model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
     baseUrl: 'https://api.deepseek.com',
     timeoutMs: 15000
   }

@@ -1039,6 +1039,60 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "madurai-delhi": ["SA", "SC", "NGP", "ET", "BPL", "NDLS"],
   "coimbatore-mumbai": ["SA", "SC", "NGP", "BSL"],
   "coimbatore-delhi": ["SA", "SC", "NGP", "ET", "BPL", "NDLS"],
+
+  // —— Pan-India High-Traffic Corridors (Phase 087N57) ——
+  // Western / Rajasthan
+  "mumbai-ajmer": ["ST", "BRC", "ADI", "ABR", "RTM", "COR"],
+  "ajmer-mumbai": ["COR", "RTM", "ABR", "ADI", "BRC", "ST"],
+  "mumbai-udaipur": ["ST", "BRC", "ADI", "RTM", "COR", "UDZ"],
+  "udaipur-mumbai": ["UDZ", "COR", "RTM", "ADI", "BRC", "ST"],
+  "mumbai-jodhpur": ["ST", "BRC", "ADI", "ABR", "MJ", "JU"],
+  "jodhpur-mumbai": ["JU", "MJ", "ABR", "ADI", "BRC", "ST"],
+  "mumbai-bikaner": ["ST", "BRC", "ADI", "ABR", "JU", "BKN"],
+  "bikaner-mumbai": ["BKN", "JU", "ABR", "ADI", "BRC", "ST"],
+  "mumbai-indore": ["ST", "BRC", "RTM", "UJN", "INDB"],
+  "indore-mumbai": ["INDB", "UJN", "RTM", "BRC", "ST"],
+  "pune-delhi": ["MMR", "BSL", "ET", "BPL", "GWL", "AGC", "NDLS"],
+  "delhi-pune": ["AGC", "GWL", "BPL", "ET", "BSL", "MMR", "PUNE"],
+  "pune-ahmedabad": ["BSR", "ST", "BRC", "ADI"],
+  "ahmedabad-pune": ["ADI", "BRC", "ST", "BSR", "PUNE"],
+  "pune-jaipur": ["BSR", "ST", "BRC", "RTM", "KOTA", "JP"],
+  "jaipur-pune": ["JP", "KOTA", "RTM", "BRC", "ST", "BSR", "PUNE"],
+  "ahmedabad-jaipur": ["PNU", "ABR", "FA", "MJ", "AII", "JP"],
+  "jaipur-ahmedabad": ["JP", "AII", "MJ", "FA", "ABR", "PNU", "ADI"],
+
+  // Northern / Himalayan / Pilgrimage
+  "delhi-ajmer": ["RE", "AWR", "JP", "KSG", "AII"],
+  "ajmer-delhi": ["AII", "KSG", "JP", "AWR", "RE", "NDLS"],
+  "delhi-jodhpur": ["RE", "AWR", "JP", "DNA", "MTD", "JU"],
+  "jodhpur-delhi": ["JU", "MTD", "DNA", "JP", "AWR", "RE", "NDLS"],
+  "delhi-udaipur": ["JP", "AII", "BHL", "COR", "UDZ"],
+  "udaipur-delhi": ["UDZ", "COR", "BHL", "AII", "JP", "NDLS"],
+  "delhi-jammu": ["UMB", "LDH", "JRC", "PTKC", "JAT"],
+  "jammu-delhi": ["JAT", "PTKC", "JRC", "LDH", "UMB", "NDLS"],
+  "delhi-dehradun": ["MTC", "SRE", "RK", "HW", "DDN"],
+  "dehradun-delhi": ["DDN", "HW", "RK", "SRE", "MTC", "NDLS"],
+  "delhi-chandigarh": ["PNP", "KKDE", "UMB", "CDG"],
+  "chandigarh-delhi": ["CDG", "UMB", "KKDE", "PNP", "NDLS"],
+  "delhi-haridwar": ["MTC", "SRE", "RK", "HW"],
+  "haridwar-delhi": ["HW", "RK", "SRE", "MTC", "NDLS"],
+
+  // Southern & Deccan
+  "bengaluru-pune": ["UBL", "BGM", "MRJ", "STR", "PUNE"],
+  "pune-bengaluru": ["PUNE", "STR", "MRJ", "BGM", "UBL", "SBC"],
+  "bengaluru-jaipur": ["SC", "NGP", "ET", "BPL", "RTM", "KOTA", "JP"],
+  "jaipur-bengaluru": ["JP", "KOTA", "RTM", "BPL", "ET", "NGP", "SC", "SBC"],
+  "chennai-goa": ["RU", "GTL", "UBL", "MAO"],
+  "goa-chennai": ["MAO", "UBL", "GTL", "RU", "MAS"],
+  "hyderabad-goa": ["WADI", "GTL", "UBL", "MAO"],
+  "goa-hyderabad": ["MAO", "UBL", "GTL", "WADI", "SC"],
+
+  // Eastern & Central
+  "kolkata-ajmer": ["ASN", "GAYA", "DDU", "PRYJ", "CNB", "AGC", "AII"],
+  "ajmer-kolkata": ["AII", "AGC", "CNB", "PRYJ", "DDU", "GAYA", "ASN", "HWH"],
+  "kolkata-ranchi": ["KGP", "TATA", "PRR", "MURI", "RNC"],
+  "ranchi-kolkata": ["RNC", "MURI", "PRR", "TATA", "KGP", "HWH"],
+  "patna-delhi": ["DDU", "PRYJ", "CNB", "NDLS"],
 };
 
 
@@ -1061,11 +1115,7 @@ const MAJOR_HUBS = [
   'BVI', 'SUR', 'GR', 'RC', 'GTL', 'RU', 'KPD', 'ED', 'CBE', 'PGT',
   'SRR', 'ERS', 'TVC', 'MDU', 'TPJ', 'VM', 'CGL',
   'RJT', 'BVC', 'MAO', 'RN', 'MAJN', 'KCG', 'SHM', 'MLDT', 'NJP', 'DBRG',
-  'BDC', 'BSAE', 'TBAE', 'KJU', 'DMLE', 'KMAE', 'JIT', 'BGAE', 'SOAE', 'BHLA',
-  'GPAE', 'ABKA', 'BGRA', 'DTAE', 'SMAE', 'NDAE', 'BFZ', 'PSAE', 'LKX', 'BQY',
-  'PTAE', 'AGAE', 'DHAE', 'KLNT', 'BTI', 'VSPR', 'MTFA', 'SRP', 'SHE', 'CGR',
-  'CNS', 'SHBA', 'SPRD', 'RGDA', 'STD', 'HNS', 'AUN', 'JKZ', 'BWK', 'BNW',
-  'MHU', 'CKD', 'JRL', 'SDRA', 'KSI', 'NLQ', 'JTS', 'KGBS', 'LLH', 'BEQ'
+  'ABR', 'COR', 'UJN', 'INDB', 'JU', 'BHL', 'UMB', 'LDH', 'JRC', 'PTKC', 'JAT', 'HW', 'DDN', 'MTC', 'SRE'
 ];
 
 // ——— Micro-hub blacklist — NEVER use these as split hubs ————————————————————

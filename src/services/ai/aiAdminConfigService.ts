@@ -85,14 +85,9 @@ const DEFAULT_AI_CONFIG: AiSystemConfig = {
     DEEPSEEK: {
       providerId: 'DEEPSEEK',
       displayName: 'DeepSeek',
-      // enabled=false: must pass admin test probe before enabling in production.
-      // Set to true via admin panel after DEEPSEEK_API_KEY is configured and
-      // POST /api/admin/ai/providers/test returns SUCCESS.
-      enabled: false,
-      // Default: v4-flash (cost-optimized for high-volume features).
-      // Switch to v4-pro per-feature via routing table for complex reasoning.
-      activeModel: 'deepseek-v4-flash',
-      allowedModels: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+      enabled: true,
+      activeModel: 'deepseek-chat',
+      allowedModels: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-flash', 'deepseek-v4-pro'],
       capabilities: {
         predictPnr: true,
         analyzeRoute: true,
@@ -141,18 +136,14 @@ const DEFAULT_AI_CONFIG: AiSystemConfig = {
     }
   },
   routing: {
-    // GEMINI primary for latency-sensitive, domain-critical features.
-    PNR_PREDICTION:             { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-3.6-flash'   },
-    ROUTE_ANALYSIS:             { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-3.6-flash'   },
-    ROUTE_ENRICHMENT:           { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-3.6-flash'   },
-    // GEMINI primary for schedule until DeepSeek IR domain accuracy validated.
-    SCHEDULE_GENERATION:        { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-3.6-flash'   },
-    AVAILABILITY_NORMALIZATION: { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-3.6-flash'   },
-    GENERIC_PROMPT:             { primaryProvider: 'GEMINI',   fallbackProvider: 'DEEPSEEK', model: 'gemini-3.6-flash'   },
-    // DEEPSEEK primary for high-volume, cost-optimized features (when enabled).
-    // Falls back to GEMINI while DEEPSEEK.enabled=false.
-    FEEDBACK_CATEGORIZATION:    { primaryProvider: 'DEEPSEEK', fallbackProvider: 'GEMINI',   model: 'deepseek-v4-flash'  },
-    NEWS_DISTILLATION:          { primaryProvider: 'DEEPSEEK', fallbackProvider: 'GEMINI',   model: 'deepseek-v4-flash'  }
+    PNR_PREDICTION:             { primaryProvider: 'DEEPSEEK', fallbackProvider: 'GEMINI', model: 'deepseek-chat' },
+    ROUTE_ANALYSIS:             { primaryProvider: 'DEEPSEEK', fallbackProvider: 'GEMINI', model: 'deepseek-chat' },
+    ROUTE_ENRICHMENT:           { primaryProvider: 'DEEPSEEK', fallbackProvider: 'GEMINI', model: 'deepseek-chat' },
+    SCHEDULE_GENERATION:        { primaryProvider: 'DEEPSEEK', fallbackProvider: 'GEMINI', model: 'deepseek-chat' },
+    AVAILABILITY_NORMALIZATION: { primaryProvider: 'DEEPSEEK', fallbackProvider: 'GEMINI', model: 'deepseek-chat' },
+    GENERIC_PROMPT:             { primaryProvider: 'DEEPSEEK', fallbackProvider: 'GEMINI', model: 'deepseek-chat' },
+    FEEDBACK_CATEGORIZATION:    { primaryProvider: 'DEEPSEEK', fallbackProvider: 'GEMINI', model: 'deepseek-chat' },
+    NEWS_DISTILLATION:          { primaryProvider: 'DEEPSEEK', fallbackProvider: 'GEMINI', model: 'deepseek-chat' }
   },
   modelRegistry: {
     // Gemini models
@@ -173,7 +164,25 @@ const DEFAULT_AI_CONFIG: AiSystemConfig = {
       pricing: { inputPerMillionUsd: 1.25, outputPerMillionUsd: 5.00 },
       defaultForReasoning: true
     },
-    // DeepSeek models — official off-peak cache-miss pricing (August 2026)
+    // DeepSeek official models
+    'deepseek-chat': {
+      modelId: 'deepseek-chat', displayName: 'DeepSeek Chat (V3)', providerId: 'DEEPSEEK',
+      pricing: {
+        inputPerMillionUsd: 0.14, outputPerMillionUsd: 0.28,
+        cacheHitInputPerMillionUsd: 0.014,
+        notes: 'DeepSeek official chat completions API ($0.14/$0.28 per M tokens).'
+      },
+      defaultForHighVolume: true
+    },
+    'deepseek-reasoner': {
+      modelId: 'deepseek-reasoner', displayName: 'DeepSeek Reasoner (R1)', providerId: 'DEEPSEEK',
+      pricing: {
+        inputPerMillionUsd: 0.55, outputPerMillionUsd: 2.19,
+        cacheHitInputPerMillionUsd: 0.14,
+        notes: 'DeepSeek official reasoning model.'
+      },
+      defaultForReasoning: true
+    },
     'deepseek-v4-flash': {
       modelId: 'deepseek-v4-flash', displayName: 'DeepSeek V4 Flash', providerId: 'DEEPSEEK',
       pricing: {
