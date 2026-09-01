@@ -57,7 +57,11 @@ export class TrainScheduleIntegrityService {
         .trim();
       const sn = Number(stop.SN ?? stop.sn ?? stop.serialNo ?? (i + 1));
 
-      if (!stnCode || stnCode.length < 2) {
+      // PHASE_087N54 — changed length < 2 → length < 1 to accept legitimate
+      // 1-character IRCTC station codes (e.g. R = Raipur Jn, G = Gondia Jn).
+      // Empty string is still rejected (!stnCode covers it, but the explicit
+      // length check is kept for clarity). Upper-case normalization unchanged.
+      if (!stnCode || stnCode.length < 1) {
         reasons.push('INVALID_STATION_CODE');
       }
 

@@ -317,7 +317,10 @@ export interface OriginDerivation {
  * that is allowed to touch the I/O boundary.
  */
 function isStructurallyValidStationCode(code: string): boolean {
-  return /^[A-Z0-9]{2,8}$/.test(code);
+  // PHASE_087N54 — changed {2,8} → {1,8} to accept legitimate 1-character IRCTC
+  // station codes such as R (Raipur Jn) and G (Gondia Jn). Upper bound (8) and
+  // alphanumeric restriction are preserved. Empty strings still fail (length === 0).
+  return /^[A-Z0-9]{1,8}$/.test(code);
 }
 
 /**
