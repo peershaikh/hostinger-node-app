@@ -205,65 +205,38 @@ class MetricsService {
         const today = now.toISOString().split('T')[0];
         const yesterday = new Date(now.getTime() - 86400000).toISOString().split('T')[0];
         try {
-            // 1. Get total counts (fast head-only queries with fallback)
-            let totalTrains = 0;
-            let totalSchedules = 0;
-            try {
-                const { count: tCount, error: tErr } = await supabase_1.supabase.from(this.TRAINS_TABLE).select('*', { count: 'exact', head: true });
-                if (!tErr && tCount !== null && tCount !== undefined) {
-                    totalTrains = tCount;
-                }
-                else {
-                    const { count: regCount } = await supabase_1.supabase.from('train_registry').select('*', { count: 'exact', head: true });
-                    totalTrains = regCount || 0;
-                }
-            }
-            catch (trainsErr) {
-                logger_1.winstonLogger.warn(`[METRICS] Trains count query fallback: ${trainsErr.message}`);
-            }
-            try {
-                const { count: sCount } = await supabase_1.supabase.from(this.SCHEDULES_TABLE).select('*', { count: 'exact', head: true });
-                totalSchedules = sCount || 0;
-            }
-            catch {
-                totalSchedules = 0;
-            }
+            // 1. Get total counts (fast head-only queries)
+            const [{ count: totalTrains }, { count: totalSchedules }] = await Promise.all([
+                supabase_1.supabase.from(this.TRAINS_TABLE).select('*', { count: 'exact', head: true }),
+                supabase_1.supabase.from(this.SCHEDULES_TABLE).select('*', { count: 'exact', head: true })
+            ]);
             // 2. Get today's and yesterday's learning stats (safe date key mapping)
-            let todayStatsResult = { data: [] };
-            let yesterdayStatsResult = { data: [] };
-            try {
-                const [tRes, yRes] = await Promise.all([
-                    supabase_1.supabase
-                        .from(this.LEARNING_STATS_TABLE)
-                        .select('stat_key, stat_value')
-                        .in('stat_key', [
-                        `new_trains_count:${today}`,
-                        `new_schedules_count:${today}`,
-                        `api_hits_saved:${today}`
-                    ]),
-                    supabase_1.supabase
-                        .from(this.LEARNING_STATS_TABLE)
-                        .select('stat_key, stat_value')
-                        .in('stat_key', [
-                        `new_trains_count:${yesterday}`,
-                        `new_schedules_count:${yesterday}`,
-                        `api_hits_saved:${yesterday}`
-                    ])
-                ]);
-                todayStatsResult = tRes || { data: [] };
-                yesterdayStatsResult = yRes || { data: [] };
-            }
-            catch (learningErr) {
-                logger_1.winstonLogger.warn(`[METRICS] Learning stats query fallback: ${learningErr.message}`);
-            }
+            const [todayStatsResult, yesterdayStatsResult] = await Promise.all([
+                supabase_1.supabase
+                    .from(this.LEARNING_STATS_TABLE)
+                    .select('stat_key, stat_value')
+                    .in('stat_key', [
+                    `new_trains_count:${today}`,
+                    `new_schedules_count:${today}`,
+                    `api_hits_saved:${today}`
+                ]),
+                supabase_1.supabase
+                    .from(this.LEARNING_STATS_TABLE)
+                    .select('stat_key, stat_value')
+                    .in('stat_key', [
+                    `new_trains_count:${yesterday}`,
+                    `new_schedules_count:${yesterday}`,
+                    `api_hits_saved:${yesterday}`
+                ])
+            ]);
             const todayMap = {};
             const yesterdayMap = {};
-            (todayStatsResult.data || []).forEach((row) => {
-                const metric = row.stat_key?.split(':')[0] || '';
+            (todayStatsResult.data || []).forEach(row => {
+                const metric = row.stat_key.split(':')[0];
                 todayMap[metric] = Number(row.stat_value || 0);
             });
-            (yesterdayStatsResult.data || []).forEach((row) => {
-                const metric = row.stat_key?.split(':')[0] || '';
+            (yesterdayStatsResult.data || []).forEach(row => {
+                const metric = row.stat_key.split(':')[0];
                 yesterdayMap[metric] = Number(row.stat_value || 0);
             });
             const tTrainToday = todayMap['new_trains_count'] || 0;

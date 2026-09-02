@@ -2755,20 +2755,30 @@ class SplitJourneyEngine {
                     const searchResults = await Promise.all(sCodes.map(async (sc, index) => {
                         try {
                             this.apiCallCount++;
-                            // —— Fix D: Prioritize primary terminal (index === 0) for live search ——
-                            const forceDb = index > 0;
-                            return { sc, raw: await this.searchLeg(sc, hCode, date, forceDb) };
+                            // PHASE_087N98: primary terminal (index 0) always LIVE;
+                            // second terminal (index 1) LIVE unless micro/suburban;
+                            // index >= 2 always DB-only.
+                            const isMicro = SplitJourneyEngine.N98_MICRO_TERMINALS.has(sc);
+                            const forceDb = isMicro ? true : index > 1;
+                            return { sc, raw: await this.searchLeg(sc, hCode, date, forceDb), forceDb };
                         }
                         catch {
-                            return { sc, raw: [] };
+                            return { sc, raw: [], forceDb: true };
                         }
                     }));
-                    for (const { sc, raw } of searchResults) {
-                        if (Array.isArray(raw)) {
+                    for (const { sc, raw, forceDb } of searchResults) {
+                        if (Array.isArray(raw) && raw.length > 0) {
                             raw.forEach((t) => {
                                 const tNo = t.train_number || t.trainNo || t.number || Math.random();
-                                if (!trainMap.has(String(tNo)))
-                                    trainMap.set(String(tNo), { ...t, _fromCode: t.fromStationCode || t.from_station_code || t.from_stn_code || sc });
+                                const trainKey = String(tNo);
+                                // Dedupe: prefer LIVE result over DB result
+                                if (!trainMap.has(trainKey) || !forceDb) {
+                                    trainMap.set(trainKey, {
+                                        ...t,
+                                        _fromCode: t.fromStationCode || t.from_station_code || t.from_stn_code || sc,
+                                        _sourceLive: !forceDb
+                                    });
+                                }
                             });
                         }
                     }
@@ -5797,5 +5807,12 @@ exports.SplitJourneyEngine = SplitJourneyEngine;
 SplitJourneyEngine.MAJOR_JUNCTION_BYPASS = new Set([
     'PUNE', // Mumbai–Hyderabad/Pune corridor (verified: train_schedule rows, 117km from CSMT)
     'SUR', // Solapur — Mumbai–Hyderabad corridor (verified: train_schedule rows, 188km from CSMT)
+]);
+// ─────────────────────────────────────────────────────────────────────────
+// PHASE_087N98: PAN-INDIA MULTI-TERMINAL SELECTION
+// ─────────────────────────────────────────────────────────────────────────
+// PHASE_087N98: Micro/suburban terminal codes that must stay DB-only even as sister terminals
+SplitJourneyEngine.N98_MICRO_TERMINALS = new Set([
+    'PNVL', 'BIRD', 'KJT', 'SNRD', 'TNA', 'DR', 'BVI', 'KYN', 'NRL'
 ]);
 exports.splitJourneyEngine = new SplitJourneyEngine();
