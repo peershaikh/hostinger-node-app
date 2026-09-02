@@ -5570,8 +5570,43 @@ export class SplitJourneyEngine {
           if (forwardOnly.length > 0) {
             winstonLogger.info(`[TRAIN_VERIFIED_LIVE] ${from}->${to} on ${date}: ${forwardOnly.length} trains via live API`);
             dbService.saveSearchToDB({ source: from, destination: to, date, trains: forwardOnly, api_used: "split_live" }).catch(() => {});
-            this.legSearchCache.set(cacheKey, { data: forwardOnly, timestamp: Date.now() });
-            return forwardOnly;
+
+            // ── PHASE_087N67: LIVE + DB MERGE ─────────────────────────────────
+            // Live has results but DB may contain hydrated trains (e.g. 12627, 20497)
+            // that IRCTC did not return. Merge both sets; live copy wins on conflict.
+            let merged = forwardOnly;
+            try {
+              const dbResult = await dbService.searchTrains(from, to, date);
+              if (Array.isArray(dbResult) && dbResult.length > 0) {
+                const dbVerified = dbResult.filter(isBasicallyValid).map((t: any) => ({
+                  ...t,
+                  travelDate: date
+                }));
+                const dbForwardOnly = await this.filterProvenReverseTrains(dbVerified, from, to);
+                if (dbForwardOnly.length > 0) {
+                  // Build a set of canonical train numbers already present in live results
+                  const getCanonicalNo = (t: any): string =>
+                    String(t.train_number || t.trainNo || t.train_no || t.trainNumber || t.number || '').trim();
+                  const liveNos = new Set(forwardOnly.map(getCanonicalNo).filter(Boolean));
+                  // Append only DB-only trains (those not present in live results)
+                  const dbOnly = dbForwardOnly.filter(t => {
+                    const n = getCanonicalNo(t);
+                    return n && !liveNos.has(n);
+                  });
+                  if (dbOnly.length > 0) {
+                    winstonLogger.info(`[SPLIT_SEARCH_DB_SUPPLEMENT] ${from}->${to}: appending ${dbOnly.length} DB-only train(s) to ${forwardOnly.length} live train(s)`);
+                    merged = [...forwardOnly, ...dbOnly];
+                  }
+                }
+              }
+            } catch (dbErr: any) {
+              // DB supplement failure must not suppress live results
+              winstonLogger.warn(`[SPLIT_SEARCH_DB_SUPPLEMENT] DB query failed for ${from}->${to}: ${dbErr?.message} — using live-only result`);
+            }
+            // ── END MERGE ─────────────────────────────────────────────────────
+
+            this.legSearchCache.set(cacheKey, { data: merged, timestamp: Date.now() });
+            return merged;
           }
           winstonLogger.warn(`[TRAIN_REJECTED_LIVE_LOOKUP] ${from}->${to} - all ${apiResult.length} live trains failed basic validity`);
         } else if (apiResult === null) {
