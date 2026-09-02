@@ -3501,8 +3501,9 @@ class SplitJourneyEngine {
                 // SAFE VALIDATION: Only reject if API explicitly returns non-empty results
                 // AND the train is definitively not in them (minimum 2 results to be confident)
                 if (l1Live !== null && Array.isArray(l1Live) && l1Live.length >= 2) {
-                    const numStr = String(c.leg1.trainNo || c.leg1.number || '');
-                    if (!l1Live.some((t) => String(t.trainNo || t.train_number || t.number) === numStr)) {
+                    const numStr = String(c.leg1.trainNo || c.leg1.train_no || c.leg1.train_number || c.leg1.number || '');
+                    // PHASE_087N118: accept train_no in addition to trainNo, train_number, number
+                    if (!l1Live.some((t) => String(t.trainNo || t.train_no || t.train_number || t.number || '') === numStr)) {
                         logger_1.winstonLogger.debug(`[TRAIN_REJECTED_DATE_MISMATCH] Leg1 ${numStr} not found in live schedule for ${leg1Date}`);
                         return null;
                     }
@@ -3512,8 +3513,8 @@ class SplitJourneyEngine {
                     logger_1.winstonLogger.debug(`[TRAIN_ALLOWED_METADATA_MISSING] Leg1 ${c.leg1.trainNo} — live API unavailable, allowing`);
                 }
                 if (l2Live !== null && Array.isArray(l2Live) && l2Live.length >= 2) {
-                    const numStr = String(c.leg2.trainNo || c.leg2.number || '');
-                    if (!l2Live.some((t) => String(t.trainNo || t.train_number || t.number) === numStr)) {
+                    const numStr = String(c.leg2.trainNo || c.leg2.train_no || c.leg2.train_number || c.leg2.number || '');
+                    if (!l2Live.some((t) => String(t.trainNo || t.train_no || t.train_number || t.number || '') === numStr)) {
                         logger_1.winstonLogger.debug(`[TRAIN_REJECTED_DATE_MISMATCH] Leg2 ${numStr} not found in live schedule for ${leg2Date}`);
                         return null;
                     }
