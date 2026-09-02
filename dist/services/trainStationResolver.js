@@ -192,10 +192,35 @@ async function loadTrainScheduleContext(trainNo, fromIn, toIn, runningDaysHint) 
         hasFrom,
         hasTo,
     });
+    // PHASE_087I — For permanent (non-seasonal) trains with verified DB schedule rows,
+    // treat "Daily" in the trains table as authoritative running-days evidence.
+    //
+    // Rationale: the fail-closed gate (trainOperatesOnDate returning UNKNOWN for
+    // non-authoritative "Daily") was designed to block seasonal/special trains (09xxx)
+    // from masquerading as daily services when getTrainInfo is unavailable. For
+    // well-known, permanently-running trains (12701, 17031, 17013, etc.) that have
+    // verified schedule rows in train_schedule, "Daily" is a correct description
+    // and live authority is unavailable only due to IRCTC timeout/rate-limit, not
+    // because the data is fabricated.
+    //
+    // Guards:
+    //   1. !isSpecialTrainNumber(tNo) — seasonal/charter trains (09xxx) are EXCLUDED.
+    //   2. dbStops.length > 0 — train must have verified schedule data before we trust run-days.
+    //   3. !runningDaysFromHint — live hint already applied; don’t double-apply.
+    //   4. runningDaysIsDailyPlaceholder — only for the specific "Daily" pattern.
+    const isDailyAuthoritativeFromDb = !runningDaysFromHint &&
+        !(0, dayUtils_1.isSpecialTrainNumber)(tNo) &&
+        runningDaysIsDailyPlaceholder &&
+        dbStops.length > 0;
+    if (isDailyAuthoritativeFromDb) {
+        runningDaysAuthoritative = true;
+        logger_1.winstonLogger.debug(`[STATION_RESOLVER] RD_DB_AUTH for ${tNo}: non-special train with ${dbStops.length} DB schedule stops — treating "Daily" as authoritative (PHASE_087I)`);
+    }
     // Only call getTrainInfo when:
     // - physical stop validation needs a live schedule (scheduleFetchNeeded), OR
     // - service-date truth still needs resolving AND we have no pre-fetched hint
-    const serviceWindowNeeded = needsServiceWindow && !runningDaysFromHint;
+    //   AND the DB-authoritative path did not already resolve it
+    const serviceWindowNeeded = needsServiceWindow && !runningDaysFromHint && !isDailyAuthoritativeFromDb;
     if (scheduleFetchNeeded || serviceWindowNeeded) {
         try {
             const info = await irctcService_1.irctcService.getTrainInfo(tNo);

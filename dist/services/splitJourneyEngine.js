@@ -731,6 +731,7 @@ const DETERMINISTIC_CORRIDORS = {
     "mumbai-madurai": ["SUR", "SC", "SA", "MDU"],
     "mumbai-coimbatore": ["SUR", "SC", "SA", "CBE"],
     "mumbai-ahmedabad": ["BRC", "ST", "ADI"],
+    "ahmedabad-mumbai": ["ADI", "ST", "BRC"],
     "mumbai-surat": ["ST", "BRC"],
     "mumbai-nagpur": ["BSL", "NGP"],
     "mumbai-bhopal": ["BSL", "ET", "BPL"],
@@ -895,8 +896,8 @@ const DETERMINISTIC_CORRIDORS = {
     "coimbatore-delhi": ["SA", "SC", "NGP", "ET", "BPL", "NDLS"],
     // —— Pan-India High-Traffic Corridors (Phase 087N57) ——
     // Western / Rajasthan
-    "mumbai-ajmer": ["ST", "BRC", "ADI", "ABR", "RTM", "COR"],
-    "ajmer-mumbai": ["COR", "RTM", "ABR", "ADI", "BRC", "ST"],
+    "mumbai-ajmer": ["ADI", "BRC", "ST", "ABR", "MJ"],
+    "ajmer-mumbai": ["ADI", "BRC", "ST", "ABR", "MJ"],
     "mumbai-udaipur": ["ST", "BRC", "ADI", "RTM", "COR", "UDZ"],
     "udaipur-mumbai": ["UDZ", "COR", "RTM", "ADI", "BRC", "ST"],
     "mumbai-jodhpur": ["ST", "BRC", "ADI", "ABR", "MJ", "JU"],

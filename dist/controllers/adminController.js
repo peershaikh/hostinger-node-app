@@ -196,10 +196,13 @@ class AdminController {
             // 4. Cost tracking from transaction ledger
             let dailyCost = 0;
             try {
-                const { data: ledgerCost } = await supabase_1.supabase
+                const { data: ledgerCost, error: ledgerError } = await supabase_1.supabase
                     .from('api_provider_transaction_ledger')
                     .select('applied_rate')
                     .gte('timestamp', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+                if (ledgerError) {
+                    throw new Error(`Ledger read failed: ${ledgerError.message}`);
+                }
                 if (ledgerCost) {
                     dailyCost = ledgerCost.reduce((sum, row) => sum + Number(row.applied_rate || 0), 0);
                 }

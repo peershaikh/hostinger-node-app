@@ -7,15 +7,19 @@ class NewsFactValidator {
     static validate(source, output) {
         const rawSource = (source.title + ' ' + source.summary).toLowerCase();
         const unsupportedEntities = [];
+        // Trusted source trains: extracted by ingestion engine from source text before AI.
+        // These are pre-verified — do NOT reject them as hallucinations.
+        const trustedTrains = new Set((source.candidateTrains || []).map(t => String(t).trim()));
         if (Array.isArray(output.affected_trains)) {
             for (const t of output.affected_trains) {
                 const trainStr = String(t).trim();
-                if (trainStr && !rawSource.includes(trainStr.toLowerCase())) {
+                if (trainStr && !trustedTrains.has(trainStr) && !rawSource.includes(trainStr.toLowerCase())) {
                     unsupportedEntities.push(`Train ${trainStr}`);
                 }
             }
         }
         if (Array.isArray(output.affected_stations)) {
+            // candidateStations: trusted codes extracted by ingestion engine.
             const candidates = new Set((source.candidateStations || []).map(s => s.toLowerCase().trim()));
             for (const s of output.affected_stations) {
                 const stationStr = String(s).trim().toLowerCase();
@@ -51,14 +55,46 @@ class NewsFactValidator {
     }
 }
 exports.NewsFactValidator = NewsFactValidator;
-const DELAY_NORMAL_MS = 200; // Courtesy pause between successful Gemini calls
-const DELAY_BACKOFF_MS = 4000; // Pause after HTTP 429 to let quota refill
+const DELAY_NORMAL_MS = 2000; // Inter-article pause to stay comfortably below 15 RPM
+const GLOBAL_COOLDOWN_MS = 60000; // 60s cooldown after HTTP 429 (quota signal)
+const TRANSIENT_COOLDOWN_MS = 30000; // 30s cooldown after TIMEOUT or PROVIDER_UNAVAILABLE
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 class NewsDistillationService {
     constructor() {
         this.processedHashes = new Set();
+        this.lastRateLimitTimestamp = 0; // set on HTTP 429 — 60s GLOBAL_COOLDOWN_MS
+        this.lastTransientFailTimestamp = 0; // set on TIMEOUT or PROVIDER_UNAVAILABLE — 30s TRANSIENT_COOLDOWN_MS
+    }
+    /**
+     * Records a provider failure and selects the appropriate cooldown duration.
+     * - RATE_LIMITED (429): GLOBAL_COOLDOWN_MS (60s) — quota signal
+     * - TIMEOUT / PROVIDER_UNAVAILABLE: TRANSIENT_COOLDOWN_MS (30s) — transient signal
+     */
+    recordRateLimit(errorCode = 'RATE_LIMITED') {
+        if (errorCode === 'RATE_LIMITED') {
+            this.lastRateLimitTimestamp = Date.now();
+        }
+        else {
+            this.lastTransientFailTimestamp = Date.now();
+        }
+    }
+    isCooldownActive() {
+        const now = Date.now();
+        const rateLimitElapsed = now - this.lastRateLimitTimestamp;
+        const transientElapsed = now - this.lastTransientFailTimestamp;
+        if (rateLimitElapsed < GLOBAL_COOLDOWN_MS) {
+            return { active: true, remainingMs: GLOBAL_COOLDOWN_MS - rateLimitElapsed };
+        }
+        if (transientElapsed < TRANSIENT_COOLDOWN_MS) {
+            return { active: true, remainingMs: TRANSIENT_COOLDOWN_MS - transientElapsed };
+        }
+        return { active: false, remainingMs: 0 };
+    }
+    resetCooldownForTesting() {
+        this.lastRateLimitTimestamp = 0;
+        this.lastTransientFailTimestamp = 0;
     }
     generateDeterministicDraft(article) {
         const title = article.title;
@@ -118,19 +154,24 @@ class NewsDistillationService {
         };
         let aiOutput = null;
         let wasRateLimited = false;
+        let triggerReason;
         try {
             const res = await aiProviderResolver_1.aiProviderResolver.executeWithFallback('distillNewsArticle', provider => {
                 if (typeof provider.distillNewsArticle === 'function') {
                     return provider.distillNewsArticle(input);
                 }
                 return Promise.resolve(null);
-            });
+            }, null, 'NEWS_DISTILLATION');
             if (res.result) {
                 aiOutput = res.result;
             }
-            // Structured check via typed AiError.code — no string matching
-            if (!aiOutput && res.error?.code === 'RATE_LIMITED') {
+            // Structured check via typed AiError.code — no string matching.
+            // Circuit opens on 429 (quota), TIMEOUT (network/load), or PROVIDER_UNAVAILABLE (5xx).
+            const CIRCUIT_TRIGGER_CODES = new Set(['RATE_LIMITED', 'TIMEOUT', 'PROVIDER_UNAVAILABLE']);
+            if (!aiOutput && res.error?.code && CIRCUIT_TRIGGER_CODES.has(res.error.code)) {
                 wasRateLimited = true;
+                triggerReason = res.error.code;
+                this.recordRateLimit(res.error.code);
             }
         }
         catch (err) {
@@ -153,6 +194,7 @@ class NewsDistillationService {
                     updated_at: now,
                 },
                 wasRateLimited,
+                triggerReason,
             };
         }
         return {
@@ -175,20 +217,17 @@ class NewsDistillationService {
                 updated_at: now,
             },
             wasRateLimited,
+            triggerReason,
         };
     }
     /**
      * Distills multiple articles in batch with rate-limit and cost protection.
      *
+     * - Global Cooldown: If a 429 occurred within the last 60s, bypass Gemini entirely.
+     * - Batch Circuit Breaker: If any article hits 429, immediately switch all remaining
+     *   articles in the batch to deterministic fallback (0 additional Gemini calls).
+     * - Normal spacing: 2000ms delay between successful Gemini calls (< 10 RPM).
      * - GEMINI_NEWS_BATCH_MAX (default 10): only first N articles call Gemini.
-     *   Remaining articles get deterministic fallback immediately.
-     * - After a successful Gemini call: 200ms courtesy delay.
-     * - After RATE_LIMITED (HTTP 429): 4000ms backoff before next article.
-     * - No recursive retry. No re-queue. No amplification.
-     *
-     * Env:
-     *   GEMINI_NEWS_BATCH_MAX   — max Gemini calls per cycle (default: 10)
-     *   GEMINI_NEWS_CONCURRENCY — reserved; current concurrency is always 1
      */
     async batchDistill(articles) {
         const batchMax = Math.max(1, parseInt(process.env.GEMINI_NEWS_BATCH_MAX ?? '10', 10));
@@ -197,18 +236,67 @@ class NewsDistillationService {
         if (fallbackSlice.length > 0) {
             logger_1.winstonLogger.info(`[DISTILL_BATCH_LIMIT] requested=${articles.length} processed=${aiSlice.length} fallback=${fallbackSlice.length}`);
         }
+        const cooldown = this.isCooldownActive();
+        let circuitOpen = cooldown.active;
+        if (circuitOpen) {
+            logger_1.winstonLogger.warn(`[GEMINI_COOLDOWN_ACTIVE] remaining_ms=${cooldown.remainingMs}. Routing entire batch (${articles.length} articles) directly to deterministic fallback.`);
+        }
         const results = [];
         for (let i = 0; i < aiSlice.length; i++) {
-            const { article, wasRateLimited } = await this.distillArticle(aiSlice[i]);
+            if (circuitOpen) {
+                // Direct deterministic fallback without calling Gemini
+                const article = aiSlice[i];
+                const aiOutput = this.generateDeterministicDraft(article);
+                const validation = NewsFactValidator.validate({
+                    title: article.title,
+                    summary: article.summary,
+                    sourceName: article.source_name,
+                    sourceUrl: article.source_url,
+                    sourceTier: article.source_tier,
+                    publishedAt: article.published_at,
+                    category: article.category,
+                    candidateTrains: article.affected_trains,
+                    candidateStations: article.affected_stations,
+                }, aiOutput);
+                this.processedHashes.add(article.content_hash);
+                const now = new Date().toISOString();
+                results.push(validation.isValid
+                    ? {
+                        ...article,
+                        title: aiOutput.title || article.title,
+                        summary: aiOutput.summary || article.summary,
+                        key_takeaways: [
+                            aiOutput.key_takeaways.what_happened,
+                            aiOutput.key_takeaways.who_is_affected,
+                            aiOutput.key_takeaways.what_passengers_should_do,
+                        ].filter(Boolean),
+                        affected_trains: aiOutput.affected_trains.length > 0 ? aiOutput.affected_trains : article.affected_trains,
+                        affected_stations: aiOutput.affected_stations.length > 0 ? aiOutput.affected_stations : article.affected_stations,
+                        seo_title: aiOutput.seo_title,
+                        meta_description: aiOutput.meta_description,
+                        slug: aiOutput.slug || article.slug,
+                        status: 'AI_DRAFTED',
+                        ingestion_status: 'INGESTION_COMPLETE',
+                        updated_at: now,
+                    }
+                    : {
+                        ...article,
+                        status: 'REJECTED',
+                        ingestion_status: 'REJECTED',
+                        relevance_score: 0,
+                        updated_at: now,
+                    });
+                continue;
+            }
+            const { article, wasRateLimited, triggerReason } = await this.distillArticle(aiSlice[i]);
             results.push(article);
-            if (i < aiSlice.length - 1) {
-                if (wasRateLimited) {
-                    logger_1.winstonLogger.warn(`[RATE_LIMIT_BACKOFF] feature=distillNewsArticle delay_ms=${DELAY_BACKOFF_MS}`);
-                    await sleep(DELAY_BACKOFF_MS);
-                }
-                else {
-                    await sleep(DELAY_NORMAL_MS);
-                }
+            if (wasRateLimited) {
+                circuitOpen = true;
+                const reason = triggerReason || 'RATE_LIMITED';
+                logger_1.winstonLogger.warn(`[BATCH_CIRCUIT_OPEN] Gemini ${reason} encountered at article ${i + 1}/${aiSlice.length}. Switching remaining ${aiSlice.length - (i + 1)} articles in this batch to deterministic fallback.`);
+            }
+            else if (i < aiSlice.length - 1) {
+                await sleep(DELAY_NORMAL_MS);
             }
         }
         const now = new Date().toISOString();

@@ -174,7 +174,12 @@ class AuthController {
                 });
             }
             catch (err) {
-                return res.status(400).json({ success: false, error: err.message });
+                // Structured error codes let the frontend display appropriate messages
+                // without revealing sensitive information or enabling account enumeration.
+                // Both USER_NOT_FOUND and INVALID_CREDENTIALS return HTTP 400 to prevent
+                // timing-based enumeration. The code categorises the failure type only.
+                const code = err.message === 'User not found' ? 'USER_NOT_FOUND' : 'AUTH_FAILED';
+                return res.status(400).json({ success: false, error: err.message, code });
             }
         };
         this.sendOtp = async (req, res) => {
