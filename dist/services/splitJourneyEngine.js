@@ -825,6 +825,8 @@ const DETERMINISTIC_CORRIDORS = {
     "bengaluru-goa": ["UBL", "MAO"],
     "bangalore-goa": ["UBL", "MAO"],
     "bengaluru-nagpur": ["SC", "NGP"],
+    "bengaluru-ratlam": ["SC", "NGP", "ET"],
+    "ratlam-bengaluru": ["ET", "NGP", "SC"],
     "bengaluru-guwahati": ["BZA", "KGP", "HWH", "NJP", "GHY"],
     // —— Hyderabad/Secunderabad corridors ——
     "hyderabad-mumbai": ["PUNE", "SUR", "SC"],
@@ -891,6 +893,56 @@ const DETERMINISTIC_CORRIDORS = {
     "madurai-delhi": ["SA", "SC", "NGP", "ET", "BPL", "NDLS"],
     "coimbatore-mumbai": ["SA", "SC", "NGP", "BSL"],
     "coimbatore-delhi": ["SA", "SC", "NGP", "ET", "BPL", "NDLS"],
+    // —— Pan-India High-Traffic Corridors (Phase 087N57) ——
+    // Western / Rajasthan
+    "mumbai-ajmer": ["ST", "BRC", "ADI", "ABR", "RTM", "COR"],
+    "ajmer-mumbai": ["COR", "RTM", "ABR", "ADI", "BRC", "ST"],
+    "mumbai-udaipur": ["ST", "BRC", "ADI", "RTM", "COR", "UDZ"],
+    "udaipur-mumbai": ["UDZ", "COR", "RTM", "ADI", "BRC", "ST"],
+    "mumbai-jodhpur": ["ST", "BRC", "ADI", "ABR", "MJ", "JU"],
+    "jodhpur-mumbai": ["JU", "MJ", "ABR", "ADI", "BRC", "ST"],
+    "mumbai-bikaner": ["ST", "BRC", "ADI", "ABR", "JU", "BKN"],
+    "bikaner-mumbai": ["BKN", "JU", "ABR", "ADI", "BRC", "ST"],
+    "mumbai-indore": ["ST", "BRC", "RTM", "UJN", "INDB"],
+    "indore-mumbai": ["INDB", "UJN", "RTM", "BRC", "ST"],
+    "pune-delhi": ["MMR", "BSL", "ET", "BPL", "GWL", "AGC", "NDLS"],
+    "delhi-pune": ["AGC", "GWL", "BPL", "ET", "BSL", "MMR", "PUNE"],
+    "pune-ahmedabad": ["BSR", "ST", "BRC", "ADI"],
+    "ahmedabad-pune": ["ADI", "BRC", "ST", "BSR", "PUNE"],
+    "pune-jaipur": ["BSR", "ST", "BRC", "RTM", "KOTA", "JP"],
+    "jaipur-pune": ["JP", "KOTA", "RTM", "BRC", "ST", "BSR", "PUNE"],
+    "ahmedabad-jaipur": ["PNU", "ABR", "FA", "MJ", "AII", "JP"],
+    "jaipur-ahmedabad": ["JP", "AII", "MJ", "FA", "ABR", "PNU", "ADI"],
+    // Northern / Himalayan / Pilgrimage
+    "delhi-ajmer": ["RE", "AWR", "JP", "KSG", "AII"],
+    "ajmer-delhi": ["AII", "KSG", "JP", "AWR", "RE", "NDLS"],
+    "delhi-jodhpur": ["RE", "AWR", "JP", "DNA", "MTD", "JU"],
+    "jodhpur-delhi": ["JU", "MTD", "DNA", "JP", "AWR", "RE", "NDLS"],
+    "delhi-udaipur": ["JP", "AII", "BHL", "COR", "UDZ"],
+    "udaipur-delhi": ["UDZ", "COR", "BHL", "AII", "JP", "NDLS"],
+    "delhi-jammu": ["UMB", "LDH", "JRC", "PTKC", "JAT"],
+    "jammu-delhi": ["JAT", "PTKC", "JRC", "LDH", "UMB", "NDLS"],
+    "delhi-dehradun": ["MTC", "SRE", "RK", "HW", "DDN"],
+    "dehradun-delhi": ["DDN", "HW", "RK", "SRE", "MTC", "NDLS"],
+    "delhi-chandigarh": ["PNP", "KKDE", "UMB", "CDG"],
+    "chandigarh-delhi": ["CDG", "UMB", "KKDE", "PNP", "NDLS"],
+    "delhi-haridwar": ["MTC", "SRE", "RK", "HW"],
+    "haridwar-delhi": ["HW", "RK", "SRE", "MTC", "NDLS"],
+    // Southern & Deccan
+    "bengaluru-pune": ["UBL", "BGM", "MRJ", "STR", "PUNE"],
+    "pune-bengaluru": ["PUNE", "STR", "MRJ", "BGM", "UBL", "SBC"],
+    "bengaluru-jaipur": ["SC", "NGP", "ET", "BPL", "RTM", "KOTA", "JP"],
+    "jaipur-bengaluru": ["JP", "KOTA", "RTM", "BPL", "ET", "NGP", "SC", "SBC"],
+    "chennai-goa": ["RU", "GTL", "UBL", "MAO"],
+    "goa-chennai": ["MAO", "UBL", "GTL", "RU", "MAS"],
+    "hyderabad-goa": ["WADI", "GTL", "UBL", "MAO"],
+    "goa-hyderabad": ["MAO", "UBL", "GTL", "WADI", "SC"],
+    // Eastern & Central
+    "kolkata-ajmer": ["ASN", "GAYA", "DDU", "PRYJ", "CNB", "AGC", "AII"],
+    "ajmer-kolkata": ["AII", "AGC", "CNB", "PRYJ", "DDU", "GAYA", "ASN", "HWH"],
+    "kolkata-ranchi": ["KGP", "TATA", "PRR", "MURI", "RNC"],
+    "ranchi-kolkata": ["RNC", "MURI", "PRR", "TATA", "KGP", "HWH"],
+    "patna-delhi": ["DDU", "PRYJ", "CNB", "NDLS"],
 };
 // ——— Hub Priority Tiers —————————————————————————————————————————————————————
 const A_TIER_HUBS = [
@@ -909,11 +961,7 @@ const MAJOR_HUBS = [
     'BVI', 'SUR', 'GR', 'RC', 'GTL', 'RU', 'KPD', 'ED', 'CBE', 'PGT',
     'SRR', 'ERS', 'TVC', 'MDU', 'TPJ', 'VM', 'CGL',
     'RJT', 'BVC', 'MAO', 'RN', 'MAJN', 'KCG', 'SHM', 'MLDT', 'NJP', 'DBRG',
-    'BDC', 'BSAE', 'TBAE', 'KJU', 'DMLE', 'KMAE', 'JIT', 'BGAE', 'SOAE', 'BHLA',
-    'GPAE', 'ABKA', 'BGRA', 'DTAE', 'SMAE', 'NDAE', 'BFZ', 'PSAE', 'LKX', 'BQY',
-    'PTAE', 'AGAE', 'DHAE', 'KLNT', 'BTI', 'VSPR', 'MTFA', 'SRP', 'SHE', 'CGR',
-    'CNS', 'SHBA', 'SPRD', 'RGDA', 'STD', 'HNS', 'AUN', 'JKZ', 'BWK', 'BNW',
-    'MHU', 'CKD', 'JRL', 'SDRA', 'KSI', 'NLQ', 'JTS', 'KGBS', 'LLH', 'BEQ'
+    'ABR', 'COR', 'UJN', 'INDB', 'JU', 'BHL', 'UMB', 'LDH', 'JRC', 'PTKC', 'JAT', 'HW', 'DDN', 'MTC', 'SRE'
 ];
 // ——— Micro-hub blacklist — NEVER use these as split hubs ————————————————————
 // These are suburban, local, or too-close stations that produce useless splits.
@@ -1839,7 +1887,8 @@ class SplitJourneyEngine {
             logger_1.winstonLogger.info(`[SPLIT_ENGINE] Rejected: Source and destination are in the same city (${fromCity})`);
             return { direct: directTrainsRef || await this.getDirectTrainsForCity(sCodes, dCodes, date), split: [], split_recommended: false, message: 'Source and destination are in the same city' };
         }
-        let directTrains = directTrainsRef || await this.getDirectTrainsForCity(sCodes, dCodes, date);
+        const _directTrainsRaw = directTrainsRef ?? await this.getDirectTrainsForCity(sCodes, dCodes, date);
+        let directTrains = Array.isArray(_directTrainsRaw) ? _directTrainsRaw : [];
         // M2: drop directs proven reverse on schedule (fail-open if unproven)
         const sanitizedDirects = [];
         for (const leg of directTrains) {
@@ -2505,19 +2554,25 @@ class SplitJourneyEngine {
         logger_1.winstonLogger.info(`[HUB_SELECT] After blacklist: ${hubs.length} hubs (city=${sourceCity})`);
         let cleanDynamicCount = 0;
         let serviceHubsCount = 0;
-        // —— Step 3: Add dynamic + service hubs (DB-discovered) ————————————————
-        // CHANGED (Fix #2): Always run dynamic discovery, including for deterministic corridors.
-        // Dynamic hubs are appended AFTER priority hubs so ordering is preserved.
+        // —— Step 3: Add dynamic + service + learned route memory hubs (DB-discovered) ————————————————
+        // CHANGED (Fix #2 & Route Memory): Always run dynamic discovery, including for deterministic corridors.
+        // Dynamic and learned memory hubs are appended AFTER priority hubs so ordering is preserved.
         {
-            const [dynamicHubs, serviceHubs] = await Promise.all([
+            const { selfLearningService } = await Promise.resolve().then(() => __importStar(require('./selfLearningService')));
+            const [dynamicHubs, serviceHubs, routeMemories] = await Promise.all([
                 this.getDynamicHubs(sCode, dCode).catch(() => []),
-                hubService_1.hubService.selectHubs(sName, dName).catch(() => [])
+                hubService_1.hubService.selectHubs(sName, dName).catch(() => []),
+                selfLearningService.getRouteMemory(sCode, dCode).catch(() => [])
             ]);
-            // Dynamic hubs are also filtered through blacklist
+            const memoryHubs = (routeMemories || [])
+                .map((m) => m.via_hub)
+                .filter((h) => Boolean(h && typeof h === 'string'));
+            // Dynamic & learned hubs are also filtered through blacklist and exclusion
             const cleanDynamic = dynamicHubs.filter(h => !MICRO_HUB_BLACKLIST.has(h) && !exclude.has(h));
+            const cleanMemory = memoryHubs.filter(h => !MICRO_HUB_BLACKLIST.has(h) && !exclude.has(h));
             cleanDynamicCount = cleanDynamic.length;
             serviceHubsCount = serviceHubs.length;
-            hubs = [...new Set([...hubs, ...cleanDynamic, ...serviceHubs.filter(h => !MICRO_HUB_BLACKLIST.has(h))])]
+            hubs = [...new Set([...hubs, ...cleanDynamic, ...cleanMemory, ...serviceHubs.filter(h => !MICRO_HUB_BLACKLIST.has(h))])]
                 .filter(h => !exclude.has(h));
         }
         // —— Step 4: Geo filtering — direction + within-range —————————————————
@@ -2525,14 +2580,36 @@ class SplitJourneyEngine {
         // Previously skipped for deterministic routes — this was safe only when the hub pool
         // was small. Now that the pool is larger (priority + fallback), geo filter is needed
         // to prune backtracking hubs and rank by detour score.
+        //
+        // PHASE_087N82 — DETERMINISTIC PRIORITY PINNING:
+        // When a deterministic corridor is active, its hubs MUST remain at the front
+        // in their declared order. sortViaByDetourScore() sorts purely by geometry and
+        // would otherwise demote e.g. ET (position 7) behind generic hubs, exhausting
+        // the live budget before the corridor's key junction is evaluated.
+        // Fix: sort ONLY the non-deterministic remainder; prepend pinned corridor hubs.
         {
-            let validHubs = (0, routeEngine_1.getValidViaStations)(sCode, dCode, hubs);
-            const rejected = hubs.filter(h => !validHubs.includes(h));
+            const validHubs = (0, routeEngine_1.getValidViaStations)(sCode, dCode, hubs);
+            const validSet = new Set(validHubs);
+            const rejected = hubs.filter(h => !validSet.has(h));
             if (rejected.length > 0) {
                 logger_1.winstonLogger.debug(`[GEO_FILTER] Rejected ${rejected.length} off-path hubs: ${rejected.join(', ')}`);
             }
-            // Smart corridor filter: rank by detour score, keep deterministic hubs even if slightly off-path
-            hubs = (0, routeEngine_1.sortViaByDetourScore)(sCode, dCode, validHubs, isDeterministic ? 600 : 40);
+            if (isDeterministic) {
+                // Retrieve the declared corridor hubs (same lookup used in Step 1)
+                const pinnedCorridorHubs = (DETERMINISTIC_CORRIDORS[pairKey1] || DETERMINISTIC_CORRIDORS[pairKey2] || [])
+                    .filter(h => !exclude.has(h) && validSet.has(h));
+                // Build the non-deterministic remainder and sort it by detour score
+                const pinnedSet = new Set(pinnedCorridorHubs);
+                const remainder = validHubs.filter(h => !pinnedSet.has(h));
+                const sortedRemainder = (0, routeEngine_1.sortViaByDetourScore)(sCode, dCode, remainder, 600);
+                // Pinned corridor hubs come first (declared order preserved), remainder follows
+                hubs = [...pinnedCorridorHubs, ...sortedRemainder];
+                logger_1.winstonLogger.info(`[SPLIT_ENGINE] N82 deterministic-pinned hub order: pinned=[${pinnedCorridorHubs.join(',')}] remainder=${sortedRemainder.length} total=${hubs.length}`);
+            }
+            else {
+                // Non-deterministic routes: sort full valid list by detour score (unchanged behaviour)
+                hubs = (0, routeEngine_1.sortViaByDetourScore)(sCode, dCode, validHubs, 40);
+            }
         }
         // —— Fix B & C: Preload coordinates in batch to resolve N+1 queries ——
         const allPreloadCodes = [...new Set([...sCodes, ...hubs, ...dCodes])].map(c => c.toUpperCase().trim());
@@ -4866,8 +4943,41 @@ class SplitJourneyEngine {
                     if (forwardOnly.length > 0) {
                         logger_1.winstonLogger.info(`[TRAIN_VERIFIED_LIVE] ${from}->${to} on ${date}: ${forwardOnly.length} trains via live API`);
                         dbService_1.dbService.saveSearchToDB({ source: from, destination: to, date, trains: forwardOnly, api_used: "split_live" }).catch(() => { });
-                        this.legSearchCache.set(cacheKey, { data: forwardOnly, timestamp: Date.now() });
-                        return forwardOnly;
+                        // ── PHASE_087N67: LIVE + DB MERGE ─────────────────────────────────
+                        // Live has results but DB may contain hydrated trains (e.g. 12627, 20497)
+                        // that IRCTC did not return. Merge both sets; live copy wins on conflict.
+                        let merged = forwardOnly;
+                        try {
+                            const dbResult = await dbService_1.dbService.searchTrains(from, to, date);
+                            if (Array.isArray(dbResult) && dbResult.length > 0) {
+                                const dbVerified = dbResult.filter(isBasicallyValid).map((t) => ({
+                                    ...t,
+                                    travelDate: date
+                                }));
+                                const dbForwardOnly = await this.filterProvenReverseTrains(dbVerified, from, to);
+                                if (dbForwardOnly.length > 0) {
+                                    // Build a set of canonical train numbers already present in live results
+                                    const getCanonicalNo = (t) => String(t.train_number || t.trainNo || t.train_no || t.trainNumber || t.number || '').trim();
+                                    const liveNos = new Set(forwardOnly.map(getCanonicalNo).filter(Boolean));
+                                    // Append only DB-only trains (those not present in live results)
+                                    const dbOnly = dbForwardOnly.filter(t => {
+                                        const n = getCanonicalNo(t);
+                                        return n && !liveNos.has(n);
+                                    });
+                                    if (dbOnly.length > 0) {
+                                        logger_1.winstonLogger.info(`[SPLIT_SEARCH_DB_SUPPLEMENT] ${from}->${to}: appending ${dbOnly.length} DB-only train(s) to ${forwardOnly.length} live train(s)`);
+                                        merged = [...forwardOnly, ...dbOnly];
+                                    }
+                                }
+                            }
+                        }
+                        catch (dbErr) {
+                            // DB supplement failure must not suppress live results
+                            logger_1.winstonLogger.warn(`[SPLIT_SEARCH_DB_SUPPLEMENT] DB query failed for ${from}->${to}: ${dbErr?.message} — using live-only result`);
+                        }
+                        // ── END MERGE ─────────────────────────────────────────────────────
+                        this.legSearchCache.set(cacheKey, { data: merged, timestamp: Date.now() });
+                        return merged;
                     }
                     logger_1.winstonLogger.warn(`[TRAIN_REJECTED_LIVE_LOOKUP] ${from}->${to} - all ${apiResult.length} live trains failed basic validity`);
                 }

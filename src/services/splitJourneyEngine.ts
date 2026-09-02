@@ -2951,20 +2951,27 @@ export class SplitJourneyEngine {
 
     let cleanDynamicCount = 0;
     let serviceHubsCount = 0;
-    // —— Step 3: Add dynamic + service hubs (DB-discovered) ————————————————
-    // CHANGED (Fix #2): Always run dynamic discovery, including for deterministic corridors.
-    // Dynamic hubs are appended AFTER priority hubs so ordering is preserved.
+    // —— Step 3: Add dynamic + service + learned route memory hubs (DB-discovered) ————————————————
+    // CHANGED (Fix #2 & Route Memory): Always run dynamic discovery, including for deterministic corridors.
+    // Dynamic and learned memory hubs are appended AFTER priority hubs so ordering is preserved.
     {
-      const [dynamicHubs, serviceHubs] = await Promise.all([
+      const { selfLearningService } = await import('./selfLearningService');
+      const [dynamicHubs, serviceHubs, routeMemories] = await Promise.all([
         this.getDynamicHubs(sCode, dCode).catch(() => []),
-        hubService.selectHubs(sName, dName).catch(() => [])
+        hubService.selectHubs(sName, dName).catch(() => []),
+        selfLearningService.getRouteMemory(sCode, dCode).catch(() => [])
       ]);
 
-      // Dynamic hubs are also filtered through blacklist
+      const memoryHubs = (routeMemories || [])
+        .map((m: any) => m.via_hub)
+        .filter((h: any): h is string => Boolean(h && typeof h === 'string'));
+
+      // Dynamic & learned hubs are also filtered through blacklist and exclusion
       const cleanDynamic = dynamicHubs.filter(h => !MICRO_HUB_BLACKLIST.has(h) && !exclude.has(h));
+      const cleanMemory = memoryHubs.filter(h => !MICRO_HUB_BLACKLIST.has(h) && !exclude.has(h));
       cleanDynamicCount = cleanDynamic.length;
       serviceHubsCount = serviceHubs.length;
-      hubs = [...new Set([...hubs, ...cleanDynamic, ...serviceHubs.filter(h => !MICRO_HUB_BLACKLIST.has(h))])]
+      hubs = [...new Set([...hubs, ...cleanDynamic, ...cleanMemory, ...serviceHubs.filter(h => !MICRO_HUB_BLACKLIST.has(h))])]
         .filter(h => !exclude.has(h));
     }
 
@@ -2975,14 +2982,40 @@ export class SplitJourneyEngine {
     // Previously skipped for deterministic routes — this was safe only when the hub pool
     // was small. Now that the pool is larger (priority + fallback), geo filter is needed
     // to prune backtracking hubs and rank by detour score.
+    //
+    // PHASE_087N82 — DETERMINISTIC PRIORITY PINNING:
+    // When a deterministic corridor is active, its hubs MUST remain at the front
+    // in their declared order. sortViaByDetourScore() sorts purely by geometry and
+    // would otherwise demote e.g. ET (position 7) behind generic hubs, exhausting
+    // the live budget before the corridor's key junction is evaluated.
+    // Fix: sort ONLY the non-deterministic remainder; prepend pinned corridor hubs.
     {
-      let validHubs = getValidViaStations(sCode, dCode, hubs);
-      const rejected = hubs.filter(h => !validHubs.includes(h));
+      const validHubs = getValidViaStations(sCode, dCode, hubs);
+      const validSet = new Set(validHubs);
+      const rejected = hubs.filter(h => !validSet.has(h));
       if (rejected.length > 0) {
         winstonLogger.debug(`[GEO_FILTER] Rejected ${rejected.length} off-path hubs: ${rejected.join(', ')}`);
       }
-      // Smart corridor filter: rank by detour score, keep deterministic hubs even if slightly off-path
-      hubs = sortViaByDetourScore(sCode, dCode, validHubs, isDeterministic ? 600 : 40);
+
+      if (isDeterministic) {
+        // Retrieve the declared corridor hubs (same lookup used in Step 1)
+        const pinnedCorridorHubs = (DETERMINISTIC_CORRIDORS[pairKey1] || DETERMINISTIC_CORRIDORS[pairKey2] || [])
+          .filter(h => !exclude.has(h) && validSet.has(h));
+
+        // Build the non-deterministic remainder and sort it by detour score
+        const pinnedSet = new Set(pinnedCorridorHubs);
+        const remainder = validHubs.filter(h => !pinnedSet.has(h));
+        const sortedRemainder = sortViaByDetourScore(sCode, dCode, remainder, 600);
+
+        // Pinned corridor hubs come first (declared order preserved), remainder follows
+        hubs = [...pinnedCorridorHubs, ...sortedRemainder];
+        winstonLogger.info(
+          `[SPLIT_ENGINE] N82 deterministic-pinned hub order: pinned=[${pinnedCorridorHubs.join(',')}] remainder=${sortedRemainder.length} total=${hubs.length}`
+        );
+      } else {
+        // Non-deterministic routes: sort full valid list by detour score (unchanged behaviour)
+        hubs = sortViaByDetourScore(sCode, dCode, validHubs, 40);
+      }
     }
 
     // —— Fix B & C: Preload coordinates in batch to resolve N+1 queries ——

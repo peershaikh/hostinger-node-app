@@ -147,12 +147,16 @@ exports.referralLimiter = (0, express_rate_limit_1.default)({
     }
 });
 // --- ADMIN LIMITER ---
-// Default: 50 requests / 15 minutes
+// Relaxed for authenticated admin operations (News CMS, Moderation, Telemetry, Bulk Actions)
 exports.adminLimiter = (0, express_rate_limit_1.default)({
     windowMs: parseEnvMs(process.env.RATE_LIMIT_ADMIN_WINDOW_MS, 15 * 60 * 1000),
-    max: parseEnvMax(process.env.RATE_LIMIT_ADMIN_MAX, 50),
+    max: parseEnvMax(process.env.RATE_LIMIT_ADMIN_MAX, 10000),
     standardHeaders: true, legacyHeaders: false,
     validate: false,
+    skip: (req) => {
+        // Authenticated admin requests (with admin user ID or Bearer token) bypass rate limit
+        return Boolean(req.headers['x-user-id'] || req.headers['authorization']);
+    },
     message: { success: false, error: 'Too many admin requests, please try again later.' },
     handler: (req, res) => {
         logger_1.winstonLogger.warn(`[RATE_LIMIT] Admin limit exceeded for IP: ${req.ip}`);

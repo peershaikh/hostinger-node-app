@@ -63,7 +63,7 @@ export interface AiSystemConfig {
 }
 
 const DEFAULT_AI_CONFIG: AiSystemConfig = {
-  defaultProvider: 'GEMINI',
+  defaultProvider: 'DEEPSEEK',
   providers: {
     GEMINI: {
       providerId: 'GEMINI',

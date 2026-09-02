@@ -113,6 +113,23 @@ export const conditionalCsrf = (req: Request, res: Response, next: NextFunction)
     return next();
   }
 
+  // PHASE_087N84: Anonymous analytics telemetry endpoints (no auth required).
+  // These are write-only event logging designed for unauthenticated client tracking.
+  // Explicitly exclude /referrals/claim which may affect account rewards.
+  const analyticsPublicPaths = [
+    '/analytics/event',
+    '/api/analytics/event',
+    '/analytics/split-click',
+    '/api/analytics/split-click',
+    '/analytics/feedback',
+    '/api/analytics/feedback',
+    '/analytics/complaint',
+    '/api/analytics/complaint'
+  ];
+  if (analyticsPublicPaths.includes(req.path)) {
+    return next();
+  }
+
   // PHASE_4C839 NF-006: Mobile/API clients use Bearer JWT without CSRF cookies.
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
