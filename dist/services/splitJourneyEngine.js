@@ -1128,6 +1128,9 @@ class SplitJourneyEngine {
         this.MAX_TOTAL_CALLS = 40;
         this.MAX_ENGINE_TIME_MS = 22000;
         this.MAX_COMBOS_PER_HUB = 8;
+        /** PHASE_087N111 — Phase 2 call reserve so Phase 1 candidate fanout never starves Leg-2 fetches */
+        this.MIN_PHASE2_RESERVE = 15;
+        this.PHASE1_HUB_CAP = 10;
         /** Hard budget for API fallback calls inside searchLeg. After this many ms
          *  from engine start, searchLeg skips live APIs and uses DB-only. */
         this.API_BUDGET_MS = 2000;
@@ -2730,8 +2733,10 @@ class SplitJourneyEngine {
         // and the engine stops once enough valid candidates exist. Governors are
         // enforced before every chunk. Tier 2/3 widen the envelope by continuing the
         // NEXT chunk instead of re-filtering already-generated candidates.
-        const hubPool = hubs;
-        logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 1: up to ${hubPool.length} ranked hubs (chunk=${this.MAX_HUBS}, batch=2)`);
+        // PHASE_087N111 — Bound Phase 1 candidate hubs to top 10 (PHASE1_HUB_CAP) while preserving
+        // N82 deterministic priority order at indices 0,1,2, preventing hub explosion from starving Phase 2.
+        const hubPool = hubs.slice(0, this.PHASE1_HUB_CAP);
+        logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 1: up to ${hubPool.length} ranked hubs (cap=${this.PHASE1_HUB_CAP}, batch=2)`);
         // —— Fix E: Process hubs in batches of 2 to cap parallel concurrency ——
         const leg1Results = [];
         const BATCH_SIZE = 2;
@@ -2740,8 +2745,9 @@ class SplitJourneyEngine {
                 logger_1.winstonLogger.info('[SPLIT_ENGINE] Phase 1 time governor reached');
                 break;
             }
-            if (this.apiCallCount >= this.MAX_TOTAL_CALLS) {
-                logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 1 API call governor reached (${this.apiCallCount})`);
+            // PHASE_087N111 — Stop Phase 1 before consuming the reserved Phase 2 call budget (40 - 15 = 25 max calls)
+            if (this.apiCallCount >= this.MAX_TOTAL_CALLS - this.MIN_PHASE2_RESERVE) {
+                logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 1 API call governor reached (${this.apiCallCount}/${this.MAX_TOTAL_CALLS - this.MIN_PHASE2_RESERVE} reserve=${this.MIN_PHASE2_RESERVE})`);
                 break;
             }
             const batch = hubPool.slice(i, i + BATCH_SIZE);
