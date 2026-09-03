@@ -270,7 +270,14 @@ class IrctcService {
             const result = data?.data || data;
             if (result) {
                 if (result.success === false || result.error) {
-                    const errStr = result.error || 'API reported failure';
+                    const errStr = String(result.error || 'API reported failure');
+                    const isNotRunning = errStr.toLowerCase().includes('not available for date') ||
+                        errStr.toLowerCase().includes('not running') ||
+                        errStr.toLowerCase().includes('does not run');
+                    if (isNotRunning) {
+                        logger_1.winstonLogger.info(`[IRCTC_TRAIN_NOT_RUNNING] ${trainNo}: ${errStr}`);
+                        return { not_running: true, error: errStr };
+                    }
                     if (errStr.toLowerCase().includes('api key') || errStr.toLowerCase().includes('invalid key')) {
                         logger_1.winstonLogger.error(`[PROVIDER_INVALID_KEY] IRCTC: ${errStr}`);
                     }
@@ -284,7 +291,14 @@ class IrctcService {
             return null;
         }
         catch (e) {
-            const errStr = e.message || '';
+            const errStr = String(e.message || '');
+            const isNotRunning = errStr.toLowerCase().includes('not available for date') ||
+                errStr.toLowerCase().includes('not running') ||
+                errStr.toLowerCase().includes('does not run');
+            if (isNotRunning) {
+                logger_1.winstonLogger.info(`[IRCTC_TRAIN_NOT_RUNNING] ${trainNo}: ${errStr}`);
+                return { not_running: true, error: errStr };
+            }
             if (errStr.toLowerCase().includes('api key') || errStr.toLowerCase().includes('invalid key')) {
                 logger_1.winstonLogger.error(`[PROVIDER_INVALID_KEY] IRCTC: ${errStr}`);
             }

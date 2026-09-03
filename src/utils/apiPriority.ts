@@ -20,6 +20,7 @@ export interface PriorityOperations<T> {
 
 const isMeaningfulResult = (result: any): boolean => {
   if (!result) return false;
+  if (result.not_running || result.expected_no_data) return false;
   if (Array.isArray(result)) return result.length > 0;
   if (typeof result === 'object') return Object.keys(result).length > 0;
   return true;
@@ -60,8 +61,9 @@ export async function fetchWithPriority<T>(ops: PriorityOperations<T>): Promise<
       winstonLogger.info(`[API_DYNAMIC_ACTIVE] Attempting ${providerId}`);
       const result = await fn();
       const duration = Date.now() - startTime;
+      const isExpectedNoData = Boolean(result && ((result as any).not_running || (result as any).expected_no_data));
       const isOk = isMeaningfulResult(result);
-      if (providerId !== 'DATABASE') {
+      if (providerId !== 'DATABASE' && !isExpectedNoData) {
         metricsService.recordProviderRequest(providerId, duration, isOk);
       }
       if (isOk) {

@@ -7,6 +7,8 @@ const railProviderResolver_1 = require("../services/railProviderResolver");
 const isMeaningfulResult = (result) => {
     if (!result)
         return false;
+    if (result.not_running || result.expected_no_data)
+        return false;
     if (Array.isArray(result))
         return result.length > 0;
     if (typeof result === 'object')
@@ -45,8 +47,9 @@ async function fetchWithPriority(ops) {
             logger_1.winstonLogger.info(`[API_DYNAMIC_ACTIVE] Attempting ${providerId}`);
             const result = await fn();
             const duration = Date.now() - startTime;
+            const isExpectedNoData = Boolean(result && (result.not_running || result.expected_no_data));
             const isOk = isMeaningfulResult(result);
-            if (providerId !== 'DATABASE') {
+            if (providerId !== 'DATABASE' && !isExpectedNoData) {
                 metricsService_1.metricsService.recordProviderRequest(providerId, duration, isOk);
             }
             if (isOk) {

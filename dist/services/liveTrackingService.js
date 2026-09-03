@@ -474,11 +474,11 @@ class LiveTrackingService {
                     // getLiveStatus() uses trackTrain() — returns real-time delay data.
                     // getTrainInfo() returns only static schedule (no delay) — do NOT use for live.
                     const res = await irctcService_1.irctcService.getLiveStatus(trainNo, requestedDateStr || undefined);
-                    if (res) {
+                    if (res && !res.not_running) {
                         usedApi = 'IRCTC';
                         return res;
                     }
-                    return null;
+                    return res;
                 },
                 db: async () => {
                     if (scheduleWithDays.length > 0) {
@@ -895,7 +895,7 @@ class LiveTrackingService {
             const isApiSuspiciouslyStuckAtSource = currentIndex === 0 && timeBasedIdx > 3;
             const isApiSuspiciouslyAtDestination = currentIndex >= schedule.length - 1 && timeBasedIdx < schedule.length - 3;
             if (usedApi !== 'DATABASE_SCHEDULE' && (isApiSuspiciouslyStuckAtSource || isApiSuspiciouslyAtDestination)) {
-                logger_1.winstonLogger.warn(`[LIVE_TRACK] Rejecting bad API data (API index: ${currentIndex}, Time index: ${timeBasedIdx}). Falling back to Database Schedule.`);
+                logger_1.winstonLogger.warn(`[LIVE_TRACK] Rejecting bad API data for train ${trainNo} (API index: ${currentIndex}, Time index: ${timeBasedIdx}). Falling back to Database Schedule.`);
                 currentIndex = timeBasedIdx;
                 usedApi = 'DATABASE_SCHEDULE';
             }
