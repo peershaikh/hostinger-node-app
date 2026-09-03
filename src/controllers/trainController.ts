@@ -405,7 +405,13 @@ export class TrainController {
         if (finalSplits.length > 0) {
           winstonLogger.info(`[CONTROLLER_SUCCESS] route=${source}→${destination} time=${execTime}ms splits=${finalSplits.length} totalFound=${rawSplits.length}`);
         } else {
-          winstonLogger.warn(`[CONTROLLER_TIMEOUT] route=${source}→${destination} time=${execTime}ms splits=0 totalFound=0`);
+          const isTimeout = (splitResult as any)?.message === 'Search took longer than expected. Try again.' ||
+            ((splitResult as any)?.split?.length === 0 && execTime >= 55000);
+          if (isTimeout) {
+            winstonLogger.warn(`[CONTROLLER_TIMEOUT] route=${source}→${destination} time=${execTime}ms splits=0 totalFound=0`);
+          } else {
+            winstonLogger.info(`[CONTROLLER_NO_SPLITS] route=${source}→${destination} time=${execTime}ms splits=0 totalFound=0`);
+          }
         }
       }
 

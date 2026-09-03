@@ -31,8 +31,8 @@ export class AnalyticsService {
       });
 
       if (error) {
-        if (error.code === '42P01' || error.code === '42883') {
-          winstonLogger.warn(`[ANALYTICS] RPC ${this.SEARCH_RPC} or table missing. Skipping.`);
+        if (error.code === '42P01' || error.code === '42883' || error.code === 'PGRST202') {
+          winstonLogger.debug(`[ANALYTICS] RPC ${this.SEARCH_RPC} or table missing (${error.code}). Skipping.`);
           return false;
         }
         throw error;
@@ -41,6 +41,10 @@ export class AnalyticsService {
       winstonLogger.debug(`[ANALYTICS] Search logged: ${s} → ${d}`);
       return true;
     } catch (err: any) {
+      if (err?.code === 'PGRST202' || err?.message?.includes('PGRST202') || err?.message?.includes('schema cache')) {
+        winstonLogger.debug(`[ANALYTICS] RPC ${this.SEARCH_RPC} missing in schema cache. Skipping.`);
+        return false;
+      }
       winstonLogger.error(`[ANALYTICS] logSearch failed (${source}→${destination}): ${err.message}`);
       return false;
     }
@@ -59,8 +63,8 @@ export class AnalyticsService {
       });
 
       if (error) {
-        if (error.code === '42P01' || error.code === '42883') {
-          winstonLogger.warn(`[ANALYTICS] RPC ${this.HUB_RPC} or table missing. Skipping.`);
+        if (error.code === '42P01' || error.code === '42883' || error.code === 'PGRST202') {
+          winstonLogger.debug(`[ANALYTICS] RPC ${this.HUB_RPC} or table missing (${error.code}). Skipping.`);
           return false;
         }
         throw error;
@@ -69,6 +73,10 @@ export class AnalyticsService {
       winstonLogger.debug(`[ANALYTICS] Hub success logged: ${hub}`);
       return true;
     } catch (err: any) {
+      if (err?.code === 'PGRST202' || err?.message?.includes('PGRST202') || err?.message?.includes('schema cache')) {
+        winstonLogger.debug(`[ANALYTICS] RPC ${this.HUB_RPC} missing in schema cache. Skipping.`);
+        return false;
+      }
       winstonLogger.error(`[ANALYTICS] logHubSuccess failed (${hubName}): ${err.message}`);
       return false;
     }
@@ -145,4 +153,4 @@ export class AnalyticsService {
   }
 }
 
-export const analyticsService = new AnalyticsService();
+export const analyticsService = new AnalyticsService();

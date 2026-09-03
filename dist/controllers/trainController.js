@@ -347,7 +347,14 @@ class TrainController {
                         logger_1.winstonLogger.info(`[CONTROLLER_SUCCESS] route=${source}→${destination} time=${execTime}ms splits=${finalSplits.length} totalFound=${rawSplits.length}`);
                     }
                     else {
-                        logger_1.winstonLogger.warn(`[CONTROLLER_TIMEOUT] route=${source}→${destination} time=${execTime}ms splits=0 totalFound=0`);
+                        const isTimeout = splitResult?.message === 'Search took longer than expected. Try again.' ||
+                            (splitResult?.split?.length === 0 && execTime >= 55000);
+                        if (isTimeout) {
+                            logger_1.winstonLogger.warn(`[CONTROLLER_TIMEOUT] route=${source}→${destination} time=${execTime}ms splits=0 totalFound=0`);
+                        }
+                        else {
+                            logger_1.winstonLogger.info(`[CONTROLLER_NO_SPLITS] route=${source}→${destination} time=${execTime}ms splits=0 totalFound=0`);
+                        }
                     }
                 }
                 logger_1.winstonLogger.info(`[ADVANCED] finalSplits=${finalSplits.length} | source=${source} dest=${destination}`);

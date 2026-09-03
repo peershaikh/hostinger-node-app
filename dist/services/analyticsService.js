@@ -26,8 +26,8 @@ class AnalyticsService {
                 p_destination: d
             });
             if (error) {
-                if (error.code === '42P01' || error.code === '42883') {
-                    logger_1.winstonLogger.warn(`[ANALYTICS] RPC ${this.SEARCH_RPC} or table missing. Skipping.`);
+                if (error.code === '42P01' || error.code === '42883' || error.code === 'PGRST202') {
+                    logger_1.winstonLogger.debug(`[ANALYTICS] RPC ${this.SEARCH_RPC} or table missing (${error.code}). Skipping.`);
                     return false;
                 }
                 throw error;
@@ -36,6 +36,10 @@ class AnalyticsService {
             return true;
         }
         catch (err) {
+            if (err?.code === 'PGRST202' || err?.message?.includes('PGRST202') || err?.message?.includes('schema cache')) {
+                logger_1.winstonLogger.debug(`[ANALYTICS] RPC ${this.SEARCH_RPC} missing in schema cache. Skipping.`);
+                return false;
+            }
             logger_1.winstonLogger.error(`[ANALYTICS] logSearch failed (${source}→${destination}): ${err.message}`);
             return false;
         }
@@ -52,8 +56,8 @@ class AnalyticsService {
                 p_hub: hub
             });
             if (error) {
-                if (error.code === '42P01' || error.code === '42883') {
-                    logger_1.winstonLogger.warn(`[ANALYTICS] RPC ${this.HUB_RPC} or table missing. Skipping.`);
+                if (error.code === '42P01' || error.code === '42883' || error.code === 'PGRST202') {
+                    logger_1.winstonLogger.debug(`[ANALYTICS] RPC ${this.HUB_RPC} or table missing (${error.code}). Skipping.`);
                     return false;
                 }
                 throw error;
@@ -62,6 +66,10 @@ class AnalyticsService {
             return true;
         }
         catch (err) {
+            if (err?.code === 'PGRST202' || err?.message?.includes('PGRST202') || err?.message?.includes('schema cache')) {
+                logger_1.winstonLogger.debug(`[ANALYTICS] RPC ${this.HUB_RPC} missing in schema cache. Skipping.`);
+                return false;
+            }
             logger_1.winstonLogger.error(`[ANALYTICS] logHubSuccess failed (${hubName}): ${err.message}`);
             return false;
         }
