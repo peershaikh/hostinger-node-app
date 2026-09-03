@@ -18,69 +18,81 @@ interface PNRHistoryRecord {
 
 export class PnrHistoryService {
     /**
-     * Save PNR check result to history
+     * Save PNR check result to learning and user history
      */
     async savePnrHistory(pnrData: any): Promise<void> {
         try {
-            const historyRecord: PNRHistoryRecord = {
-                pnr: pnrData.pnr,
-                train_no: pnrData.train_no,
-                train_name: pnrData.train_name,
-                source: pnrData.source,
-                destination: pnrData.destination,
-                class: pnrData.class || 'Unknown',
-                booking_status: pnrData.passengers?.[0]?.booking_status || 'Unknown',
-                current_status: pnrData.passengers?.[0]?.current_status || 'Unknown',
-                chart_prepared: pnrData.chart_status?.toLowerCase().includes('prepared') || false,
-                prediction_chance: pnrData.prediction?.probability || 'N/A',
-                checked_at: new Date().toISOString(),
-                final_status: pnrData.passengers?.[0]?.current_status || 'Unknown'
-            };
+            const initialStatus = pnrData.passengers?.[0]?.booking_status || 'Unknown';
+            const currentStatus = pnrData.passengers?.[0]?.current_status || 'Unknown';
+            const isChartPrepared = pnrData.chart_status?.toLowerCase().includes('prepared') || false;
 
-            // Check if record already exists
-            const { data: existingRecord, error: selectError } = await supabase
-                .from('pnr_history')
-                .select('id')
-                .eq('pnr', historyRecord.pnr)
-                .order('checked_at', { ascending: false })
-                .limit(1)
-                .single();
-
-            if (selectError && selectError.code !== 'PGRST116') {
-                winstonLogger.error(`[PNR_HISTORY] Error checking existing record: ${selectError.message}`);
-                return;
+            // 1. Save outcome into pnr_learning table
+            try {
+                await supabase.from('pnr_learning').insert([{
+                    pnr: pnrData.pnr,
+                    initial_status: initialStatus,
+                    final_status: currentStatus,
+                    chart_prepared: isChartPrepared,
+                    time_checked: new Date().toISOString()
+                }]);
+            } catch (learnErr: any) {
+                winstonLogger.debug(`[PNR_HISTORY] pnr_learning insert note: ${learnErr?.message}`);
             }
 
-            // Insert or update record
-            if (existingRecord) {
-                const { error: updateError } = await supabase
-                    .from('pnr_history')
-                    .update(historyRecord)
-                    .eq('id', existingRecord.id);
+            // 2. Save/Update record in pnr_history bookmarks table if available
+            try {
+                const historyRecord: PNRHistoryRecord = {
+                    pnr: pnrData.pnr,
+                    train_no: pnrData.train_no,
+                    train_name: pnrData.train_name,
+                    source: pnrData.source,
+                    destination: pnrData.destination,
+                    class: pnrData.class || 'Unknown',
+                    booking_status: initialStatus,
+                    current_status: currentStatus,
+                    chart_prepared: isChartPrepared,
+                    prediction_chance: pnrData.prediction?.probability || 'N/A',
+                    checked_at: new Date().toISOString(),
+                    final_status: currentStatus
+                };
 
-                if (updateError) {
-                    winstonLogger.error(`[PNR_HISTORY] Error updating record: ${updateError.message}`);
-                } else {
-                    winstonLogger.info(`[PNR_HISTORY] Updated record for PNR: ${historyRecord.pnr}`);
-                }
-            } else {
-                const { error: insertError } = await supabase
+                const { data: existingRecord } = await supabase
                     .from('pnr_history')
-                    .insert(historyRecord);
+                    .select('id, history')
+                    .eq('pnr', historyRecord.pnr)
+                    .limit(1)
+                    .maybeSingle();
 
-                if (insertError) {
-                    winstonLogger.error(`[PNR_HISTORY] Error inserting record: ${insertError.message}`);
+                if (existingRecord) {
+                    const historyArray = Array.isArray(existingRecord.history) ? existingRecord.history : [];
+                    historyArray.unshift(historyRecord);
+                    await supabase
+                        .from('pnr_history')
+                        .update({
+                            history: historyArray.slice(0, 10),
+                            last_checked: new Date().toISOString()
+                        })
+                        .eq('id', existingRecord.id);
                 } else {
-                    winstonLogger.info(`[PNR_HISTORY] Inserted new record for PNR: ${historyRecord.pnr}`);
+                    await supabase
+                        .from('pnr_history')
+                        .insert([{
+                            pnr: historyRecord.pnr,
+                            history: [historyRecord],
+                            is_active: true,
+                            last_checked: new Date().toISOString()
+                        }]);
                 }
+            } catch (histErr: any) {
+                winstonLogger.debug(`[PNR_HISTORY] pnr_history bookmarks write note: ${histErr?.message}`);
             }
         } catch (error: any) {
-            winstonLogger.error(`[PNR_HISTORY] Unexpected error: ${error.message}`);
+            winstonLogger.debug(`[PNR_HISTORY] Handled unexpected error in savePnrHistory: ${error?.message}`);
         }
     }
 
     /**
-     * Get historical data for smart predictions
+     * Get historical data for smart predictions from pnr_learning
      */
     async getHistoricalDataForPrediction(
         source: string,
@@ -97,16 +109,15 @@ export class PnrHistoryService {
             const wlPosition = parseInt(wlMatch[2]);
             if (isNaN(wlPosition)) return null;
 
-            // Get historical data for similar routes and WL positions
+            // Query authoritative pnr_learning table for matching waitlist types
             const { data, error } = await supabase
-                .from('pnr_history')
-                .select('current_status, final_status')
-                .eq('source', source)
-                .eq('destination', destination)
-                .ilike('current_status', `%${quotaType}%`); // Match same WL quota type anywhere in string
+                .from('pnr_learning')
+                .select('initial_status, final_status')
+                .ilike('initial_status', `%${quotaType}%`)
+                .limit(200);
 
             if (error) {
-                winstonLogger.error(`[PNR_PREDICTION] Error fetching historical data: ${error.message}`);
+                winstonLogger.debug(`[PNR_PREDICTION] Note fetching historical data: ${error.message}`);
                 return null;
             }
 
@@ -114,7 +125,8 @@ export class PnrHistoryService {
 
             // Filter records with similar WL positions (within 5 positions)
             const similarRecords = data.filter(record => {
-                const recordWlMatch = record.current_status.match(QUOTA_REGEX);
+                const statusStr = record.initial_status || '';
+                const recordWlMatch = statusStr.match(QUOTA_REGEX);
                 if (!recordWlMatch) return false;
 
                 const recordWlPosition = parseInt(recordWlMatch[2]);
@@ -124,17 +136,17 @@ export class PnrHistoryService {
             if (similarRecords.length === 0) return null;
 
             // Calculate success rate (confirmed final status)
-            const confirmedCount = similarRecords.filter(record =>
-                record.final_status?.toUpperCase().includes('CNF') ||
-                record.final_status?.toUpperCase().includes('CONFIRMED')
-            ).length;
+            const confirmedCount = similarRecords.filter(record => {
+                const fs = (record.final_status || '').toUpperCase();
+                return fs.includes('CNF') || fs.includes('CONFIRM') || /^[A-Z]\d+-\d+/.test(fs);
+            }).length;
 
             return {
                 successRate: Math.round((confirmedCount / similarRecords.length) * 100),
                 totalCount: similarRecords.length
             };
         } catch (error: any) {
-            winstonLogger.error(`[PNR_PREDICTION] Unexpected error: ${error.message}`);
+            winstonLogger.debug(`[PNR_PREDICTION] Handled prediction error: ${error?.message}`);
             return null;
         }
     }

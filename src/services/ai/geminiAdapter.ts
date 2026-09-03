@@ -240,7 +240,7 @@ export class GeminiAdapter implements AiProvider {
             'Gemini API rate limit exceeded'
           ).replace(/[\r\n]+/g, ' ');
 
-          winstonLogger.warn(
+          winstonLogger.info(
             `[GEMINI_RATE_LIMIT_DETAILS] status=429 code=${errData?.code || 'RESOURCE_EXHAUSTED'} retry_after=${retryAfter || 'none'} reason="${quotaReason.slice(0, 150)}"`
           );
 

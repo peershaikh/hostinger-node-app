@@ -54,10 +54,10 @@ class RateService {
                 cacheService_1.cacheService.set(cacheKey, rate, this.CACHE_TTL);
                 return rate;
             }
-            // 4. Missing rate card: Warn and use fallback
-            logger_1.winstonLogger.warn(`[RATE_CARD] No active rate found in DB for provider ${cleanProvider} event ${eventType}. Applying fallback.`);
+            // 4. Missing rate card: Log debug note and use standard fallback rate
+            logger_1.winstonLogger.debug(`[RATE_CARD] Using fallback rate for provider ${cleanProvider} event ${eventType}.`);
             const rate = { costPerUnit: exports.FALLBACK_RATES[eventType] || 0.001, currency: 'USD' };
-            cacheService_1.cacheService.set(cacheKey, rate, this.CACHE_TTL);
+            cacheService_1.cacheService.set(cacheKey, rate, 3600); // Cache fallback for 1 hour to prevent DB spam
             return rate;
         }
         catch (err) {

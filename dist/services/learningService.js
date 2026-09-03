@@ -1,17 +1,47 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.learningService = exports.LearningService = void 0;
 const supabase_1 = require("../config/supabase");
 const logger_1 = require("../middleware/logger");
-const fs_1 = __importDefault(require("fs"));
-const path_1 = __importDefault(require("path"));
+const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
 const rateService_1 = require("./rateService");
 // Local fallback if Supabase tables don't exist yet
-const DATA_DIR = path_1.default.join(__dirname, '../../data');
-if (!(0, supabase_1.isNoWriteMode)() && !fs_1.default.existsSync(DATA_DIR)) {
+const DATA_DIR = path.join(__dirname, '../../data');
+if (!(0, supabase_1.isNoWriteMode)() && !fs.existsSync(DATA_DIR)) {
     (0, supabase_1.safeMkdirSync)(DATA_DIR, { recursive: true });
 }
 /**
@@ -23,7 +53,7 @@ if (!(0, supabase_1.isNoWriteMode)() && !fs_1.default.existsSync(DATA_DIR)) {
 const MIN_SAMPLE_SIZE = 5;
 function saveLocalFallback(table, data) {
     try {
-        const filePath = path_1.default.join(DATA_DIR, `${table}_fallback.jsonl`);
+        const filePath = path.join(DATA_DIR, `${table}_fallback.jsonl`);
         const line = JSON.stringify({ ...data, _created_at: new Date().toISOString() }) + '\n';
         (0, supabase_1.safeAppendFileSync)(filePath, line, 'utf8');
         logger_1.winstonLogger.info(`[FALLBACK_ENQUEUE] file=${table}_fallback.jsonl count=1`);
@@ -207,20 +237,35 @@ class LearningService {
         }
     }
     // ─── GET TRENDS (Admin) ──────────────────────────────────────────────
-    async getDashboardAnalytics() {
+    async getDashboardAnalytics(tz = 'Asia/Kolkata') {
+        const todayIso = this.getStartOfTodayIso(tz);
         try {
-            const { count: searches } = await supabase_1.supabase.from('search_history').select('*', { count: 'exact', head: true });
-            const { count: splits } = await supabase_1.supabase.from('split_learning').select('*', { count: 'exact', head: true });
-            const { count: pnrs } = await supabase_1.supabase.from('pnr_learning').select('*', { count: 'exact', head: true });
-            const { count: lives } = await supabase_1.supabase.from('live_learning').select('*', { count: 'exact', head: true });
-            const { data: apis } = await supabase_1.supabase.from('api_metrics').select('*');
+            const [{ count: searchesToday }, { count: splitsToday }, { count: pnrsToday }, { count: livesToday }, { count: searchesAllTime }, { count: splitsAllTime }, { count: pnrsAllTime }, { count: livesAllTime }, { data: apis }] = await Promise.all([
+                // Today's counts using authoritative table timestamp columns
+                supabase_1.supabase.from('search_history').select('*', { count: 'exact', head: true }).gte('searched_at', todayIso),
+                supabase_1.supabase.from('split_learning').select('*', { count: 'exact', head: true }).gte('created_at', todayIso),
+                supabase_1.supabase.from('pnr_learning').select('*', { count: 'exact', head: true }).gte('time_checked', todayIso),
+                supabase_1.supabase.from('live_learning').select('*', { count: 'exact', head: true }).gte('created_at', todayIso),
+                // All-time totals preserved
+                supabase_1.supabase.from('search_history').select('*', { count: 'exact', head: true }),
+                supabase_1.supabase.from('split_learning').select('*', { count: 'exact', head: true }),
+                supabase_1.supabase.from('pnr_learning').select('*', { count: 'exact', head: true }),
+                supabase_1.supabase.from('live_learning').select('*', { count: 'exact', head: true }),
+                supabase_1.supabase.from('api_metrics').select('*')
+            ]);
             return {
                 status: 'learning_engine_active',
                 tracking: {
-                    search_events: searches || this.getLocalCount('search_history'),
-                    split_events: splits || this.getLocalCount('split_learning'),
-                    pnr_events: pnrs || this.getLocalCount('pnr_learning'),
-                    live_events: lives || this.getLocalCount('live_learning')
+                    search_events: searchesToday ?? this.getLocalCount('search_history', todayIso),
+                    split_events: splitsToday ?? this.getLocalCount('split_learning', todayIso),
+                    pnr_events: pnrsToday ?? this.getLocalCount('pnr_learning', todayIso),
+                    live_events: livesToday ?? this.getLocalCount('live_learning', todayIso)
+                },
+                all_time: {
+                    search_events: searchesAllTime ?? this.getLocalCount('search_history'),
+                    split_events: splitsAllTime ?? this.getLocalCount('split_learning'),
+                    pnr_events: pnrsAllTime ?? this.getLocalCount('pnr_learning'),
+                    live_events: livesAllTime ?? this.getLocalCount('live_learning')
                 },
                 api_usage: apis || []
             };
@@ -229,12 +274,39 @@ class LearningService {
             return { status: 'learning_engine_fallback_only' };
         }
     }
-    getLocalCount(table) {
+    getStartOfTodayIso(tz = 'Asia/Kolkata') {
+        const now = new Date();
+        if (tz === 'UTC') {
+            return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0)).toISOString();
+        }
+        const dateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+        return new Date(`${dateStr}T00:00:00+05:30`).toISOString();
+    }
+    getLocalCount(table, todayIso) {
         try {
-            const file = path_1.default.join(DATA_DIR, `${table}_fallback.jsonl`);
-            if (!fs_1.default.existsSync(file))
+            const file = path.join(DATA_DIR, `${table}_fallback.jsonl`);
+            if (!fs.existsSync(file))
                 return 0;
-            return fs_1.default.readFileSync(file, 'utf8').trim().split('\n').length;
+            const content = fs.readFileSync(file, 'utf8').trim();
+            if (!content)
+                return 0;
+            const lines = content.split('\n');
+            if (!todayIso)
+                return lines.length;
+            let count = 0;
+            for (const line of lines) {
+                try {
+                    const parsed = JSON.parse(line);
+                    const ts = parsed.searched_at || parsed.created_at || parsed.time_checked || parsed.timestamp;
+                    if (ts && ts >= todayIso) {
+                        count++;
+                    }
+                }
+                catch {
+                    // Ignore parse errors on individual fallback lines
+                }
+            }
+            return count;
         }
         catch (e) {
             return 0;
@@ -376,9 +448,9 @@ class LearningService {
         catch (err) { }
         // 2. Try local fallback file
         try {
-            const localPath = path_1.default.join(DATA_DIR, 'pnr_learning_aggregates_fallback.json');
-            if (fs_1.default.existsSync(localPath)) {
-                const content = fs_1.default.readFileSync(localPath, 'utf8');
+            const localPath = path.join(DATA_DIR, 'pnr_learning_aggregates_fallback.json');
+            if (fs.existsSync(localPath)) {
+                const content = fs.readFileSync(localPath, 'utf8');
                 const list = JSON.parse(content);
                 const match = list.find((item) => item.entity_type === type && item.entity_value === value);
                 if (match) {
@@ -408,9 +480,9 @@ class LearningService {
             }
             catch (err) { }
             // Try local fallback
-            const localPath = path_1.default.join(DATA_DIR, 'pnr_prediction_feedback_fallback.jsonl');
-            if (fs_1.default.existsSync(localPath)) {
-                const lines = fs_1.default.readFileSync(localPath, 'utf8').trim().split('\n');
+            const localPath = path.join(DATA_DIR, 'pnr_prediction_feedback_fallback.jsonl');
+            if (fs.existsSync(localPath)) {
+                const lines = fs.readFileSync(localPath, 'utf8').trim().split('\n');
                 for (const line of lines) {
                     if (line) {
                         try {
@@ -453,10 +525,10 @@ class LearningService {
             catch (err) {
                 logger_1.winstonLogger.warn('[LEARNING_AGGREGATION] Supabase fetch failed, trying local fallback files');
             }
-            const logFallbackPath = path_1.default.join(DATA_DIR, 'pnr_predictions_log_fallback.jsonl');
-            const learningFallbackPath = path_1.default.join(DATA_DIR, 'pnr_learning_fallback.jsonl');
-            if (fs_1.default.existsSync(logFallbackPath)) {
-                const lines = fs_1.default.readFileSync(logFallbackPath, 'utf8').trim().split('\n');
+            const logFallbackPath = path.join(DATA_DIR, 'pnr_predictions_log_fallback.jsonl');
+            const learningFallbackPath = path.join(DATA_DIR, 'pnr_learning_fallback.jsonl');
+            if (fs.existsSync(logFallbackPath)) {
+                const lines = fs.readFileSync(logFallbackPath, 'utf8').trim().split('\n');
                 for (const line of lines) {
                     if (line) {
                         try {
@@ -466,8 +538,8 @@ class LearningService {
                     }
                 }
             }
-            if (fs_1.default.existsSync(learningFallbackPath)) {
-                const lines = fs_1.default.readFileSync(learningFallbackPath, 'utf8').trim().split('\n');
+            if (fs.existsSync(learningFallbackPath)) {
+                const lines = fs.readFileSync(learningFallbackPath, 'utf8').trim().split('\n');
                 for (const line of lines) {
                     if (line) {
                         try {
@@ -516,7 +588,7 @@ class LearningService {
             }
             const entitiesToUpsert = [];
             const processMap = (type) => {
-                for (const [value, stats] of aggregations[type].entries()) {
+                for (const [value, stats] of Array.from(aggregations[type].entries())) {
                     const successRate = Math.round((stats.success / stats.total) * 100);
                     entitiesToUpsert.push({
                         entity_type: type,
@@ -545,7 +617,7 @@ class LearningService {
                 catch (e) { }
             }
             try {
-                const localPath = path_1.default.join(DATA_DIR, 'pnr_learning_aggregates_fallback.json');
+                const localPath = path.join(DATA_DIR, 'pnr_learning_aggregates_fallback.json');
                 (0, supabase_1.safeWriteFileSync)(localPath, JSON.stringify(entitiesToUpsert, null, 2), 'utf8');
                 logger_1.winstonLogger.info(`[LEARNING_AGGREGATION] Saved aggregates to local fallback: ${localPath}`);
             }

@@ -372,7 +372,8 @@ export class AdminController {
             searches_today: tracking.search_events,
             split_searches: tracking.split_events,
             live_tracking: tracking.live_events,
-            pnr_checks: tracking.pnr_events
+            pnr_checks: tracking.pnr_events,
+            all_time: aiMetrics.all_time || null
           },
           cost: {
             daily_usd: dailyCost.toFixed(2),

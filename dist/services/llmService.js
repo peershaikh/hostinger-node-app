@@ -29,16 +29,22 @@ class LlmService {
      * Predicts PNR confirmation probability.
      */
     async predictPNRConfirmation(pnrData) {
-        const provider = aiProviderResolver_1.aiProviderResolver.resolveProvider('predictPnr');
+        const provider = aiProviderResolver_1.aiProviderResolver.resolveForFeature('PNR_PREDICTION', 'predictPnr')
+            || aiProviderResolver_1.aiProviderResolver.resolveProvider('predictPnr');
         if (!provider || typeof provider.predictPnr !== 'function') {
             throw new Error('No capable AI provider available for PNR prediction');
         }
         try {
-            logger_1.winstonLogger.info(`[LLM] PNR prediction for ${pnrData.pnr || 'unknown'}`);
+            logger_1.winstonLogger.info(`[LLM] PNR prediction for ${pnrData.pnr || 'unknown'} using provider ${provider.providerId}`);
             return await provider.predictPnr(pnrData);
         }
         catch (err) {
-            logger_1.winstonLogger.warn(`[LLM] PNR prediction AI call failed: ${err.message}. Propagating for heuristic fallback.`);
+            if (err?.code === 'RATE_LIMITED' || err?.message?.includes('rate limit') || err?.message?.includes('quota')) {
+                logger_1.winstonLogger.info(`[LLM] PNR prediction AI rate limited (${err.message}). Propagating for heuristic fallback.`);
+            }
+            else {
+                logger_1.winstonLogger.warn(`[LLM] PNR prediction AI call failed: ${err.message}. Propagating for heuristic fallback.`);
+            }
             throw err;
         }
     }

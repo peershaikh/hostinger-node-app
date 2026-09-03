@@ -1,7 +1,7 @@
 import { isNoWriteMode, safeAppendFileSync, safeMkdirSync, safeWriteFileSync, supabase } from '../config/supabase';
 import { winstonLogger } from '../middleware/logger';
-import fs from 'fs';
-import path from 'path';
+import * as fs from 'fs';
+import * as path from 'path';
 import { rateService } from './rateService';
 
 // Local fallback if Supabase tables don't exist yet
@@ -216,21 +216,49 @@ export class LearningService {
   }
 
   // ─── GET TRENDS (Admin) ──────────────────────────────────────────────
-  async getDashboardAnalytics() {
+  async getDashboardAnalytics(tz: string = 'Asia/Kolkata') {
+    const todayIso = this.getStartOfTodayIso(tz);
+
     try {
-      const { count: searches } = await supabase.from('search_history').select('*', { count: 'exact', head: true });
-      const { count: splits } = await supabase.from('split_learning').select('*', { count: 'exact', head: true });
-      const { count: pnrs } = await supabase.from('pnr_learning').select('*', { count: 'exact', head: true });
-      const { count: lives } = await supabase.from('live_learning').select('*', { count: 'exact', head: true });
-      const { data: apis } = await supabase.from('api_metrics').select('*');
+      const [
+        { count: searchesToday },
+        { count: splitsToday },
+        { count: pnrsToday },
+        { count: livesToday },
+        { count: searchesAllTime },
+        { count: splitsAllTime },
+        { count: pnrsAllTime },
+        { count: livesAllTime },
+        { data: apis }
+      ] = await Promise.all([
+        // Today's counts using authoritative table timestamp columns
+        supabase.from('search_history').select('*', { count: 'exact', head: true }).gte('searched_at', todayIso),
+        supabase.from('split_learning').select('*', { count: 'exact', head: true }).gte('created_at', todayIso),
+        supabase.from('pnr_learning').select('*', { count: 'exact', head: true }).gte('time_checked', todayIso),
+        supabase.from('live_learning').select('*', { count: 'exact', head: true }).gte('created_at', todayIso),
+
+        // All-time totals preserved
+        supabase.from('search_history').select('*', { count: 'exact', head: true }),
+        supabase.from('split_learning').select('*', { count: 'exact', head: true }),
+        supabase.from('pnr_learning').select('*', { count: 'exact', head: true }),
+        supabase.from('live_learning').select('*', { count: 'exact', head: true }),
+
+        supabase.from('api_metrics').select('*')
+      ]);
 
       return {
         status: 'learning_engine_active',
         tracking: {
-          search_events: searches || this.getLocalCount('search_history'),
-          split_events: splits || this.getLocalCount('split_learning'),
-          pnr_events: pnrs || this.getLocalCount('pnr_learning'),
-          live_events: lives || this.getLocalCount('live_learning')
+          search_events: searchesToday ?? this.getLocalCount('search_history', todayIso),
+          split_events: splitsToday ?? this.getLocalCount('split_learning', todayIso),
+          pnr_events: pnrsToday ?? this.getLocalCount('pnr_learning', todayIso),
+          live_events: livesToday ?? this.getLocalCount('live_learning', todayIso)
+        },
+        all_time: {
+          search_events: searchesAllTime ?? this.getLocalCount('search_history'),
+          split_events: splitsAllTime ?? this.getLocalCount('split_learning'),
+          pnr_events: pnrsAllTime ?? this.getLocalCount('pnr_learning'),
+          live_events: livesAllTime ?? this.getLocalCount('live_learning')
         },
         api_usage: apis || []
       };
@@ -239,11 +267,36 @@ export class LearningService {
     }
   }
 
-  private getLocalCount(table: string): number {
+  getStartOfTodayIso(tz: string = 'Asia/Kolkata'): string {
+    const now = new Date();
+    if (tz === 'UTC') {
+      return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0)).toISOString();
+    }
+    const dateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    return new Date(`${dateStr}T00:00:00+05:30`).toISOString();
+  }
+
+  private getLocalCount(table: string, todayIso?: string): number {
     try {
       const file = path.join(DATA_DIR, `${table}_fallback.jsonl`);
       if (!fs.existsSync(file)) return 0;
-      return fs.readFileSync(file, 'utf8').trim().split('\n').length;
+      const content = fs.readFileSync(file, 'utf8').trim();
+      if (!content) return 0;
+      const lines = content.split('\n');
+      if (!todayIso) return lines.length;
+      let count = 0;
+      for (const line of lines) {
+        try {
+          const parsed = JSON.parse(line);
+          const ts = parsed.searched_at || parsed.created_at || parsed.time_checked || parsed.timestamp;
+          if (ts && ts >= todayIso) {
+            count++;
+          }
+        } catch {
+          // Ignore parse errors on individual fallback lines
+        }
+      }
+      return count;
     } catch (e) {
       return 0;
     }
@@ -551,7 +604,7 @@ export class LearningService {
       const entitiesToUpsert: any[] = [];
       
       const processMap = (type: 'route' | 'train' | 'quota' | 'wl_type') => {
-        for (const [value, stats] of aggregations[type].entries()) {
+        for (const [value, stats] of Array.from(aggregations[type].entries())) {
           const successRate = Math.round((stats.success / stats.total) * 100);
           entitiesToUpsert.push({
             entity_type: type,
