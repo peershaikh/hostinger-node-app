@@ -119,13 +119,20 @@ class AlertService {
             });
         }
     }
-    async triggerWaitlistAlert(userId, pnr, oldStatus, newStatus) {
+    async triggerWaitlistAlert(userId, pnr, oldStatus, newStatus, email) {
         if (oldStatus.includes('WL') && (newStatus.includes('CNF') || newStatus.includes('RAC'))) {
             await this.queueAlert({
                 userId,
                 type: 'WL_CONFIRM',
                 priority: 'HIGH',
-                metadata: { pnr, oldStatus, newStatus, message: `Great news! PNR ${pnr} has moved to ${newStatus}.` }
+                metadata: {
+                    pnr,
+                    oldStatus,
+                    newStatus,
+                    email: email || undefined,
+                    title: `🎉 Great news! PNR ${pnr} is now ${newStatus}`,
+                    message: `Your waitlist ticket (PNR ${pnr}) has moved from ${oldStatus} to ${newStatus}. Safe travels!`
+                }
             });
         }
     }
@@ -143,17 +150,17 @@ class AlertService {
      * Fires when chart_status transitions from unprepared → prepared.
      * This is the most actionable notification for WL ticket holders.
      */
-    async triggerChartPreparedAlert(userId, pnr, chartStatus, cnfCount, totalPassengers) {
+    async triggerChartPreparedAlert(userId, pnr, chartStatus, cnfCount, totalPassengers, email) {
         let message = `The chart for PNR ${pnr} is now prepared. Your final seat/berth allocation is locked in.`;
         if (cnfCount !== undefined && totalPassengers !== undefined) {
             if (cnfCount === totalPassengers) {
-                message = "All passengers confirmed.";
+                message = `All ${totalPassengers} passengers confirmed. Enjoy your journey!`;
             }
             else if (cnfCount > 0 && cnfCount < totalPassengers) {
                 message = `Chart Prepared. ${cnfCount} of ${totalPassengers} passengers are confirmed. Remaining passengers are waitlisted.`;
             }
             else {
-                message = "No passengers confirmed.";
+                message = "Chart Prepared. Ticket remained waitlisted / not confirmed.";
             }
         }
         await this.queueAlert({
@@ -163,6 +170,7 @@ class AlertService {
             metadata: {
                 pnr,
                 chartStatus,
+                email: email || undefined,
                 title: `📋 Chart Prepared — PNR ${pnr}`,
                 message
             }

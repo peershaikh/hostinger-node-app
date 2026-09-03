@@ -1,4 +1,6 @@
-import { supabase } from '../config/supabase';
+import * as fs from 'fs';
+import * as path from 'path';
+import { supabase, safeWriteFileSync } from '../config/supabase';
 import { winstonLogger } from '../middleware/logger';
 import { fetchWithPriority } from '../utils/apiPriority';
 import { irctcService } from './irctcService';
@@ -16,18 +18,82 @@ export interface PnrRecord {
   journey_date?: string;
   last_updated?: string;
   status_changed?: boolean;
+  email?: string;
 }
 
 export class PnrTrackingService {
   private readonly TABLE_NAME = 'pnr_tracking';
+  private readonly CONTACTS_FILE = path.join(__dirname, '../../data/pnr_contacts.json');
+  private contactsMemoryCache = new Map<string, { email: string; updated_at: string }>();
+
+  constructor() {
+    this.loadContactsCache();
+  }
+
+  private loadContactsCache() {
+    try {
+      if (fs.existsSync(this.CONTACTS_FILE)) {
+        const raw = fs.readFileSync(this.CONTACTS_FILE, 'utf8');
+        const parsed = JSON.parse(raw);
+        for (const [pnr, val] of Object.entries(parsed)) {
+          this.contactsMemoryCache.set(pnr, val as any);
+        }
+      }
+    } catch (e) {}
+  }
+
+  public savePnrContact(pnr: string, email: string): void {
+    if (!pnr || !email) return;
+    this.contactsMemoryCache.set(pnr, { email, updated_at: new Date().toISOString() });
+    try {
+      const obj: Record<string, any> = {};
+      for (const [k, v] of this.contactsMemoryCache.entries()) {
+        obj[k] = v;
+      }
+      safeWriteFileSync(this.CONTACTS_FILE, JSON.stringify(obj, null, 2));
+    } catch (e) {}
+  }
+
+  public async getContactForPnr(pnr: string): Promise<{ email?: string } | null> {
+    if (!pnr) return null;
+    if (this.contactsMemoryCache.size === 0) {
+      this.loadContactsCache();
+    }
+    const mem = this.contactsMemoryCache.get(pnr);
+    if (mem?.email) return { email: mem.email };
+
+    // Fallback: check pnr_history bookmarks table for email
+    try {
+      const { data } = await supabase
+        .from('pnr_history')
+        .select('history')
+        .eq('pnr', pnr)
+        .maybeSingle();
+
+      if (data && Array.isArray(data.history) && data.history.length > 0) {
+        const histEmail = data.history.find((h: any) => h?.email)?.email;
+        if (histEmail) {
+          this.savePnrContact(pnr, histEmail);
+          return { email: histEmail };
+        }
+      }
+    } catch (err) {}
+
+    return null;
+  }
 
   /**
    * Add or update a PNR for tracking
    */
   async trackPnr(data: Omit<PnrRecord, 'id' | 'last_updated' | 'status_changed'>) {
     try {
+      if (data.email) {
+        this.savePnrContact(data.pnr_number, data.email);
+      }
+
+      const { email, ...dbFields } = data;
       const payload: Partial<PnrRecord> = {
-        ...data,
+        ...dbFields,
         journey_date: this.normalizeDateForDb(data.journey_date), // normalize before DB write
         last_updated: new Date().toISOString(),
         status_changed: false
@@ -56,7 +122,7 @@ export class PnrTrackingService {
 
       if (error) throw error;
 
-      winstonLogger.info(`[PNR_TRACE] Tracked/Updated PNR ${data.pnr_number}`);
+      winstonLogger.info(`[PNR_TRACE] Tracked/Updated PNR ${data.pnr_number} (email=${data.email || 'none'})`);
       return { success: true, pnr: data.pnr_number };
     } catch (err: any) {
       winstonLogger.error(`[PNR_TRACE] Failed for ${data.pnr_number}: ${err.message}`);
@@ -344,6 +410,23 @@ export class PnrTrackingService {
     } catch (err: any) {
       winstonLogger.error(`[PNR_UPDATE] Failed for ${pnrNumber}: ${err.message}`);
       return false;
+    }
+  }
+
+  /**
+   * Refreshes last_updated timestamp after a poll attempt, preventing duplicate rapid re-polling
+   */
+  async touchLastUpdated(id?: string, pnrNumber?: string): Promise<void> {
+    try {
+      if (!id && !pnrNumber) return;
+      const query = supabase.from(this.TABLE_NAME).update({ last_updated: new Date().toISOString() });
+      if (id) {
+        await query.eq('id', id);
+      } else if (pnrNumber) {
+        await query.eq('pnr_number', pnrNumber);
+      }
+    } catch (e: any) {
+      winstonLogger.debug(`[PNR_TOUCH] Failed for ${pnrNumber}: ${e.message}`);
     }
   }
 }

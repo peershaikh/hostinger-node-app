@@ -155,52 +155,102 @@ export class PnrWorker {
   }
 
   /**
-   * Intelligent polling decision based on journey proximity and last update
+   * Indian Railways 2-Stage Charting Polling Schedule:
+   * 
+   * Stage 1: First Chart (Pehla Chart)
+   *   - Morning trains (05:00 - 14:00): Prepared previous night between 20:00 and 21:45 IST.
+   *   - Afternoon/Night trains (after 14:00): Prepared ~10 hours before departure.
+   *   - During First Chart window: Poll every 30 minutes.
+   * 
+   * Stage 2: Second & Final Chart (Doosra Chart)
+   *   - Exactly ~30-45 minutes before train departure.
+   *   - During Final Chart window: Poll every 20 minutes.
+   * 
+   * Intermediate Current Booking Window (Between 1st & 2nd Chart):
+   *   - Poll once every 2 hours (120 mins).
+   * 
+   * Regular Long-Distance Window (> 24 hours to journey):
+   *   - Poll once every 6 hours (360 mins).
    */
+  public getPollingThresholdMinutes(record: any): number {
+    const journeyDate = this.parseDate(record.journey_date);
+    const now = Date.now();
+
+    if (!journeyDate) {
+      return 240; // Default 4 hours if journey date not specified
+    }
+
+    const hoursToJourney = (journeyDate.getTime() - now) / (1000 * 60 * 60);
+
+    // Case 0: Journey completed (train departed > 4 hours ago)
+    if (hoursToJourney < -4) {
+      return -1; // Stop polling
+    }
+
+    // Current IST Time calculation
+    const utcMs = now + (new Date().getTimezoneOffset() * 60000);
+    const istDate = new Date(utcMs + (5.5 * 3600000));
+    const istHour = istDate.getUTCHours();
+    const istMinute = istDate.getUTCMinutes();
+
+    // Stage 2: Final Chart Window (around 30-45 mins before departure: -0.5h to 1.5h)
+    if (hoursToJourney >= -0.5 && hoursToJourney <= 1.5) {
+      return 20; // Poll every 20 mins in the final chart preparation window
+    }
+
+    // Stage 1: First Chart Window
+    // A. ~10 hours before departure window (8h to 11h before departure)
+    if (hoursToJourney >= 8 && hoursToJourney <= 11) {
+      return 30; // Poll every 30 mins during the 10-hour First Chart window
+    }
+
+    // B. Previous night 20:00 - 21:45 IST window for morning trains (journey between 10h and 22h away)
+    if (hoursToJourney > 8 && hoursToJourney <= 22) {
+      const isEveningWindow = (istHour === 20) || (istHour === 21 && istMinute <= 45);
+      if (isEveningWindow) {
+        return 30; // Poll every 30 mins during 8 PM - 9:45 PM IST
+      }
+    }
+
+    // Intermediate Current Booking Window (between First Chart and Final Chart)
+    if (hoursToJourney > 1.5 && hoursToJourney < 8) {
+      return 120; // Poll every 2 hours during Current Booking
+    }
+
+    // Intermediate Window: 12 to 24 hours before journey
+    if (hoursToJourney <= 24) {
+      return 180; // Poll every 3 hours
+    }
+
+    // Normal Long-Distance: > 24 hours (2-5 days before journey)
+    return 360; // Poll every 6 hours
+  }
+
   private async shouldPoll(record: any): Promise<boolean> {
     const cacheKey = `pnr_poll_${record.pnr_number}`;
-    if (cacheService.get(cacheKey)) return false; // recently polled
+    if (cacheService.get(cacheKey)) return false; // Recently polled within threshold
+
+    const thresholdMinutes = this.getPollingThresholdMinutes(record);
+    if (thresholdMinutes < 0) {
+      return false; // Past journey or terminal
+    }
 
     const lastUpdated = new Date(record.last_updated || 0).getTime();
-    const now = Date.now();
-    const minutesSinceUpdate = (now - lastUpdated) / (1000 * 60);
+    const minutesSinceUpdate = (Date.now() - lastUpdated) / (1000 * 60);
 
-    const journeyDate = this.parseDate(record.journey_date);
-    const hoursToJourney = journeyDate
-      ? (journeyDate.getTime() - now) / (1000 * 60 * 60)
-      : 999;
-
-    // Expiry logic: do not poll if journey was completed >96h ago (handles multi-day trains)
-    if (journeyDate && hoursToJourney < -96) {
-      return false;
-    }
-
-    // Priority logic:
-    if (hoursToJourney >= 0 && hoursToJourney <= 24) {
-      // Near journey → poll more frequently
-      return minutesSinceUpdate > 45; // ~every 45 mins when close
-    }
-
-    if (hoursToJourney <= 72) {
-      return minutesSinceUpdate > 90; // every 1.5 hours
-    }
-
-    // Far journey or no date
-    return minutesSinceUpdate > 180; // every 3 hours
+    return minutesSinceUpdate >= thresholdMinutes;
   }
 
   /**
    * Update single PNR using service layer
    */
   private async updatePnrStatus(record: any): Promise<boolean> {
+    const pollCacheKey = `pnr_poll_${record.pnr_number}`;
     try {
-      const cacheKey = `pnr_status_${record.pnr_number}`;
-      const cached = cacheService.get(cacheKey);
-
-      if (cached) {
-        winstonLogger.debug(`[PNR_WORKER] Cache hit for ${record.pnr_number}`);
-        return false;
-      }
+      // Touch last_updated immediately and cache to prevent rapid re-polling loops
+      await pnrTrackingService.touchLastUpdated(record.id, record.pnr_number);
+      const thresholdMinutes = Math.max(15, this.getPollingThresholdMinutes(record));
+      cacheService.set(pollCacheKey, true, thresholdMinutes * 60);
 
       winstonLogger.info(`[PNR_WORKER] Fetching latest status for PNR ${record.pnr_number} with priority`);
 
@@ -243,20 +293,19 @@ export class PnrWorker {
       );
 
       if (success) {
-        // Cache for 10 minutes to prevent rapid re-polling
-        cacheService.set(cacheKey, true, 10);
-
         if (hasChanged) {
           winstonLogger.info(`[PNR_WORKER] ✅ STATUS CHANGE: ${record.pnr_number} → ${newStatus}`);
           await analyticsService.trackEvent('pnr_status_changed', record.pnr_number, {
             old_status: record.current_status,
             new_status: newStatus
           });
+          const contact = await pnrTrackingService.getContactForPnr(record.pnr_number);
           await alertService.triggerWaitlistAlert(
             record.session_id,
             record.pnr_number,
             record.current_status,
-            newStatus
+            newStatus,
+            contact?.email
           );
         } else {
           winstonLogger.debug(`[PNR_WORKER] No change for ${record.pnr_number}`);
@@ -275,12 +324,14 @@ export class PnrWorker {
           };
           const cnfCount = normalized.passengers?.filter((p: any) => isCnfStatus(p.current_status || p.booking_status)).length || 0;
 
+          const contact = await pnrTrackingService.getContactForPnr(record.pnr_number);
           await alertService.triggerChartPreparedAlert(
             record.session_id,
             record.pnr_number,
             newChartStatus,
             cnfCount,
-            totalPassengers
+            totalPassengers,
+            contact?.email
           );
         }
         // ──────────────────────────────────────────────────────────────────────

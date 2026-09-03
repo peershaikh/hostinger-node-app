@@ -1,6 +1,41 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.pnrTrackingService = exports.PnrTrackingService = void 0;
+const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
 const supabase_1 = require("../config/supabase");
 const logger_1 = require("../middleware/logger");
 const apiPriority_1 = require("../utils/apiPriority");
@@ -11,14 +46,73 @@ const railRadarService_1 = require("./railRadarService");
 class PnrTrackingService {
     constructor() {
         this.TABLE_NAME = 'pnr_tracking';
+        this.CONTACTS_FILE = path.join(__dirname, '../../data/pnr_contacts.json');
+        this.contactsMemoryCache = new Map();
+        this.loadContactsCache();
+    }
+    loadContactsCache() {
+        try {
+            if (fs.existsSync(this.CONTACTS_FILE)) {
+                const raw = fs.readFileSync(this.CONTACTS_FILE, 'utf8');
+                const parsed = JSON.parse(raw);
+                for (const [pnr, val] of Object.entries(parsed)) {
+                    this.contactsMemoryCache.set(pnr, val);
+                }
+            }
+        }
+        catch (e) { }
+    }
+    savePnrContact(pnr, email) {
+        if (!pnr || !email)
+            return;
+        this.contactsMemoryCache.set(pnr, { email, updated_at: new Date().toISOString() });
+        try {
+            const obj = {};
+            for (const [k, v] of this.contactsMemoryCache.entries()) {
+                obj[k] = v;
+            }
+            (0, supabase_1.safeWriteFileSync)(this.CONTACTS_FILE, JSON.stringify(obj, null, 2));
+        }
+        catch (e) { }
+    }
+    async getContactForPnr(pnr) {
+        if (!pnr)
+            return null;
+        if (this.contactsMemoryCache.size === 0) {
+            this.loadContactsCache();
+        }
+        const mem = this.contactsMemoryCache.get(pnr);
+        if (mem?.email)
+            return { email: mem.email };
+        // Fallback: check pnr_history bookmarks table for email
+        try {
+            const { data } = await supabase_1.supabase
+                .from('pnr_history')
+                .select('history')
+                .eq('pnr', pnr)
+                .maybeSingle();
+            if (data && Array.isArray(data.history) && data.history.length > 0) {
+                const histEmail = data.history.find((h) => h?.email)?.email;
+                if (histEmail) {
+                    this.savePnrContact(pnr, histEmail);
+                    return { email: histEmail };
+                }
+            }
+        }
+        catch (err) { }
+        return null;
     }
     /**
      * Add or update a PNR for tracking
      */
     async trackPnr(data) {
         try {
+            if (data.email) {
+                this.savePnrContact(data.pnr_number, data.email);
+            }
+            const { email, ...dbFields } = data;
             const payload = {
-                ...data,
+                ...dbFields,
                 journey_date: this.normalizeDateForDb(data.journey_date), // normalize before DB write
                 last_updated: new Date().toISOString(),
                 status_changed: false
@@ -45,7 +139,7 @@ class PnrTrackingService {
             }
             if (error)
                 throw error;
-            logger_1.winstonLogger.info(`[PNR_TRACE] Tracked/Updated PNR ${data.pnr_number}`);
+            logger_1.winstonLogger.info(`[PNR_TRACE] Tracked/Updated PNR ${data.pnr_number} (email=${data.email || 'none'})`);
             return { success: true, pnr: data.pnr_number };
         }
         catch (err) {
@@ -315,6 +409,25 @@ class PnrTrackingService {
         catch (err) {
             logger_1.winstonLogger.error(`[PNR_UPDATE] Failed for ${pnrNumber}: ${err.message}`);
             return false;
+        }
+    }
+    /**
+     * Refreshes last_updated timestamp after a poll attempt, preventing duplicate rapid re-polling
+     */
+    async touchLastUpdated(id, pnrNumber) {
+        try {
+            if (!id && !pnrNumber)
+                return;
+            const query = supabase_1.supabase.from(this.TABLE_NAME).update({ last_updated: new Date().toISOString() });
+            if (id) {
+                await query.eq('id', id);
+            }
+            else if (pnrNumber) {
+                await query.eq('pnr_number', pnrNumber);
+            }
+        }
+        catch (e) {
+            logger_1.winstonLogger.debug(`[PNR_TOUCH] Failed for ${pnrNumber}: ${e.message}`);
         }
     }
 }

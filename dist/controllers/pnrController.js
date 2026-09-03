@@ -588,14 +588,15 @@ class PnrController {
         return 'Very Low Confirmation Chance';
     }
     async track(req, res) {
-        const { pnr, session_id, current_status, journey_date } = req.body;
+        const { pnr, session_id, current_status, journey_date, email } = req.body;
         if (!pnr || !session_id)
             return res.status(400).json({ success: false, error: 'Missing PNR or Session ID' });
         const result = await pnrTrackingService_1.pnrTrackingService.trackPnr({
             pnr_number: pnr,
             session_id,
             current_status,
-            journey_date
+            journey_date,
+            email: typeof email === 'string' && email.includes('@') ? email.trim().toLowerCase() : undefined
         });
         res.status(result.success ? 200 : 500).json(result);
     }

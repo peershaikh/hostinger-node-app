@@ -119,6 +119,8 @@ export class AdminController {
       let readNotifs = 0;
       let unreadNotifs = 0;
       let activeTokensCount = 0;
+      let activePnrTrackers = 0;
+      let activeStationAlarms = 0;
 
       try {
         if (isSupabaseConfigured()) {
@@ -138,9 +140,19 @@ export class AdminController {
 
           const { count: tokens } = await supabase.from('user_push_tokens').select('*', { count: 'exact', head: true });
           activeTokensCount = tokens || 0;
+
+          const { count: pnrTrackers } = await supabase.from('pnr_tracking').select('*', { count: 'exact', head: true });
+          activePnrTrackers = pnrTrackers || 0;
+
+          const { count: alarms } = await supabase.from('user_station_alarms').select('*', { count: 'exact', head: true }).eq('enabled', true);
+          activeStationAlarms = alarms || 0;
         }
       } catch (e: any) {
         winstonLogger.warn(`[ADMIN_NOTIFICATION_FAIL] DB notification stats fail: ${e.message}`);
+        try {
+          const { MEMORY_ALARMS } = require('./alarmController');
+          activeStationAlarms = Array.from(MEMORY_ALARMS?.values?.() || []).filter((a: any) => a?.enabled).length;
+        } catch {}
         try {
           const { MEMORY_NOTIFICATION_HISTORY, MEMORY_PUSH_TOKENS } = require('./notificationController');
           totalSentNotifs = MEMORY_NOTIFICATION_HISTORY.length;
@@ -373,6 +385,9 @@ export class AdminController {
             split_searches: tracking.split_events,
             live_tracking: tracking.live_events,
             pnr_checks: tracking.pnr_events,
+            active_pnr_trackers: activePnrTrackers,
+            active_station_alarms: activeStationAlarms,
+            delivered_alerts: deliveredNotifs,
             all_time: aiMetrics.all_time || null
           },
           cost: {

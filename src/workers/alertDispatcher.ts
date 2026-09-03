@@ -70,6 +70,7 @@ export class AlertDispatcher {
         }
         
         const metadata = alert.metadata || {};
+        userEmail = userEmail || metadata.email || null;
         const title = metadata.title || `Trayago: ${alert.alert_type} Alert`;
         const message = metadata.message || 'You have a new update regarding your train journey.';
 
