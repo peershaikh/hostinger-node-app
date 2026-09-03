@@ -9,6 +9,7 @@ import { confirmtktService } from './confirmtktService';
 import { rapidApiService } from './rapidApiService';
 import { stationService } from './stationService';
 import { geminiTrainScheduleService } from './geminiTrainScheduleService';
+import { dbService } from './dbService';
 
 export interface LiveTrainStatus {
   train_number: string;
@@ -181,9 +182,16 @@ export class LiveTrackingService {
           if (info) {
             // Capture train name from getTrainInfo response
             irctcTrainName =
-              info.trainName || info.train_name || info.name ||
-              info.trainInfo?.name || info.trainInfo?.trainName ||
-              info.data?.trainName || '';
+              info.trainInfo?.train_name ||
+              info.trainInfo?.trainName ||
+              info.trainInfo?.name ||
+              info.trainName ||
+              info.train_name ||
+              info.name ||
+              info.data?.trainInfo?.train_name ||
+              info.data?.trainName ||
+              info.data?.train_name ||
+              '';
             // IRCTC getTrainInfo can return route data under many field names
             const rawRoute =
               info.route ||
@@ -337,15 +345,11 @@ export class LiveTrackingService {
     }
   }
 
-  // ── Fetch train name from DB ──────────────────────────────────────────────────
+  // ── Fetch train name from DB or live directory ──────────────────────────────
   private async fetchDbTrainName(trainNo: string): Promise<string> {
     try {
-      const { data } = await supabase
-        .from('trains')
-        .select('name')
-        .eq('number', trainNo)
-        .maybeSingle();
-      if (data?.name) return data.name;
+      const name = await dbService.dbLookupTrainName(trainNo);
+      if (name) return name;
     } catch {
       // Fall through to legacy shape.
     }
@@ -1074,9 +1078,25 @@ export class LiveTrackingService {
         finalCurrentStation;
 
 
+      const candidateLiveName =
+        liveData.trainInfo?.train_name ||
+        liveData.trainInfo?.trainName ||
+        liveData.trainInfo?.name ||
+        liveData.trainName ||
+        liveData.train_name ||
+        liveData.name ||
+        liveData.data?.trainInfo?.train_name ||
+        liveData.data?.trainName ||
+        liveData.data?.train_name ||
+        '';
+
+      const isGenericName = !candidateLiveName || /^train\s*\d+/i.test(candidateLiveName);
+
       const trainName =
-        liveData.trainName || liveData.train_name || liveData.name ||
-        dbTrainName || irctcScheduleTrainName ||
+        (!isGenericName ? candidateLiveName : '') ||
+        dbTrainName ||
+        irctcScheduleTrainName ||
+        candidateLiveName ||
         `Train ${trainNo}`;
 
       const isJourneyCompleted = isTimeCompleted || actualCurrentIndex === fullSchedule.length - 1;

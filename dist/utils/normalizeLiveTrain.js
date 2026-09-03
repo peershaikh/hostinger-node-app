@@ -29,7 +29,14 @@ function normalizeLiveTrainData(rawData) {
     let updatedAt = rawData.last_updated || rawData.updatedAt || new Date().toISOString();
     let status = rawData.status_summary || rawData.status || "Running";
     let trainNo = rawData.train_number || rawData.trainNo || "";
-    let trainName = rawData.train_name || rawData.trainName || "";
+    let trainName = rawData.train_name ||
+        rawData.trainName ||
+        rawData.trainInfo?.train_name ||
+        rawData.trainInfo?.trainName ||
+        rawData.trainInfo?.name ||
+        rawData.data?.trainName ||
+        rawData.data?.train_name ||
+        "";
     let activeJourneyDate = rawData.active_journey_date || rawData.activeJourneyDate || null;
     // Compute from timeline if current index is valid
     if (stations.length > 0) {

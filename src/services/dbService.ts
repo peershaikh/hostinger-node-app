@@ -219,20 +219,85 @@ class DbService {
    */
   async dbLookupTrainName(trainNo: string): Promise<string | undefined> {
     if (!trainNo) return undefined;
+    const cleanNo = String(trainNo).trim();
+    if (!cleanNo || cleanNo === '00000' || cleanNo === 'N/A') return undefined;
 
+    const cacheKey = `train_official_name_${cleanNo}`;
+    try {
+      const { cacheService } = require('./cacheService');
+      const cached = cacheService.get(cacheKey);
+      if (cached) return cached;
+    } catch {}
+
+    const strippedNo = cleanNo.replace(/^0+/, '');
+    const paddedNo = cleanNo.padStart(5, '0');
+    const lookupNumbers = [...new Set([cleanNo, strippedNo, paddedNo].filter(Boolean))];
+
+    // 1. Static fast database JSON lookup
+    try {
+      const dbTrains = require('../data/dbTrains.json');
+      if (Array.isArray(dbTrains)) {
+        const local = dbTrains.find((t: any) =>
+          lookupNumbers.includes(String(t.trainNo || t.number || ''))
+        );
+        const localName = local?.name || local?.trainName || local?.train_name;
+        if (localName && !/^(Passenger|Unknown Express|Unknown Train|Train)\s*\d*/i.test(localName)) {
+          try {
+            const { cacheService } = require('./cacheService');
+            cacheService.set(cacheKey, localName, 86400); // 24 hours
+          } catch {}
+          return localName;
+        }
+      }
+    } catch {}
+
+    // 2. Supabase DB lookup with number and Train_No tolerance
     try {
       const { data, error } = await supabase
         .from('trains')
-        .select('name')
-        .eq('number', trainNo)
-        .single();
+        .select('name, Train_Name')
+        .or(`number.in.(${lookupNumbers.join(',')}),Train_No.in.(${lookupNumbers.join(',')})`)
+        .maybeSingle();
 
-      if (!error && data?.name) {
-        return data.name;
+      const dbName = data?.name || data?.Train_Name;
+      if (!error && dbName && !/^(Passenger|Unknown Express|Unknown Train|Train)\s*\d*/i.test(dbName)) {
+        try {
+          const { cacheService } = require('./cacheService');
+          cacheService.set(cacheKey, dbName, 86400);
+        } catch {}
+        return dbName;
       }
     } catch (e: any) {
-      winstonLogger.warn(`Train name lookup failed for ${trainNo}: ${e.message}`);
+      winstonLogger.warn(`Train name DB lookup failed for ${trainNo}: ${e.message}`);
     }
+
+    // 3. Live IRCTC / RailKit lookup for special or unsynced trains (e.g. 07220 TNM NS SPL)
+    try {
+      const { irctcService } = require('./irctcService');
+      if (irctcService) {
+        const info = await irctcService.getTrainInfo(cleanNo);
+        if (info) {
+          const liveName =
+            info.trainInfo?.train_name ||
+            info.trainInfo?.trainName ||
+            info.trainInfo?.name ||
+            info.train_name ||
+            info.trainName ||
+            info.name ||
+            info.data?.trainInfo?.train_name ||
+            info.data?.trainName ||
+            info.data?.train_name;
+
+          if (liveName && !/^(Passenger|Unknown Express|Unknown Train|Train)\s*\d*/i.test(liveName)) {
+            try {
+              const { cacheService } = require('./cacheService');
+              cacheService.set(cacheKey, liveName, 86400);
+            } catch {}
+            return liveName;
+          }
+        }
+      }
+    } catch {}
 
     return undefined;
   }
