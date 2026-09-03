@@ -1321,6 +1321,9 @@ export class SplitJourneyEngine {
   private readonly MAX_TOTAL_CALLS = 40;
   private readonly MAX_ENGINE_TIME_MS = 22000;
   private readonly MAX_COMBOS_PER_HUB = 8;
+  /** PHASE_087N111 — Phase 2 call reserve so Phase 1 candidate fanout never starves Leg-2 fetches */
+  private readonly MIN_PHASE2_RESERVE = 15;
+  private readonly PHASE1_HUB_CAP = 10;
 
   /**
    * PHASE_087I — Designated major railway junction hubs that are valid corridor
@@ -2662,6 +2665,14 @@ export class SplitJourneyEngine {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // PHASE_087N98: PAN-INDIA MULTI-TERMINAL SELECTION
+  // ─────────────────────────────────────────────────────────────────────────
+  // PHASE_087N98: Micro/suburban terminal codes that must stay DB-only even as sister terminals
+  private static readonly N98_MICRO_TERMINALS = new Set<string>([
+    'PNVL', 'BIRD', 'KJT', 'SNRD', 'TNA', 'DR', 'BVI', 'KYN', 'NRL'
+  ]);
+
   // —————————————————————————————————————————————————————————————————————————
   // DIRECT TRAINS
   // —————————————————————————————————————————————————————————————————————————
@@ -2910,6 +2921,8 @@ export class SplitJourneyEngine {
   ): Promise<SplitJourney[]> {
     const startTime = Date.now();
     this.engineStartMs = startTime;  // API budget clock starts here
+    this.apiCallCount = 0;
+    this.legSearchStats = { hits: 0, misses: 0 };
     const sCode = sCodes[0];  // primary code for filtering
     const dCode = dCodes[0];
     winstonLogger.debug(`[SPLIT_TRACE] ▶ findSplitJourneys: src=${sCode} dst=${dCode} date=${date}`);
@@ -3140,9 +3153,11 @@ export class SplitJourneyEngine {
     // and the engine stops once enough valid candidates exist. Governors are
     // enforced before every chunk. Tier 2/3 widen the envelope by continuing the
     // NEXT chunk instead of re-filtering already-generated candidates.
-    const hubPool = hubs;
+    // PHASE_087N111 — Bound Phase 1 candidate hubs to top 10 (PHASE1_HUB_CAP) while preserving
+    // N82 deterministic priority order at indices 0,1,2, preventing hub explosion from starving Phase 2.
+    const hubPool = hubs.slice(0, this.PHASE1_HUB_CAP);
 
-    winstonLogger.info(`[SPLIT_ENGINE] Phase 1: up to ${hubPool.length} ranked hubs (chunk=${this.MAX_HUBS}, batch=2)`);
+    winstonLogger.info(`[SPLIT_ENGINE] Phase 1: up to ${hubPool.length} ranked hubs (cap=${this.PHASE1_HUB_CAP}, batch=2)`);
 
     // —— Fix E: Process hubs in batches of 2 to cap parallel concurrency ——
     const leg1Results: any[] = [];
@@ -3152,8 +3167,9 @@ export class SplitJourneyEngine {
         winstonLogger.info('[SPLIT_ENGINE] Phase 1 time governor reached');
         break;
       }
-      if (this.apiCallCount >= this.MAX_TOTAL_CALLS) {
-        winstonLogger.info(`[SPLIT_ENGINE] Phase 1 API call governor reached (${this.apiCallCount})`);
+      // PHASE_087N111 — Stop Phase 1 before consuming the reserved Phase 2 call budget (40 - 15 = 25 max calls)
+      if (this.apiCallCount >= this.MAX_TOTAL_CALLS - this.MIN_PHASE2_RESERVE) {
+        winstonLogger.info(`[SPLIT_ENGINE] Phase 1 API call governor reached (${this.apiCallCount}/${this.MAX_TOTAL_CALLS - this.MIN_PHASE2_RESERVE} reserve=${this.MIN_PHASE2_RESERVE})`);
         break;
       }
       const batch = hubPool.slice(i, i + BATCH_SIZE);
@@ -3165,26 +3181,41 @@ export class SplitJourneyEngine {
             const hName = (await stationService.getStationName(hCode)) || hub;
 
             const trainMap = new Map<string, any>();
+
             // Fan out all source stations for this hub in parallel
             const searchResults = await Promise.all(
               sCodes.map(async (sc, index) => {
                 try {
                   this.apiCallCount++;
-                  // —— Fix D: Prioritize primary terminal (index === 0) for live search ——
-                  const forceDb = index > 0;
-                  return { sc, raw: await this.searchLeg(sc, hCode, date, forceDb) };
-                } catch { return { sc, raw: [] }; }
+                  // PHASE_087N98: primary terminal (index 0) always LIVE;
+                  // second terminal (index 1) LIVE unless micro/suburban;
+                  // index >= 2 always DB-only.
+                  const isMicro = SplitJourneyEngine.N98_MICRO_TERMINALS.has(sc);
+                  const forceDb = isMicro ? true : index > 1;
+                  return { sc, raw: await this.searchLeg(sc, hCode, date, forceDb), forceDb };
+                } catch { return { sc, raw: [], forceDb: true }; }
               })
             );
 
-            for (const { sc, raw } of searchResults) {
-              if (Array.isArray(raw)) {
+            for (const { sc, raw, forceDb } of searchResults) {
+              if (Array.isArray(raw) && raw.length > 0) {
                 raw.forEach((t: any) => {
                   const tNo = t.train_number || t.trainNo || t.number || Math.random();
-                  if (!trainMap.has(String(tNo))) trainMap.set(String(tNo), { ...t, _fromCode: t.fromStationCode || t.from_station_code || t.from_stn_code || sc });
+                  const trainKey = String(tNo);
+
+                  // Dedupe: prefer LIVE result over DB result
+                  if (!trainMap.has(trainKey) || !forceDb) {
+                    trainMap.set(trainKey, {
+                      ...t,
+                      _fromCode: t.fromStationCode || t.from_station_code || t.from_stn_code || sc,
+                      _sourceLive: !forceDb
+                    });
+                  }
                 });
               }
             }
+
+
 
             return { hub, hCode, hName, trains: [...trainMap.values()] };
           } catch {
@@ -3486,14 +3517,25 @@ export class SplitJourneyEngine {
             // Convert HH:mm + date string to an epoch ms value so we never
             // suffer from rollover/timezone arithmetic errors.
             //
-            // FIX(DATE_OVERFLOW): l1.dayNumber from IRCTC/DB is the entire
-            // train's scheduled day-number — NOT the day-offset for this leg's
-            // hub-arrival. Detect midnight rollover by comparing raw HH:mm values:
-            //   arrival < departure (time-of-day)  →  train crossed midnight
-            //   → hub arrives on day 2 (dayOffset=2), otherwise same day (1).
+            // PHASE_087N124 FIX B: Multi-day arrival / day-offset calculation.
+            // Simple clock-only comparison (l1ArrMins < l1DepMins ? 2 : 1) fails for
+            // multi-day trains taking >= 24h where arrival time happens to be later in
+            // the clock day than departure (e.g. 12627 SBC 19:20 -> ET 21:20 takes 26 hrs
+            // and arrives Day 2, but clock diff 1280 > 1160 wrongly treated as Day 1).
+            // Use dayNumber - depDay or durationMins if available, before falling back to clock rollover.
             const l1DepMins = this.parseToMins(l1.departure || '00:00');
             const l1ArrMins = this.parseToMins(l1.arrival   || '00:00');
-            const l1ArrDayOffset = (l1ArrMins < l1DepMins && l1DepMins > 0) ? 2 : 1;
+            const l1DurMins = l1.durationMins || (l1 as any).duration_mins || l1.duration || 0;
+            let l1ArrDayOffset = 1;
+            if (l1.dayNumber && l1.depDay && l1.dayNumber >= l1.depDay && (l1.dayNumber > 1 || l1DurMins > 1440)) {
+              l1ArrDayOffset = 1 + (l1.dayNumber - l1.depDay);
+            } else if (l1DurMins > 0) {
+              l1ArrDayOffset = 1 + Math.floor((l1DepMins + l1DurMins) / 1440);
+            } else if (l1.dayNumber && l1.dayNumber > 1) {
+              l1ArrDayOffset = l1.dayNumber;
+            } else {
+              l1ArrDayOffset = (l1ArrMins < l1DepMins && l1DepMins > 0) ? 2 : 1;
+            }
             const leg1ArrivalMs = this.toEpochMs(date, l1.arrival, l1ArrDayOffset);
             const leg2DepartureMs = this.toEpochMs(leg2Date, l2.departure, 1);
 
@@ -3757,6 +3799,10 @@ export class SplitJourneyEngine {
       filteredCombinations = buildFilteredByEnvelope(TIER_3_TOTAL_MINS);
       activeTier = 3;
     }
+    if (filteredCombinations.length < MIN_TIER_RESULTS && baseDurationLimit > TIER_3_TOTAL_MINS) {
+      filteredCombinations = buildFilteredByEnvelope(baseDurationLimit);
+      activeTier = 4;
+    }
     winstonLogger.info(`[SPLIT_ENGINE] Progressive envelope: tier=${activeTier} candidates=${filteredCombinations.length} (allCombos=${allCombinations.length})`);
 
     // Relaxed fallback pool — even more lenient (base + 2h)
@@ -3972,8 +4018,9 @@ export class SplitJourneyEngine {
            // SAFE VALIDATION: Only reject if API explicitly returns non-empty results
            // AND the train is definitively not in them (minimum 2 results to be confident)
            if (l1Live !== null && Array.isArray(l1Live) && l1Live.length >= 2) {
-               const numStr = String((c as any).leg1.trainNo || (c as any).leg1.number || '');
-               if (!l1Live.some((t: any) => String(t.trainNo || t.train_number || t.number) === numStr)) {
+               const numStr = String((c as any).leg1.trainNo || (c as any).leg1.train_no || (c as any).leg1.train_number || (c as any).leg1.number || '');
+               // PHASE_087N118: accept train_no in addition to trainNo, train_number, number
+               if (!l1Live.some((t: any) => String(t.trainNo || t.train_no || t.train_number || t.number || '') === numStr)) {
                    winstonLogger.debug(`[TRAIN_REJECTED_DATE_MISMATCH] Leg1 ${numStr} not found in live schedule for ${leg1Date}`);
                    return null;
                }
@@ -3983,8 +4030,8 @@ export class SplitJourneyEngine {
            }
            
            if (l2Live !== null && Array.isArray(l2Live) && l2Live.length >= 2) {
-               const numStr = String((c as any).leg2.trainNo || (c as any).leg2.number || '');
-               if (!l2Live.some((t: any) => String(t.trainNo || t.train_number || t.number) === numStr)) {
+               const numStr = String((c as any).leg2.trainNo || (c as any).leg2.train_no || (c as any).leg2.train_number || (c as any).leg2.number || '');
+               if (!l2Live.some((t: any) => String(t.trainNo || t.train_no || t.train_number || t.number || '') === numStr)) {
                    winstonLogger.debug(`[TRAIN_REJECTED_DATE_MISMATCH] Leg2 ${numStr} not found in live schedule for ${leg2Date}`);
                    return null;
                }
@@ -5575,20 +5622,24 @@ export class SplitJourneyEngine {
     this.legSearchStats.misses++;
 
     // 1. LIVE-FIRST
-    const elapsed = Date.now() - this.engineStartMs;
-    const liveBudgetMs = Math.max(3000, this.API_BUDGET_MS + 2000);
-    if (!forceDbFallback && elapsed <= liveBudgetMs) {
-      const remainingBudget = Math.max(2000, liveBudgetMs - elapsed);
-        let searchTimer: NodeJS.Timeout | undefined;
-        try {
-          const apiResult = await Promise.race([
+    // PHASE_087N124 FIX A: Dynamic engine budget. Rather than an arbitrary 4000ms ceiling
+    // that starved Phase 2 of live calls after Phase 1 fanout, compute remaining engine time
+    // from MAX_ENGINE_TIME_MS and ensure API call ceiling is respected.
+    const elapsed = this.engineStartMs > 0 ? Date.now() - this.engineStartMs : 0;
+    const remainingEngineMs = Math.max(0, this.MAX_ENGINE_TIME_MS - elapsed);
+    const hasLiveBudget = !forceDbFallback && remainingEngineMs >= 2000 && this.apiCallCount <= this.MAX_TOTAL_CALLS;
+    if (hasLiveBudget) {
+      const perCallTimeout = Math.max(2000, Math.min(5000, remainingEngineMs - 1000));
+      let searchTimer: NodeJS.Timeout | undefined;
+      try {
+        const apiResult = await Promise.race([
           fetchWithPriority<any[]>({
             irctc: () => irctcService.search(from, to, date),
             // rapidAPI disabled
 
           }),
           new Promise<null>((resolve) => {
-            searchTimer = setTimeout(() => resolve(null), remainingBudget);
+            searchTimer = setTimeout(() => resolve(null), perCallTimeout);
           })
         ]).finally(() => {
           if (searchTimer) clearTimeout(searchTimer);
@@ -5742,8 +5793,8 @@ export class SplitJourneyEngine {
   ): RichLeg {
     // Fix: Use the train's actual station code rather than the cluster fallback if available.
     // This prevents availability lookup failures where a train like 12952 (MMCT) is wrongly tagged as CSMT.
-    const actualFromCode = raw._fromCode || raw.fromStationCode || raw.from_station_code || raw.fromCode || raw.from || fromCode;
-    const actualToCode = raw.toStationCode || raw.to_station_code || raw.toCode || raw.to || toCode;
+    const actualFromCode = raw._fromCode || raw.fromStationCode || raw.from_station_code || raw.from_stn_code || raw.fromCode || raw.from || fromCode;
+    const actualToCode = raw.toStationCode || raw.to_station_code || raw.to_stn_code || raw.toCode || raw.to || toCode;
 
     const dep =
       raw.departure_time ||
@@ -5842,16 +5893,23 @@ export class SplitJourneyEngine {
 
     if (!apiDurationMins) {
       const rawStr = String(raw.travel_time || raw.total_journey_time || raw.duration_str || raw.durationStr || raw.duration || '').toLowerCase();
-      // Handle "37h 55m" or "37 h 55 m"
-      const hMatch = rawStr.match(/(\d+)\s*h/);
-      const mMatch = rawStr.match(/(\d+)\s*m/);
-      if (hMatch || mMatch) {
-        apiDurationMins = (parseInt(hMatch?.[1] || '0') * 60) + parseInt(mMatch?.[1] || '0');
+      // Colon format like "26:00 hrs", "26:00", "04:30 hrs" must be checked FIRST
+      // to avoid "26:00 hrs" wrongly matching "00 h" in the hour regex.
+      const colonMatch = rawStr.match(/(\d+)\s*:\s*(\d+)/);
+      if (colonMatch) {
+        apiDurationMins = (parseInt(colonMatch[1]) * 60) + parseInt(colonMatch[2]);
       } else {
-        const clean = rawStr.replace(/[^0-9:]/g, '').trim();
-        if (clean.includes(':')) {
-          const parts = clean.split(':').map(Number);
-          apiDurationMins = (parts[0] || 0) * 60 + (parts[1] || 0);
+        // Handle "37h 55m" or "37 h 55 m"
+        const hMatch = rawStr.match(/(\d+)\s*h/);
+        const mMatch = rawStr.match(/(\d+)\s*m/);
+        if (hMatch || mMatch) {
+          apiDurationMins = (parseInt(hMatch?.[1] || '0') * 60) + parseInt(mMatch?.[1] || '0');
+        } else {
+          const clean = rawStr.replace(/[^0-9:]/g, '').trim();
+          if (clean.includes(':')) {
+            const parts = clean.split(':').map(Number);
+            apiDurationMins = (parts[0] || 0) * 60 + (parts[1] || 0);
+          }
         }
       }
     }

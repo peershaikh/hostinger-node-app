@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabase';
 import { winstonLogger } from '../middleware/logger';
+import { stationService } from './stationService';
 
 interface SearchCachePayload {
   source: string;
@@ -466,7 +467,9 @@ class DbService {
             sourceRow.Departure_Time,
             destRow.Arrival_time,
             sourceRow.Distance,
-            destRow.Distance
+            destRow.Distance,
+            sourceRow.Station_Code,
+            destRow.Station_Code
           );
 
           results.push({
@@ -524,7 +527,9 @@ class DbService {
     departure?: string,
     arrival?: string,
     startDistance?: number,
-    endDistance?: number
+    endDistance?: number,
+    fromCode?: string,
+    toCode?: string
   ): number {
     const dep = this.timeToMinutes(departure);
     const arr = this.timeToMinutes(arrival);
@@ -535,34 +540,58 @@ class DbService {
 
     const clockDiff = arr >= dep ? arr - dep : 1440 - dep + arr;
 
+    let distDiff = 0;
     if (startDistance !== undefined && endDistance !== undefined && startDistance !== null && endDistance !== null) {
-      const distDiff = Number(endDistance) - Number(startDistance);
-      if (distDiff > 0) {
-        // Average speed heuristic:
-        // Indian trains run typically at 45 to 80 km/h.
-        // We select n (0 to 4) such that the resulting speed is closest to 62 km/h.
-        const baseClockDiff = arr - dep;
-        const targetSpeed = 62; // km/h
-        let bestN = 0;
-        let minDiff = Infinity;
-        
-        for (let n = 0; n <= 4; n++) {
-          const duration = baseClockDiff + n * 1440;
-          if (duration <= 0) continue;
-          
-          const speed = distDiff / (duration / 60); // km/h
-          const diff = Math.abs(speed - targetSpeed);
-          if (diff < minDiff) {
-            minDiff = diff;
-            bestN = n;
-          }
-        }
-        
-        return baseClockDiff + bestN * 1440;
+      distDiff = Number(endDistance) - Number(startDistance);
+    }
+
+    // If Distance column is missing/null in train_schedule (which occurs on >99% of DB rows),
+    // estimate rail distance using in-memory station coordinates (~1.25x haversine direct distance).
+    if (distDiff <= 0 && fromCode && toCode) {
+      const c1 = stationService.getCoordinatesSync(fromCode);
+      const c2 = stationService.getCoordinatesSync(toCode);
+      if (c1 && c2) {
+        const directKm = this._haversineKm(c1.lat, c1.lon, c2.lat, c2.lon);
+        distDiff = directKm * 1.25;
       }
     }
 
+    if (distDiff > 0) {
+      // Average speed heuristic:
+      // Indian trains run typically at 45 to 80 km/h.
+      // We select n (0 to 4) such that the resulting speed is closest to 62 km/h.
+      const baseClockDiff = arr - dep;
+      const targetSpeed = 62; // km/h
+      let bestN = 0;
+      let minDiff = Infinity;
+      
+      for (let n = 0; n <= 4; n++) {
+        const duration = baseClockDiff + n * 1440;
+        if (duration <= 0) continue;
+        
+        const speed = distDiff / (duration / 60); // km/h
+        const diff = Math.abs(speed - targetSpeed);
+        if (diff < minDiff) {
+          minDiff = diff;
+          bestN = n;
+        }
+      }
+      
+      return baseClockDiff + bestN * 1440;
+    }
+
     return clockDiff;
+  }
+
+  private _haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
   private timeToMinutes(value?: string): number | null {

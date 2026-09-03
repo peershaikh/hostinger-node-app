@@ -401,6 +401,15 @@ export class StationService {
     return null;
   }
 
+  getCoordinatesSync(code: string): { lat: number; lon: number } | null {
+    if (!code) return null;
+    const cleanCode = this.normalizeInput(code);
+    if (COORDINATES_MAP[cleanCode]) return COORDINATES_MAP[cleanCode];
+    if (cleanCode === 'CSMT' && COORDINATES_MAP['CSTM']) return COORDINATES_MAP['CSTM'];
+    if (cleanCode === 'CSTM' && COORDINATES_MAP['CSMT']) return COORDINATES_MAP['CSMT'];
+    return null;
+  }
+
   async getNearbyStations(targetCode: string, initialRadiusKm: number = 50): Promise<any[]> {
     const cleanCode = this.normalizeInput(targetCode);
     const coords = await this.getCoordinates(cleanCode);

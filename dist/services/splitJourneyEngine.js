@@ -2522,6 +2522,8 @@ class SplitJourneyEngine {
     async findSplitJourneys(sName, dName, sCodes, dCodes, date, directTrainsRef, providedHubs) {
         const startTime = Date.now();
         this.engineStartMs = startTime; // API budget clock starts here
+        this.apiCallCount = 0;
+        this.legSearchStats = { hits: 0, misses: 0 };
         const sCode = sCodes[0]; // primary code for filtering
         const dCode = dCodes[0];
         logger_1.winstonLogger.debug(`[SPLIT_TRACE] ▶ findSplitJourneys: src=${sCode} dst=${dCode} date=${date}`);
@@ -3047,14 +3049,28 @@ class SplitJourneyEngine {
                         // Convert HH:mm + date string to an epoch ms value so we never
                         // suffer from rollover/timezone arithmetic errors.
                         //
-                        // FIX(DATE_OVERFLOW): l1.dayNumber from IRCTC/DB is the entire
-                        // train's scheduled day-number — NOT the day-offset for this leg's
-                        // hub-arrival. Detect midnight rollover by comparing raw HH:mm values:
-                        //   arrival < departure (time-of-day)  →  train crossed midnight
-                        //   → hub arrives on day 2 (dayOffset=2), otherwise same day (1).
+                        // PHASE_087N124 FIX B: Multi-day arrival / day-offset calculation.
+                        // Simple clock-only comparison (l1ArrMins < l1DepMins ? 2 : 1) fails for
+                        // multi-day trains taking >= 24h where arrival time happens to be later in
+                        // the clock day than departure (e.g. 12627 SBC 19:20 -> ET 21:20 takes 26 hrs
+                        // and arrives Day 2, but clock diff 1280 > 1160 wrongly treated as Day 1).
+                        // Use dayNumber - depDay or durationMins if available, before falling back to clock rollover.
                         const l1DepMins = this.parseToMins(l1.departure || '00:00');
                         const l1ArrMins = this.parseToMins(l1.arrival || '00:00');
-                        const l1ArrDayOffset = (l1ArrMins < l1DepMins && l1DepMins > 0) ? 2 : 1;
+                        const l1DurMins = l1.durationMins || l1.duration_mins || l1.duration || 0;
+                        let l1ArrDayOffset = 1;
+                        if (l1.dayNumber && l1.depDay && l1.dayNumber >= l1.depDay && (l1.dayNumber > 1 || l1DurMins > 1440)) {
+                            l1ArrDayOffset = 1 + (l1.dayNumber - l1.depDay);
+                        }
+                        else if (l1DurMins > 0) {
+                            l1ArrDayOffset = 1 + Math.floor((l1DepMins + l1DurMins) / 1440);
+                        }
+                        else if (l1.dayNumber && l1.dayNumber > 1) {
+                            l1ArrDayOffset = l1.dayNumber;
+                        }
+                        else {
+                            l1ArrDayOffset = (l1ArrMins < l1DepMins && l1DepMins > 0) ? 2 : 1;
+                        }
                         const leg1ArrivalMs = this.toEpochMs(date, l1.arrival, l1ArrDayOffset);
                         const leg2DepartureMs = this.toEpochMs(leg2Date, l2.departure, 1);
                         // If leg2 departs BEFORE leg1 arrives, it must be a next-day train
@@ -3297,6 +3313,10 @@ class SplitJourneyEngine {
         if (filteredCombinations.length < MIN_TIER_RESULTS) {
             filteredCombinations = buildFilteredByEnvelope(TIER_3_TOTAL_MINS);
             activeTier = 3;
+        }
+        if (filteredCombinations.length < MIN_TIER_RESULTS && baseDurationLimit > TIER_3_TOTAL_MINS) {
+            filteredCombinations = buildFilteredByEnvelope(baseDurationLimit);
+            activeTier = 4;
         }
         logger_1.winstonLogger.info(`[SPLIT_ENGINE] Progressive envelope: tier=${activeTier} candidates=${filteredCombinations.length} (allCombos=${allCombinations.length})`);
         // Relaxed fallback pool — even more lenient (base + 2h)
@@ -4933,10 +4953,14 @@ class SplitJourneyEngine {
         }
         this.legSearchStats.misses++;
         // 1. LIVE-FIRST
-        const elapsed = Date.now() - this.engineStartMs;
-        const liveBudgetMs = Math.max(3000, this.API_BUDGET_MS + 2000);
-        if (!forceDbFallback && elapsed <= liveBudgetMs) {
-            const remainingBudget = Math.max(2000, liveBudgetMs - elapsed);
+        // PHASE_087N124 FIX A: Dynamic engine budget. Rather than an arbitrary 4000ms ceiling
+        // that starved Phase 2 of live calls after Phase 1 fanout, compute remaining engine time
+        // from MAX_ENGINE_TIME_MS and ensure API call ceiling is respected.
+        const elapsed = this.engineStartMs > 0 ? Date.now() - this.engineStartMs : 0;
+        const remainingEngineMs = Math.max(0, this.MAX_ENGINE_TIME_MS - elapsed);
+        const hasLiveBudget = !forceDbFallback && remainingEngineMs >= 2000 && this.apiCallCount <= this.MAX_TOTAL_CALLS;
+        if (hasLiveBudget) {
+            const perCallTimeout = Math.max(2000, Math.min(5000, remainingEngineMs - 1000));
             let searchTimer;
             try {
                 const apiResult = await Promise.race([
@@ -4945,7 +4969,7 @@ class SplitJourneyEngine {
                         // rapidAPI disabled
                     }),
                     new Promise((resolve) => {
-                        searchTimer = setTimeout(() => resolve(null), remainingBudget);
+                        searchTimer = setTimeout(() => resolve(null), perCallTimeout);
                     })
                 ]).finally(() => {
                     if (searchTimer)
@@ -5091,8 +5115,8 @@ class SplitJourneyEngine {
     mapToRichLeg(raw, fromCode, toCode, fromName, toName) {
         // Fix: Use the train's actual station code rather than the cluster fallback if available.
         // This prevents availability lookup failures where a train like 12952 (MMCT) is wrongly tagged as CSMT.
-        const actualFromCode = raw._fromCode || raw.fromStationCode || raw.from_station_code || raw.fromCode || raw.from || fromCode;
-        const actualToCode = raw.toStationCode || raw.to_station_code || raw.toCode || raw.to || toCode;
+        const actualFromCode = raw._fromCode || raw.fromStationCode || raw.from_station_code || raw.from_stn_code || raw.fromCode || raw.from || fromCode;
+        const actualToCode = raw.toStationCode || raw.to_station_code || raw.to_stn_code || raw.toCode || raw.to || toCode;
         const dep = raw.departure_time ||
             raw.departureTime ||
             raw.from_time ||
@@ -5178,17 +5202,25 @@ class SplitJourneyEngine {
             apiDurationMins = raw.duration;
         if (!apiDurationMins) {
             const rawStr = String(raw.travel_time || raw.total_journey_time || raw.duration_str || raw.durationStr || raw.duration || '').toLowerCase();
-            // Handle "37h 55m" or "37 h 55 m"
-            const hMatch = rawStr.match(/(\d+)\s*h/);
-            const mMatch = rawStr.match(/(\d+)\s*m/);
-            if (hMatch || mMatch) {
-                apiDurationMins = (parseInt(hMatch?.[1] || '0') * 60) + parseInt(mMatch?.[1] || '0');
+            // Colon format like "26:00 hrs", "26:00", "04:30 hrs" must be checked FIRST
+            // to avoid "26:00 hrs" wrongly matching "00 h" in the hour regex.
+            const colonMatch = rawStr.match(/(\d+)\s*:\s*(\d+)/);
+            if (colonMatch) {
+                apiDurationMins = (parseInt(colonMatch[1]) * 60) + parseInt(colonMatch[2]);
             }
             else {
-                const clean = rawStr.replace(/[^0-9:]/g, '').trim();
-                if (clean.includes(':')) {
-                    const parts = clean.split(':').map(Number);
-                    apiDurationMins = (parts[0] || 0) * 60 + (parts[1] || 0);
+                // Handle "37h 55m" or "37 h 55 m"
+                const hMatch = rawStr.match(/(\d+)\s*h/);
+                const mMatch = rawStr.match(/(\d+)\s*m/);
+                if (hMatch || mMatch) {
+                    apiDurationMins = (parseInt(hMatch?.[1] || '0') * 60) + parseInt(mMatch?.[1] || '0');
+                }
+                else {
+                    const clean = rawStr.replace(/[^0-9:]/g, '').trim();
+                    if (clean.includes(':')) {
+                        const parts = clean.split(':').map(Number);
+                        apiDurationMins = (parts[0] || 0) * 60 + (parts[1] || 0);
+                    }
                 }
             }
         }
