@@ -713,6 +713,19 @@ export class LiveTrackingService {
         liveData.station_name         ||
         liveData.currentStation       || '';
 
+      if (!currentStation) {
+        const rawStations = liveData.stations || liveData.timeline || liveData.journey_timeline || liveData.route || [];
+        const currentStop = rawStations.find((s: any) => s.status?.toString().toLowerCase() === 'current' || s.is_current === true);
+        if (currentStop) {
+          currentStation = currentStop.stationName || currentStop.station_name || currentStop.name || currentStop.stationCode || currentStop.station_code || '';
+        } else if (liveData.statusNote) {
+          const match = String(liveData.statusNote).match(/(?:Departed from|Arrived at)\s+([^(]+)(?:\(([A-Z0-9]+)\))?/i);
+          if (match && match[1]) {
+            currentStation = match[1].trim();
+          }
+        }
+      }
+
       currentStation = await this.resolveStationName(currentStation);
       if (!currentStation) currentStation = dbSchedule[0]?.station_name || 'En Route';
 
@@ -867,6 +880,18 @@ export class LiveTrackingService {
         liveData.currentStationCode ||
         '';
 
+      if (!currentCode) {
+        const liveCurrent = liveTimeline.find(s => s.is_current);
+        if (liveCurrent?.station_code && liveCurrent.station_code !== '--') {
+          currentCode = liveCurrent.station_code;
+        } else if (liveData.statusNote) {
+          const match = String(liveData.statusNote).match(/(?:Departed from|Arrived at)\s+([^(]+)\(([A-Z0-9]+)\)/i);
+          if (match && match[2]) {
+            currentCode = match[2].trim();
+          }
+        }
+      }
+
       let usedScheduleFallback = false;
       const startStationCode = (schedule[0]?.Station_Code || schedule[0]?.station_code || '').toUpperCase().trim();
       if (!currentCode || currentCode.toUpperCase().trim() === startStationCode) {
@@ -991,20 +1016,22 @@ export class LiveTrackingService {
          }
       }
 
-      if (detectedIndex !== -1 && (currentIndex === -1 || currentCode === 'CSMT' || usedScheduleFallback)) {
+      if (detectedIndex !== -1) {
         let schedIdx = -1;
         for (let j = detectedIndex; j >= 0; j--) {
            const cCode = liveTimeline[j].station_code?.toUpperCase().trim();
-           if (cCode) {
+           if (cCode && cCode !== '--') {
                schedIdx = schedule.findIndex((s: any) => {
-                   const sCode = s.Station_Code || s.station_code;
-                   return sCode && sCode.toUpperCase() === cCode;
+                   const sCode = (s.Station_Code || s.station_code || '').toUpperCase().trim();
+                   return sCode && sCode === cCode;
                });
                if (schedIdx !== -1) break;
            }
         }
         if (schedIdx !== -1) {
-          currentIndex = schedIdx;
+          if (currentIndex <= 0 || schedIdx > currentIndex || currentCode === 'CSMT' || usedScheduleFallback) {
+            currentIndex = schedIdx;
+          }
         }
       }
 
