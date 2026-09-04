@@ -296,6 +296,57 @@ export class NewsAdminController {
       res.status(500).json({ success: false, error: 'Failed to fetch audit history.' });
     }
   }
+
+  // GET /api/admin/news/autocurator/status — Get auto-curator config & live stats
+  async getAutoCuratorStatus(req: Request, res: Response) {
+    try {
+      const { newsAutoCuratorService } = require('../services/news/newsAutoCuratorService');
+      const status = await newsAutoCuratorService.getStatus();
+      res.json({ success: true, data: status });
+    } catch (err: any) {
+      winstonLogger.error(`[NEWS_ADMIN_CTRL_AUTOCURATOR_STATUS] ${err.message}`);
+      res.status(500).json({ success: false, error: 'Failed to get auto-curator status.' });
+    }
+  }
+
+  // POST /api/admin/news/autocurator/run — Trigger on-demand auto-curator batch
+  async runAutoCurator(req: Request, res: Response) {
+    try {
+      const { newsAutoCuratorService } = require('../services/news/newsAutoCuratorService');
+      const maxArticles = req.body.maxArticles ? parseInt(req.body.maxArticles, 10) : 5;
+      const result = await newsAutoCuratorService.curateAndPublishDailyBatch({ maxArticles, force: true });
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      winstonLogger.error(`[NEWS_ADMIN_CTRL_AUTOCURATOR_RUN] ${err.message}`);
+      res.status(500).json({ success: false, error: 'Failed to run auto-curator.' });
+    }
+  }
+
+  // POST /api/admin/news/autocurator/cleanup — Bulk archive stale drafts (>7 days)
+  async cleanStaleDrafts(req: Request, res: Response) {
+    try {
+      const { newsAutoCuratorService } = require('../services/news/newsAutoCuratorService');
+      const olderThanDays = req.body.olderThanDays ? parseInt(req.body.olderThanDays, 10) : 7;
+      const result = await newsAutoCuratorService.archiveStaleDrafts(olderThanDays);
+      res.json(result);
+    } catch (err: any) {
+      winstonLogger.error(`[NEWS_ADMIN_CTRL_AUTOCURATOR_CLEANUP] ${err.message}`);
+      res.status(500).json({ success: false, error: 'Failed to clean stale drafts.' });
+    }
+  }
+
+  // POST /api/admin/news/autocurator/toggle — Toggle autonomous publishing ON / OFF
+  async toggleAutoCurator(req: Request, res: Response) {
+    try {
+      const { newsAutoCuratorService } = require('../services/news/newsAutoCuratorService');
+      const enabled = Boolean(req.body.enabled);
+      newsAutoCuratorService.setEnabled(enabled);
+      res.json({ success: true, enabled });
+    } catch (err: any) {
+      winstonLogger.error(`[NEWS_ADMIN_CTRL_AUTOCURATOR_TOGGLE] ${err.message}`);
+      res.status(500).json({ success: false, error: 'Failed to toggle auto-curator.' });
+    }
+  }
 }
 
 export const newsAdminController = new NewsAdminController();

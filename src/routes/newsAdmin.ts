@@ -123,4 +123,34 @@ router.post(
   asyncHandler(newsAdminController.restore.bind(newsAdminController))
 );
 
+// ─── Phase 087 Autonomous Auto-Curator & SEO Publisher Controls ──────────────
+
+router.get(
+  '/autocurator/status',
+  adminLimiter as any,
+  requireAdmin as any,
+  asyncHandler(newsAdminController.getAutoCuratorStatus.bind(newsAdminController))
+);
+
+router.post(
+  '/autocurator/run',
+  adminLimiter as any,
+  requireAdmin as any,
+  asyncHandler(newsAdminController.runAutoCurator.bind(newsAdminController))
+);
+
+router.post(
+  '/autocurator/cleanup',
+  adminLimiter as any,
+  requireAdmin as any,
+  asyncHandler(newsAdminController.cleanStaleDrafts.bind(newsAdminController))
+);
+
+router.post(
+  '/autocurator/toggle',
+  adminLimiter as any,
+  requireAdmin as any,
+  asyncHandler(newsAdminController.toggleAutoCurator.bind(newsAdminController))
+);
+
 export default router;
