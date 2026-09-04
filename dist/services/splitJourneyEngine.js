@@ -3083,6 +3083,10 @@ class SplitJourneyEngine {
                         }
                         const waitMins = Math.round((adjustedDep2Ms - leg1ArrivalMs) / 60000);
                         // —— VALIDATION: Wait time bounds & Inter-Station transfer validation ——————————————
+                        const fromStn = (l1.toCode || '').toUpperCase().trim();
+                        const toStn = (l2.fromCode || '').toUpperCase().trim();
+                        const isInterStation = fromStn !== toStn;
+                        const isSameTrain = l1.trainNo === l2.trainNo;
                         let transferMetaObj = null;
                         if (providerConfigService_1.providerConfigService.isInterStationTransfersEnabled()) {
                             const metaRes = this.calculateTransferMeta(l1, l2, waitMins);
@@ -3092,8 +3096,18 @@ class SplitJourneyEngine {
                             }
                             transferMetaObj = metaRes.transferMeta;
                         }
+                        else if (isInterStation) {
+                            // PHASE_087N145: Explicit local inter-station transfer safety calculation
+                            const metaRes = this.calculateTransferMeta(l1, l2, waitMins);
+                            if (!metaRes.isValid || waitMins < 60 || waitMins > 840) {
+                                rejectionStats.wait_time_invalid++;
+                                continue;
+                            }
+                        }
                         else {
-                            if (waitMins < 25 || waitMins > 840) {
+                            // PHASE_087N145: Authoritative 45-minute minimum for multi-train; same-train preserves 0m
+                            const minWait = isSameTrain ? 0 : this.MIN_BUFFER_MINUTES;
+                            if (waitMins < minWait || waitMins > 840) {
                                 rejectionStats.wait_time_invalid++;
                                 continue;
                             }
@@ -3285,6 +3299,10 @@ class SplitJourneyEngine {
                 return false;
             if ((split.bufferMinutes || 0) > MAX_WAIT_MINS)
                 return false;
+            // PHASE_087N145: Multi-train splits must have buffer >= MIN_BUFFER_MINUTES (45m)
+            const isSameTrain = !!(split.isSameTrain || split.rescueType === 'SAME_TRAIN_SEGMENT' || split.leg1?.trainNo === split.leg2?.trainNo);
+            if (!isSameTrain && (split.bufferMinutes ?? 0) < this.MIN_BUFFER_MINUTES)
+                return false;
             if (split.totalDuration > baseDurationLimit)
                 return false;
             const hubCode = split.leg1?.toCode || split.leg2?.fromCode || '';
@@ -3324,6 +3342,10 @@ class SplitJourneyEngine {
             if (directTime !== Infinity && split.totalDuration < directTime * 0.60)
                 return false;
             if ((split.bufferMinutes || 0) > MAX_WAIT_MINS)
+                return false;
+            // PHASE_087N145: Multi-train splits must have buffer >= MIN_BUFFER_MINUTES (45m)
+            const isSameTrain = !!(split.isSameTrain || split.rescueType === 'SAME_TRAIN_SEGMENT' || split.leg1?.trainNo === split.leg2?.trainNo);
+            if (!isSameTrain && (split.bufferMinutes ?? 0) < this.MIN_BUFFER_MINUTES)
                 return false;
             if (split.totalDuration > baseDurationLimit + 120)
                 return false;
@@ -4081,6 +4103,35 @@ class SplitJourneyEngine {
         if (legs.length === 0) {
             return { ok: false, reason: 'NO_LEGS', changed: false };
         }
+        // PHASE_087N145: Defense-in-depth safety validation for MULTI-TRAIN candidates
+        const isSameTrain = !!(split?.rescueType === 'SAME_TRAIN_SEGMENT' ||
+            split?.isSameTrain ||
+            (legs.length >= 2 && legs[0]?.trainNo === legs[legs.length - 1]?.trainNo));
+        if (!isSameTrain) {
+            // A. Reject if buffer < 45 minutes (or < 60m for inter-station transfers)
+            const buffer = split?.wait_time ?? split?.bufferMinutes ?? split?.layoverMinutes ?? 0;
+            if (buffer < this.MIN_BUFFER_MINUTES) {
+                return { ok: false, reason: `INSUFFICIENT_BUFFER:${buffer}m < ${this.MIN_BUFFER_MINUTES}m`, changed: false };
+            }
+            if (legs.length >= 2) {
+                const l1To = String(legs[0]?.toCode || legs[0]?.to || '').toUpperCase().trim();
+                const l2From = String(legs[1]?.fromCode || legs[1]?.from || '').toUpperCase().trim();
+                if (l1To && l2From && l1To !== l2From && buffer < 60) {
+                    return { ok: false, reason: `INSUFFICIENT_INTER_STATION_BUFFER:${buffer}m < 60m`, changed: false };
+                }
+            }
+            // B. Verify final leg destination is compatible with the ORIGINAL requested destination city cluster
+            const finalLeg = legs[legs.length - 1];
+            const finalTo = String(finalLeg?.toCode || finalLeg?.to || '').toUpperCase().trim();
+            const { isCompatibleWithRequestedDestinations } = require('./stationAliases');
+            if (finalTo && !isCompatibleWithRequestedDestinations(finalTo, dCodes)) {
+                return {
+                    ok: false,
+                    reason: `DESTINATION_CLUSTER_INCOMPATIBLE: final destination ${finalTo} not compatible with requested destination cluster [${dCodes.join(', ')}]`,
+                    changed: false
+                };
+            }
+        }
         const correctedLegs = [];
         let changed = false;
         for (let i = 0; i < legs.length; i++) {
@@ -4155,6 +4206,18 @@ class SplitJourneyEngine {
             out.leg1 = { ...(split.leg1 || {}), ...correctedLegs[0] };
         if (correctedLegs[1])
             out.leg2 = { ...(split.leg2 || {}), ...correctedLegs[1] };
+        // PHASE_087N145: Ensure corrected destination also remains compatible with destination cluster
+        if (!isSameTrain && correctedLegs.length > 0) {
+            const finalTo = String(correctedLegs[correctedLegs.length - 1]?.toCode || '').toUpperCase().trim();
+            const { isCompatibleWithRequestedDestinations } = require('./stationAliases');
+            if (finalTo && !isCompatibleWithRequestedDestinations(finalTo, dCodes)) {
+                return {
+                    ok: false,
+                    reason: `DESTINATION_CLUSTER_INCOMPATIBLE: corrected final destination ${finalTo} not compatible with requested destination cluster [${dCodes.join(', ')}]`,
+                    changed
+                };
+            }
+        }
         return { ok: true, corrected: out, changed };
     }
     /**
@@ -5407,8 +5470,8 @@ class SplitJourneyEngine {
         const toCode = (l2.fromCode || '').toUpperCase().trim();
         const isSameStation = fromCode === toCode;
         if (isSameStation) {
-            if (waitMins < 25 || waitMins > 840) {
-                return { isValid: false, reason: 'Layover bounds (25m - 840m) violated' };
+            if (waitMins < this.MIN_BUFFER_MINUTES || waitMins > 840) {
+                return { isValid: false, reason: `Layover bounds (${this.MIN_BUFFER_MINUTES}m - 840m) violated` };
             }
             return {
                 isValid: true,
@@ -5420,27 +5483,27 @@ class SplitJourneyEngine {
                     distanceKm: 0,
                     transitMode: 'WALK',
                     estimatedTransferMinutes: 10,
-                    minimumRequiredBufferMinutes: 25,
+                    minimumRequiredBufferMinutes: this.MIN_BUFFER_MINUTES,
                     actualBufferMinutes: waitMins,
-                    bufferSurplusMinutes: waitMins - 25,
+                    bufferSurplusMinutes: waitMins - this.MIN_BUFFER_MINUTES,
                     transportSuggestion: 'Walk to departure platform'
                 }
             };
         }
         // Inter-Station Transfer
         const distanceKm = this.getInterStationDistance(fromCode, toCode);
-        let requiredMinBuffer = 35;
+        let requiredMinBuffer = 60;
         let estimatedTransitMins = 20;
         let transport = 'Auto / Cab (~15-20 min ride)';
         let transitMode = 'ROAD_CAB';
         if (distanceKm <= 5.0) {
-            requiredMinBuffer = 35;
+            requiredMinBuffer = 60;
             estimatedTransitMins = 20;
             transport = 'Auto / Cab (~15-20 min ride)';
             transitMode = 'ROAD_CAB';
         }
         else if (distanceKm <= 15.0) {
-            requiredMinBuffer = 45;
+            requiredMinBuffer = 60;
             estimatedTransitMins = 30;
             transport = 'Taxi / Auto / Metro (~25-35 min ride)';
             transitMode = 'ROAD_CAB';
@@ -5714,7 +5777,11 @@ class SplitJourneyEngine {
                         // and were incorrectly rejected by the old 12-hour ceiling.
                         // 840 min = 14 hours remains a meaningful sanity bound: above this the user
                         // should book accommodation rather than wait at the station.
-                        if (!Number.isFinite(waitMins) || Number.isNaN(waitMins) || waitMins < 0 || waitMins > 840) {
+                        // PHASE_087N145: Reject multi-train candidate where waitMins < MIN_BUFFER_MINUTES (45m).
+                        // Preserve SAME-TRAIN rescue behavior (waitMins >= 0).
+                        const isSameTrain = l1.trainNo === l2.trainNo;
+                        const minWait = isSameTrain ? 0 : this.MIN_BUFFER_MINUTES;
+                        if (!Number.isFinite(waitMins) || Number.isNaN(waitMins) || waitMins < minWait || waitMins > 840) {
                             continue;
                         }
                         // Guard durations

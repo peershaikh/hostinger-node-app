@@ -3,14 +3,14 @@
  * Train-aware resolution lives in trainStationResolver.ts (does NOT blindly map DR→CSMT).
  */
 
-const PAN_INDIA_CLUSTERS: string[][] = [
+export const PAN_INDIA_CLUSTERS: string[][] = [
   ['CSMT', 'CSTM', 'DR', 'DDR', 'BDTS', 'MMCT', 'BCT', 'LTT', 'BVI', 'PNVL', 'KYN', 'TNA'],
   ['NDLS', 'DLI', 'NZM', 'ANVT', 'DEC', 'GZB', 'DEE'],
   ['HWH', 'SDAH', 'KOAA', 'SHM'],
   ['MAS', 'MS', 'PER', 'TBM', 'MMC'],
   ['SBC', 'YPR', 'SMVB', 'BNC', 'KSR'],
   ['SC', 'HYB', 'KCG'],
-  ['PUNE', 'CCH', 'LNL'],
+  ['PUNE', 'CCH', 'LNL', 'SVJR', 'KK', 'HDP'],
   ['ADI', 'SBT', 'SBIB', 'GNC'],
   ['BSB', 'BSBS', 'DDU', 'MUV'],
   ['PRYJ', 'PRRB', 'NYN', 'ALD'],
@@ -45,6 +45,30 @@ export function areStationsCompatible(code1: string, code2: string): boolean {
   const c2 = code2.toUpperCase().trim();
   if (c1 === c2) return true;
   return (TERMINAL_ALIASES[c1] || []).includes(c2);
+}
+
+/**
+ * PHASE_087N145: Verify if a final candidate destination is compatible with
+ * the requested destination city cluster. If the destination resolves to a known
+ * pan-India cluster (e.g. Pune), the destination MUST belong to that cluster.
+ */
+export function isCompatibleWithRequestedDestinations(finalTo: string, dCodes: string[]): boolean {
+  const normFinal = (finalTo || '').toUpperCase().trim();
+  const normDCodes = (dCodes || []).map(c => (c || '').toUpperCase().trim()).filter(Boolean);
+  if (!normFinal || normDCodes.length === 0) return false;
+
+  // Find if any requested destination code belongs to a known cluster
+  for (const cluster of PAN_INDIA_CLUSTERS) {
+    const clusterMatches = cluster.filter(c => normDCodes.includes(c));
+    if (clusterMatches.length > 0) {
+      // The requested destination is in this pan-India cluster!
+      // Therefore, final destination MUST belong to this cluster.
+      return cluster.includes(normFinal);
+    }
+  }
+
+  // If not in a PAN_INDIA_CLUSTER, fallback to dCodes membership
+  return normDCodes.includes(normFinal);
 }
 
 /**
