@@ -1863,6 +1863,27 @@ export class AuthService {
       return { success: true, message: "Ad watched successfully! +1 Search granted." };
   }
 
+  public async claimReviewReward(userId: string | null, deviceId: string): Promise<{ success: boolean, message: string, minutesGranted: number }> {
+      const entity = userId ? await this.getUserById(userId) : this.getOrCreateGuest(deviceId);
+      if (!entity) return { success: false, message: "Account not found", minutesGranted: 0 };
+
+      // Upgrade user to 30 minutes Blitz Pro
+      if (userId) {
+          await this.upgradeToPro(userId, 'safar_pro_30m', 30, 'admin');
+      } else {
+          // For guests: grant 5 extra searches and 30m split access
+          entity.dailySearchCount = Math.max(0, (entity.dailySearchCount || 0) - 5);
+          entity.splitAccessExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+          this.saveGuests();
+      }
+
+      return {
+          success: true,
+          message: "🎉 Thank you for rating Trayago! 30 Minutes Free Pro Access Unlocked!",
+          minutesGranted: 30
+      };
+  }
+
   public async getUserStatus(userId: string | null, betaCode?: string, deviceId?: string) {
     const isBeta = betaCode ? betaService.isValidCode(betaCode) : false;
     
