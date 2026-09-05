@@ -211,8 +211,9 @@ const startServer = async () => {
         const httpServer = (0, http_1.createServer)(app);
         socketService_1.socketService.initialize(httpServer);
         httpServer.listen(PORT, () => {
-            logger_1.winstonLogger.info(`âœ… Trayago Backend running on http://localhost:${PORT}`);
-            logger_1.winstonLogger.info(`ðŸ“Š Health check: http://localhost:${PORT}/health`);
+            logger_1.winstonLogger.info(`✅ Trayago Backend running on http://localhost:${PORT}`);
+            logger_1.winstonLogger.info(`📊 Health check: http://localhost:${PORT}/health`);
+            logger_1.winstonLogger.info(`[PAYMENT_BOOT] Provider=${process.env.PAYMENT_PROVIDER || 'razorpay'} KeyId=${process.env.RAZORPAY_KEY_ID ? process.env.RAZORPAY_KEY_ID.substring(0, 14) + '...' : 'UNSET'} KeySecret=${process.env.RAZORPAY_KEY_SECRET ? 'SET' : 'UNSET'} WebhookSecret=${process.env.RAZORPAY_WEBHOOK_SECRET ? 'SET(len=' + process.env.RAZORPAY_WEBHOOK_SECRET.length + ')' : 'UNSET'}`);
             // Non-blocking startup webhook
             const webhookUrl = process.env.ADMIN_WEBHOOK_URL;
             if (webhookUrl) {

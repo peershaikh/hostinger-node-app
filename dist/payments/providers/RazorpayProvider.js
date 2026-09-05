@@ -63,15 +63,24 @@ class RazorpayProvider {
         }
     }
     verifyWebhookSignature(payload, signature, headers) {
-        const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-        if (!webhookSecret || !signature) {
+        const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET?.trim();
+        if (!webhookSecret) {
+            logger_1.winstonLogger.error('[RAZORPAY] verifyWebhookSignature failed: RAZORPAY_WEBHOOK_SECRET is unset in process.env');
+            return false;
+        }
+        if (!signature) {
+            logger_1.winstonLogger.error('[RAZORPAY] verifyWebhookSignature failed: signature header is missing');
             return false;
         }
         const expectedSignature = crypto_1.default
             .createHmac('sha256', webhookSecret)
             .update(payload)
             .digest('hex');
-        return this.safeCompareHex(expectedSignature, signature);
+        const matched = this.safeCompareHex(expectedSignature, signature);
+        if (!matched) {
+            logger_1.winstonLogger.warn(`[RAZORPAY] Signature mismatch: payloadLen=${payload?.length}, expectedPrefix=${expectedSignature.substring(0, 8)}, gotPrefix=${signature.substring(0, 8)}, secretLen=${webhookSecret.length}`);
+        }
+        return matched;
     }
     parseWebhook(payload) {
         const event = payload.event;

@@ -67,8 +67,13 @@ export class RazorpayProvider implements IPaymentProvider {
     }
 
     public verifyWebhookSignature(payload: string, signature: string, headers?: any): boolean {
-        const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-        if (!webhookSecret || !signature) {
+        const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET?.trim();
+        if (!webhookSecret) {
+            winstonLogger.error('[RAZORPAY] verifyWebhookSignature failed: RAZORPAY_WEBHOOK_SECRET is unset in process.env');
+            return false;
+        }
+        if (!signature) {
+            winstonLogger.error('[RAZORPAY] verifyWebhookSignature failed: signature header is missing');
             return false;
         }
 
@@ -77,7 +82,11 @@ export class RazorpayProvider implements IPaymentProvider {
             .update(payload)
             .digest('hex');
 
-        return this.safeCompareHex(expectedSignature, signature);
+        const matched = this.safeCompareHex(expectedSignature, signature);
+        if (!matched) {
+            winstonLogger.warn(`[RAZORPAY] Signature mismatch: payloadLen=${payload?.length}, expectedPrefix=${expectedSignature.substring(0, 8)}, gotPrefix=${signature.substring(0, 8)}, secretLen=${webhookSecret.length}`);
+        }
+        return matched;
     }
 
     public parseWebhook(payload: any): WebhookResult {
