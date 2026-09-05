@@ -39,17 +39,22 @@ export class AiProviderResolver {
    * after admin switches the default provider.
    */
   public resolveProvider(capability: keyof AiCapabilities): AiProvider | null {
+    const config = aiAdminConfigService.getConfig();
     const configuredPrimary = (
-      aiAdminConfigService.getConfig().defaultProvider || 'GEMINI'
+      config.defaultProvider || 'GEMINI'
     ).toUpperCase().trim();
 
     const candidate = this.providers.get(configuredPrimary);
-    if (candidate && candidate.capabilities[capability]) {
+    const candidateConfig = config.providers?.[configuredPrimary];
+    if (candidate && candidateConfig?.enabled && candidate.capabilities[capability]) {
       return candidate;
     }
 
-    // Fallback: any registered provider supporting this capability
-    const capable = this.getProvidersByCapability(capability);
+    // Fallback: any enabled registered provider supporting this capability
+    const capable = this.getProvidersByCapability(capability).filter(p => {
+      const pConfig = config.providers?.[p.providerId.toUpperCase().trim()];
+      return Boolean(pConfig?.enabled);
+    });
     return capable.length > 0 ? capable[0] : null;
   }
 

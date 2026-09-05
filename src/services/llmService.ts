@@ -48,25 +48,35 @@ export class LlmService {
     try {
       const config = aiAdminConfigService.getConfig();
       const route = config?.routing?.['PNR_PREDICTION'];
-      if (route?.primaryProvider) {
-        const primaryCandidate = aiProviderResolver.getProvider(route.primaryProvider);
-        if (primaryCandidate && primaryCandidate.capabilities?.predictPnr) {
-          primary = primaryCandidate;
+
+      const isEligible = (providerId?: string): boolean => {
+        if (!providerId) return false;
+        const pId = providerId.toUpperCase().trim();
+        const provConfig = config?.providers?.[pId];
+        if (!provConfig?.enabled) return false;
+        const candidate = aiProviderResolver.getProvider(pId);
+        return Boolean(candidate && typeof candidate.predictPnr === 'function');
+      };
+
+      const preferredPrimary = route?.primaryProvider;
+      const preferredFallback = route?.fallbackProvider;
+
+      if (isEligible(preferredPrimary)) {
+        primary = aiProviderResolver.getProvider(preferredPrimary!);
+        if (isEligible(preferredFallback) && preferredFallback!.toUpperCase() !== preferredPrimary!.toUpperCase()) {
+          fallback = aiProviderResolver.getProvider(preferredFallback!);
         }
-      }
-      if (route?.fallbackProvider && route.fallbackProvider !== route.primaryProvider) {
-        const fallbackCandidate = aiProviderResolver.getProvider(route.fallbackProvider);
-        if (fallbackCandidate && fallbackCandidate.capabilities?.predictPnr) {
-          fallback = fallbackCandidate;
-        }
+      } else if (isEligible(preferredFallback)) {
+        winstonLogger.info(`[LLM] Persisted primary '${preferredPrimary}' is disabled or unavailable. Promoting fallback '${preferredFallback}' as effective primary.`);
+        primary = aiProviderResolver.getProvider(preferredFallback!);
+        fallback = null;
       }
     } catch (e: any) {
       winstonLogger.warn(`[LLM] Error resolving routing from admin config: ${e.message}`);
     }
 
     if (!primary || typeof primary.predictPnr !== 'function') {
-      primary = aiProviderResolver.resolveForFeature('PNR_PREDICTION', 'predictPnr')
-        || aiProviderResolver.resolveProvider('predictPnr');
+      primary = aiProviderResolver.resolveForFeature('PNR_PREDICTION', 'predictPnr');
     }
 
     if (!primary || typeof primary.predictPnr !== 'function') {

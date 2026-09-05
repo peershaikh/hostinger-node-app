@@ -255,11 +255,11 @@ export class AiAdminConfigService {
 
       for (const [feat, route] of Object.entries(newConfig.routing) as [AiFeatureKey, AiFeatureRouting][]) {
         const prov = newConfig.providers?.[route.primaryProvider] || this.config.providers[route.primaryProvider];
-        if (!prov || !prov.enabled) {
+        if (!prov) {
           return {
             success: false,
             config: this.config,
-            message: `Primary provider '${route.primaryProvider}' for ${feat} is disabled or unknown`
+            message: `Primary provider '${route.primaryProvider}' for ${feat} is unknown`
           };
         }
 
@@ -271,17 +271,60 @@ export class AiAdminConfigService {
             message: `Provider '${route.primaryProvider}' does not support required capability '${requiredCap}' for ${feat}`
           };
         }
+
+        if (route.fallbackProvider) {
+          const fallbackProv = newConfig.providers?.[route.fallbackProvider] || this.config.providers[route.fallbackProvider];
+          if (!fallbackProv) {
+            return {
+              success: false,
+              config: this.config,
+              message: `Fallback provider '${route.fallbackProvider}' for ${feat} is unknown`
+            };
+          }
+          if (requiredCap && !fallbackProv.capabilities[requiredCap]) {
+            return {
+              success: false,
+              config: this.config,
+              message: `Fallback provider '${route.fallbackProvider}' does not support required capability '${requiredCap}' for ${feat}`
+            };
+          }
+          if (route.primaryProvider === route.fallbackProvider) {
+            return {
+              success: false,
+              config: this.config,
+              message: `Primary and fallback providers cannot be identical for ${feat}`
+            };
+          }
+        }
       }
     }
 
-    // Save previous snapshot for rollback
-    this.auditHistory.unshift({
+    // Capture PNR prediction audit delta
+    const prevRoutingPnr = this.config.routing?.PNR_PREDICTION;
+    const newRoutingPnr = newConfig.routing?.PNR_PREDICTION || prevRoutingPnr;
+    const prevDeepseek = this.config.providers?.DEEPSEEK?.enabled ?? false;
+    const newDeepseek = newConfig.providers?.DEEPSEEK?.enabled ?? prevDeepseek;
+    const prevGemini = this.config.providers?.GEMINI?.enabled ?? false;
+    const newGemini = newConfig.providers?.GEMINI?.enabled ?? prevGemini;
+
+    const auditEntry = {
       timestamp: new Date().toISOString(),
       changedBy: updatedBy,
+      feature: 'PNR_PREDICTION',
+      previousPrimary: prevRoutingPnr?.primaryProvider,
+      newPrimary: newRoutingPnr?.primaryProvider,
+      previousFallback: prevRoutingPnr?.fallbackProvider,
+      newFallback: newRoutingPnr?.fallbackProvider,
+      previousDeepseekEnabled: prevDeepseek,
+      newDeepseekEnabled: newDeepseek,
+      previousGeminiEnabled: prevGemini,
+      newGeminiEnabled: newGemini,
       snapshot: JSON.parse(JSON.stringify(this.config)),
       reason: reason || 'Admin updated AI provider configuration'
-    });
+    };
 
+    // Save previous snapshot for rollback
+    this.auditHistory.unshift(auditEntry);
     if (this.auditHistory.length > 50) this.auditHistory.pop();
 
     this.config = {
@@ -299,7 +342,20 @@ export class AiAdminConfigService {
           admin_email: updatedBy,
           action: 'UPDATE_AI_PROVIDERS',
           resource: 'ai_providers',
-          details: { updatedBy, reason, snapshot: this.config },
+          details: {
+            updatedBy,
+            reason: auditEntry.reason,
+            feature: 'PNR_PREDICTION',
+            previousPrimary: auditEntry.previousPrimary,
+            newPrimary: auditEntry.newPrimary,
+            previousFallback: auditEntry.previousFallback,
+            newFallback: auditEntry.newFallback,
+            previousDeepseekEnabled: auditEntry.previousDeepseekEnabled,
+            newDeepseekEnabled: auditEntry.newDeepseekEnabled,
+            previousGeminiEnabled: auditEntry.previousGeminiEnabled,
+            newGeminiEnabled: auditEntry.newGeminiEnabled,
+            timestamp: auditEntry.timestamp
+          },
           created_at: new Date().toISOString()
         }]);
       } catch (err: any) {

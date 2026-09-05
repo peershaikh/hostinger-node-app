@@ -35,25 +35,35 @@ class LlmService {
         try {
             const config = aiAdminConfigService_1.aiAdminConfigService.getConfig();
             const route = config?.routing?.['PNR_PREDICTION'];
-            if (route?.primaryProvider) {
-                const primaryCandidate = aiProviderResolver_1.aiProviderResolver.getProvider(route.primaryProvider);
-                if (primaryCandidate && primaryCandidate.capabilities?.predictPnr) {
-                    primary = primaryCandidate;
+            const isEligible = (providerId) => {
+                if (!providerId)
+                    return false;
+                const pId = providerId.toUpperCase().trim();
+                const provConfig = config?.providers?.[pId];
+                if (!provConfig?.enabled)
+                    return false;
+                const candidate = aiProviderResolver_1.aiProviderResolver.getProvider(pId);
+                return Boolean(candidate && typeof candidate.predictPnr === 'function');
+            };
+            const preferredPrimary = route?.primaryProvider;
+            const preferredFallback = route?.fallbackProvider;
+            if (isEligible(preferredPrimary)) {
+                primary = aiProviderResolver_1.aiProviderResolver.getProvider(preferredPrimary);
+                if (isEligible(preferredFallback) && preferredFallback.toUpperCase() !== preferredPrimary.toUpperCase()) {
+                    fallback = aiProviderResolver_1.aiProviderResolver.getProvider(preferredFallback);
                 }
             }
-            if (route?.fallbackProvider && route.fallbackProvider !== route.primaryProvider) {
-                const fallbackCandidate = aiProviderResolver_1.aiProviderResolver.getProvider(route.fallbackProvider);
-                if (fallbackCandidate && fallbackCandidate.capabilities?.predictPnr) {
-                    fallback = fallbackCandidate;
-                }
+            else if (isEligible(preferredFallback)) {
+                logger_1.winstonLogger.info(`[LLM] Persisted primary '${preferredPrimary}' is disabled or unavailable. Promoting fallback '${preferredFallback}' as effective primary.`);
+                primary = aiProviderResolver_1.aiProviderResolver.getProvider(preferredFallback);
+                fallback = null;
             }
         }
         catch (e) {
             logger_1.winstonLogger.warn(`[LLM] Error resolving routing from admin config: ${e.message}`);
         }
         if (!primary || typeof primary.predictPnr !== 'function') {
-            primary = aiProviderResolver_1.aiProviderResolver.resolveForFeature('PNR_PREDICTION', 'predictPnr')
-                || aiProviderResolver_1.aiProviderResolver.resolveProvider('predictPnr');
+            primary = aiProviderResolver_1.aiProviderResolver.resolveForFeature('PNR_PREDICTION', 'predictPnr');
         }
         if (!primary || typeof primary.predictPnr !== 'function') {
             throw new Error('No capable AI provider available for PNR prediction');
