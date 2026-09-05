@@ -82,17 +82,33 @@ app.use(cors({
   credentials: true
 }));
 // Payment Gateway Webhooks need exact raw string for HMAC signature verification
-app.use(['/api/payments/webhook', '/payments/webhook'], express.raw({ type: 'application/json' }));
-app.use(express.json({
-  limit: '10mb',
-  verify: (req: any, _res, buf) => {
-    req.rawBody = buf.toString('utf8');
-  }
-}));
+app.use(['/api/payments/webhook', '/payments/webhook'], (req: any, _res, next) => {
+  let rawData = '';
+  req.setEncoding('utf8');
+  req.on('data', (chunk: string) => {
+    rawData += chunk;
+  });
+  req.on('end', () => {
+    req.rawBody = rawData;
+    try {
+      req.body = JSON.parse(rawData);
+    } catch {
+      req.body = {};
+    }
+    next();
+  });
+});
+app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-app.use(mongoSanitize()); // Prevent NoSQL injection attacks
-app.use(xss()); // Prevent XSS attacks
+app.use((req: any, res: any, next: any) => {
+  if (req.path.includes('webhook')) return next();
+  mongoSanitize()(req, res, next);
+});
+app.use((req: any, res: any, next: any) => {
+  if (req.path.includes('webhook')) return next();
+  xss()(req, res, next);
+});
 
 // Global Fallback Rate Limiter for unmatched routes
 const globalLimiter = rateLimit({

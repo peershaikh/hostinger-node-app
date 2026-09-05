@@ -144,11 +144,14 @@ export class PaymentController {
             let rawPayload: string;
             let jsonBody: any;
 
-            if (Buffer.isBuffer(req.body)) {
+            if ((req as any).rawBody) {
+                rawPayload = (req as any).rawBody;
+                jsonBody = req.body;
+            } else if (Buffer.isBuffer(req.body)) {
                 rawPayload = req.body.toString('utf8');
                 jsonBody = JSON.parse(rawPayload);
             } else {
-                rawPayload = (req as any).rawBody || JSON.stringify(req.body);
+                rawPayload = JSON.stringify(req.body);
                 jsonBody = req.body;
             }
             

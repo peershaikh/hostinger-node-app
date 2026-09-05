@@ -126,12 +126,16 @@ class PaymentController {
             try {
                 let rawPayload;
                 let jsonBody;
-                if (Buffer.isBuffer(req.body)) {
+                if (req.rawBody) {
+                    rawPayload = req.rawBody;
+                    jsonBody = req.body;
+                }
+                else if (Buffer.isBuffer(req.body)) {
                     rawPayload = req.body.toString('utf8');
                     jsonBody = JSON.parse(rawPayload);
                 }
                 else {
-                    rawPayload = req.rawBody || JSON.stringify(req.body);
+                    rawPayload = JSON.stringify(req.body);
                     jsonBody = req.body;
                 }
                 const razorpaySignature = req.headers['x-razorpay-signature'];
