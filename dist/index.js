@@ -77,19 +77,20 @@ app.use((0, cors_1.default)({
 }));
 // Payment Gateway Webhooks need exact raw string for HMAC signature verification
 app.use(['/api/payments/webhook', '/payments/webhook'], (req, _res, next) => {
-    let rawData = '';
-    req.setEncoding('utf8');
+    const chunks = [];
     req.on('data', (chunk) => {
-        rawData += chunk;
+        chunks.push(chunk);
     });
     req.on('end', () => {
-        req.rawBody = rawData;
+        const rawBuffer = Buffer.concat(chunks);
+        req.rawBody = rawBuffer.toString('utf8');
         try {
-            req.body = JSON.parse(rawData);
+            req.body = JSON.parse(req.rawBody);
         }
         catch {
             req.body = {};
         }
+        req._body = true;
         next();
     });
 });
