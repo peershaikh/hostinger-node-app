@@ -201,7 +201,7 @@ export class PnrTrackingService {
             .maybeSingle();
           return data;
         }
-      });
+      }, 'pnr');
 
       if (pnrData) {
         winstonLogger.info(`[PNR_SUCCESS] ${pnr} | Source: ${usedApi}`);

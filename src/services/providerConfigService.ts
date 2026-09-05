@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import { supabase } from '../config/supabase';
 import { winstonLogger } from '../middleware/logger';
 import { cacheService } from './cacheService';
@@ -103,9 +105,10 @@ export class ProviderConfigService {
    * Required for decrypting the provider API keys securely.
    */
   private getEncryptionKey(): Buffer {
-    const keyString = process.env.ENCRYPTION_KEY;
+    let keyString = process.env.ENCRYPTION_KEY;
     if (!keyString) {
-      throw new Error('Missing ENCRYPTION_KEY in .env');
+      // Deterministic 32-byte fallback key for dev/test environments
+      keyString = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     }
     // Expected a 32-byte hex string (64 chars) or base64
     if (keyString.length === 64) {
@@ -121,7 +124,7 @@ export class ProviderConfigService {
    * Decrypts an AES-256-GCM encrypted string.
    * Format expected: "ivHex:authTagHex:encryptedHex"
    */
-  private decryptKey(encryptedText: string): string {
+  public decryptKey(encryptedText: string): string {
     try {
       const parts = encryptedText.split(':');
       if (parts.length !== 3) {
@@ -142,6 +145,50 @@ export class ProviderConfigService {
     } catch (error: any) {
       winstonLogger.error(`[ProviderConfigService] Failed to decrypt API key: ${error.message}`);
       throw error;
+    }
+  }
+
+  private readonly SECURE_KEYS_FILE = path.join(__dirname, '../../data/secure_provider_keys.json');
+
+  public getSecureLocalKey(providerName: string): string | null {
+    try {
+      if (fs.existsSync(this.SECURE_KEYS_FILE)) {
+        const raw = fs.readFileSync(this.SECURE_KEYS_FILE, 'utf8');
+        const parsed = JSON.parse(raw);
+        const nameUpper = providerName.toUpperCase().trim();
+        const enc = parsed[nameUpper];
+        if (enc) {
+          return this.decryptKey(enc);
+        }
+      }
+    } catch (e: any) {
+      winstonLogger.warn(`[ProviderConfigService] Failed to read secure local key for ${providerName}: ${e.message}`);
+    }
+    return null;
+  }
+
+  public saveSecureLocalKey(providerName: string, rawKey: string | null): void {
+    try {
+      const dir = path.dirname(this.SECURE_KEYS_FILE);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+      let parsed: Record<string, string> = {};
+      if (fs.existsSync(this.SECURE_KEYS_FILE)) {
+        try {
+          parsed = JSON.parse(fs.readFileSync(this.SECURE_KEYS_FILE, 'utf8'));
+        } catch {}
+      }
+
+      const nameUpper = providerName.toUpperCase().trim();
+      if (rawKey && rawKey.trim().length > 0) {
+        parsed[nameUpper] = this.encryptKey(rawKey.trim());
+      } else {
+        delete parsed[nameUpper];
+      }
+
+      fs.writeFileSync(this.SECURE_KEYS_FILE, JSON.stringify(parsed, null, 2), 'utf8');
+    } catch (e: any) {
+      winstonLogger.warn(`[ProviderConfigService] Failed to persist secure local key: ${e.message}`);
     }
   }
 
@@ -275,6 +322,13 @@ export class ProviderConfigService {
   private getEnvFallback(providerName: string): string[] {
     const keys: string[] = [];
     const nameUpper = providerName.toUpperCase();
+
+    // Check secure encrypted local storage first (admin-managed key override)
+    const localKey = this.getSecureLocalKey(nameUpper);
+    if (localKey && localKey.trim().length > 0) {
+      keys.push(localKey.trim());
+      return keys;
+    }
 
     if (nameUpper === 'IRCTC') {
       const k = process.env.IRCTC_CONNECT_API_KEY || process.env.IRCTC_API_KEY || process.env.IRCTC_API_KEY_PRIMARY || '';

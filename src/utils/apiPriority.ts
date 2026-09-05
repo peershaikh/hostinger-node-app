@@ -1,6 +1,7 @@
 import { winstonLogger } from '../middleware/logger';
 import { metricsService } from '../services/metricsService';
 import { railProviderResolver } from '../services/railProviderResolver';
+import { ProviderCapabilities } from '../services/railProviderRegistry';
 
 export interface PriorityOperations<T> {
   // Strict Naming (Recommended)
@@ -26,14 +27,17 @@ const isMeaningfulResult = (result: any): boolean => {
   return true;
 };
 
-export async function fetchWithPriority<T>(ops: PriorityOperations<T>): Promise<T | null> {
-  // 1. Dynamically resolve live tracking providers based on Admin priority and capabilities
+export async function fetchWithPriority<T>(
+  ops: PriorityOperations<T>,
+  feature: keyof ProviderCapabilities = 'liveTracking'
+): Promise<T | null> {
+  // 1. Dynamically resolve providers based on Admin priority and capabilities for this feature
   let chain: string[] = [];
   try {
-    const resolvedProviders = await railProviderResolver.resolveProviderChain('liveTracking');
+    const resolvedProviders = await railProviderResolver.resolveProviderChain(feature);
     chain = resolvedProviders.map(p => p.providerId.toUpperCase());
   } catch {
-    chain = ['IRCTC', 'RAILRADAR', 'CONFIRMTKT', 'RAILYATRI'];
+    chain = feature === 'pnr' ? ['IRCTC', 'RAILRADAR'] : ['IRCTC', 'RAILRADAR', 'CONFIRMTKT', 'RAILYATRI'];
   }
 
   // Ensure DB fallback is always at the end if not explicitly present

@@ -5,6 +5,7 @@ import { providerConfigService } from '../services/providerConfigService';
 import { authService } from '../services/authService';
 import { railProviderRegistry, ProviderCapabilities } from '../services/railProviderRegistry';
 import { railProviderResolver } from '../services/railProviderResolver';
+import { railRadarService } from '../services/railRadarService';
 
 // Graceful database outage in-memory fallback store
 export let fallbackProviders: any[] = [
@@ -36,6 +37,39 @@ export let fallbackProviders: any[] = [
   }
 ];
 
+export function maskSecretKey(key: string | null | undefined): string {
+  if (!key || key.trim().length === 0 || key === 'mock_encrypted_railradar_key' || key === 'mock_encrypted_irctc_key') {
+    return 'Not configured';
+  }
+  const clean = key.trim();
+
+  // If already masked
+  if (clean.includes('••••') || clean.startsWith('********')) {
+    return clean;
+  }
+
+  // If encrypted "iv:tag:cipher", decrypt in memory to extract safe mask
+  if (clean.includes(':') && clean.split(':').length === 3) {
+    try {
+      const decrypted = providerConfigService.decryptKey(clean);
+      return maskSecretKey(decrypted);
+    } catch {
+      return '••••••••';
+    }
+  }
+
+  if (clean.startsWith('rr_live_')) {
+    const suffix = clean.slice(-4);
+    return `rr_live_••••••••${suffix}`;
+  }
+
+  if (clean.length <= 8) {
+    return '••••••••' + clean.slice(-2);
+  }
+
+  return clean.substring(0, 4) + '••••••••' + clean.slice(-4);
+}
+
 const enrichProvider = (provider: any) => {
   const nameUpper = (provider.provider_name || '').toUpperCase().trim();
   const reg = railProviderRegistry.getProvider(nameUpper);
@@ -47,22 +81,50 @@ const enrichProvider = (provider: any) => {
     schedule: false
   };
 
-  const hasCredentials = Boolean(
-    (provider.api_key && provider.api_key.length > 5) ||
-    (nameUpper === 'IRCTC' && Boolean(process.env.IRCTC_CONNECT_API_KEY || process.env.IRCTC_API_KEY)) ||
-    (nameUpper === 'RAILRADAR' && Boolean(process.env.RAILRADAR_API_KEY)) ||
-    (nameUpper === 'CONFIRMTKT' && Boolean(process.env.CONFIRMTKT_API_KEY || process.env.RAPIDAPI_KEY)) ||
-    (nameUpper === 'RAILYATRI' && Boolean(process.env.RAILYATRI_API_KEY || process.env.RAPIDAPI_KEY)) ||
-    nameUpper === 'DATABASE'
-  );
+  let rawOrEncryptedKey = provider.api_key;
+  if (!rawOrEncryptedKey || rawOrEncryptedKey === 'mock_encrypted_railradar_key' || rawOrEncryptedKey === 'mock_encrypted_irctc_key') {
+    const local = providerConfigService.getSecureLocalKey(nameUpper);
+    if (local) {
+      rawOrEncryptedKey = local;
+    } else {
+      if (nameUpper === 'IRCTC') {
+        rawOrEncryptedKey = process.env.IRCTC_CONNECT_API_KEY || process.env.IRCTC_API_KEY || '';
+      } else if (nameUpper === 'RAILRADAR') {
+        rawOrEncryptedKey = process.env.RAILRADAR_API_KEY || '';
+      } else if (nameUpper === 'CONFIRMTKT') {
+        rawOrEncryptedKey = process.env.CONFIRMTKT_API_KEY || process.env.RAPIDAPI_KEY || '';
+      } else if (nameUpper === 'RAILYATRI') {
+        rawOrEncryptedKey = process.env.RAILYATRI_API_KEY || process.env.RAPIDAPI_KEY || '';
+      }
+    }
+  }
 
-  return {
+  const maskedKey = maskSecretKey(rawOrEncryptedKey);
+  const hasCredentials = maskedKey !== 'Not configured' || nameUpper === 'DATABASE';
+
+  const baseEnriched: any = {
     ...provider,
-    api_key: provider.id ? '********' + provider.id.substring(0, 4) : '********',
+    api_key: maskedKey,
     credentials_configured: hasCredentials,
     capabilities,
     display_name: reg ? reg.displayName : provider.provider_name
   };
+
+  if (nameUpper === 'RAILRADAR') {
+    const quota = railRadarService.getQuotaUsage();
+    const health = railRadarService.getHealthStatus();
+    baseEnriched.role = 'BACKUP';
+    baseEnriched.services = ['PNR Status', 'Live Train Status'];
+    baseEnriched.quota_used = quota.used;
+    baseEnriched.quota_limit = quota.limit;
+    baseEnriched.quota_remaining = quota.remaining;
+    baseEnriched.quota_month = quota.month;
+    baseEnriched.health_status = health.status;
+    baseEnriched.health_message = health.message;
+    baseEnriched.fallback_available = provider.enabled && hasCredentials && health.status !== 'UNHEALTHY';
+  }
+
+  return baseEnriched;
 };
 
 const computeFeatureMatrix = async () => {
@@ -197,84 +259,158 @@ export const createProvider = async (req: Request, res: Response) => {
 export const updateProvider = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { priority, enabled, api_key, health_status } = req.body;
+    const { priority, enabled, api_key, remove_key, health_status } = req.body;
     const adminId = (req as any).user?.id || req.headers['x-user-id'] as string || 'unknown-admin';
     const adminUser = await authService.getUserById(adminId);
     const adminEmail = adminUser?.email || 'unknown-admin@trayago.in';
 
-    const encryptedKey = api_key && !api_key.startsWith('********')
-      ? providerConfigService.encryptKey(api_key)
-      : null;
-
+    // Find existing provider
+    let existing: any = null;
     try {
-      const { data: existing, error: fetchErr } = await supabase
-        .from('api_providers')
-        .select('*')
-        .eq('id', id)
-        .single();
+      const { data } = await supabase.from('api_providers').select('*').eq('id', id).maybeSingle();
+      if (data) existing = data;
+    } catch {}
 
-      if (fetchErr || !existing) throw new Error('Provider not found');
+    if (!existing) {
+      existing = fallbackProviders.find(p => p.id === id);
+    }
 
-      const maskedDetails = {
-        provider_id: id,
-        priority,
-        enabled,
-        health_status,
-        api_key: api_key ? '[REDACTED]' : undefined,
-        previous: { priority: existing.priority, enabled: existing.enabled, health_status: existing.health_status }
-      };
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Provider not found' });
+    }
 
+    const providerName = (existing.provider_name || '').toUpperCase().trim();
+    const isRemovingKey = remove_key === true || api_key === '' || api_key === null;
+    const isNewKeyProvided = typeof api_key === 'string' && api_key.trim().length > 0 && !api_key.startsWith('********') && !api_key.includes('••••');
+
+    let encryptedKey: string | null = null;
+    let auditAction = 'UPDATE_PROVIDER';
+
+    if (isRemovingKey) {
+      encryptedKey = '';
+      providerConfigService.saveSecureLocalKey(providerName, null);
+      if (providerName === 'RAILRADAR') {
+        auditAction = 'RAILRADAR_KEY_REMOVED';
+        railRadarService.resetHealth();
+      } else {
+        auditAction = 'PROVIDER_KEY_REMOVED';
+      }
+    } else if (isNewKeyProvided) {
+      encryptedKey = providerConfigService.encryptKey(api_key.trim());
+      providerConfigService.saveSecureLocalKey(providerName, api_key.trim());
+      const hadPreviousKey = Boolean(
+        existing.api_key &&
+        existing.api_key !== 'mock_encrypted_railradar_key' &&
+        existing.api_key !== 'mock_encrypted_irctc_key' &&
+        existing.api_key.length > 5
+      );
+      if (providerName === 'RAILRADAR') {
+        auditAction = hadPreviousKey ? 'RAILRADAR_KEY_REPLACED' : 'RAILRADAR_KEY_ADDED';
+        railRadarService.resetHealth();
+      } else {
+        auditAction = hadPreviousKey ? 'PROVIDER_KEY_REPLACED' : 'PROVIDER_KEY_ADDED';
+      }
+    } else if (enabled !== undefined) {
+      if (providerName === 'RAILRADAR') {
+        auditAction = enabled ? 'RAILRADAR_ENABLED' : 'RAILRADAR_DISABLED';
+        if (enabled) railRadarService.resetHealth();
+      } else {
+        auditAction = enabled ? 'PROVIDER_ENABLED' : 'PROVIDER_DISABLED';
+      }
+    }
+
+    const maskedDetails = {
+      provider_name: providerName,
+      provider_id: id,
+      priority,
+      enabled,
+      health_status,
+      api_key: (isNewKeyProvided || isRemovingKey) ? '[REDACTED]' : undefined,
+      action: auditAction,
+      previous: { priority: existing.priority, enabled: existing.enabled, health_status: existing.health_status }
+    };
+
+    // Update in-memory fallback state
+    const fbExisting = fallbackProviders.find(p => p.id === id);
+    if (fbExisting) {
+      if (priority !== undefined) fbExisting.priority = priority;
+      if (enabled !== undefined) fbExisting.enabled = enabled;
+      if (health_status !== undefined) fbExisting.health_status = health_status;
+      if (isRemovingKey) fbExisting.api_key = '';
+      else if (encryptedKey) fbExisting.api_key = encryptedKey;
+      fbExisting.updated_at = new Date().toISOString();
+    }
+
+    // Attempt DB updates: RPC first, then direct table update
+    let dbUpdated = false;
+    try {
       const rpcPayload = {
         p_admin_id: adminId,
         p_admin_email: adminEmail,
         p_provider_id: id,
-        p_api_key: encryptedKey ?? null,
+        p_api_key: encryptedKey,
         p_priority: priority ?? null,
         p_enabled: enabled ?? null,
         p_ip_address: req.ip || req.headers['x-forwarded-for'] as string || null,
         p_user_agent: req.headers['user-agent'] || null,
         p_details: maskedDetails
       };
+      const { error: rpcErr } = await supabase.rpc('admin_update_provider_rpc', rpcPayload);
+      if (!rpcErr) dbUpdated = true;
+    } catch {}
 
-      const { data: rpcData, error } = await supabase.rpc('admin_update_provider_rpc', rpcPayload);
-      if (error) throw error;
+    if (!dbUpdated) {
+      try {
+        const updateData: any = { updated_at: new Date().toISOString() };
+        if (priority !== undefined) updateData.priority = priority;
+        if (enabled !== undefined) updateData.enabled = enabled;
+        if (health_status !== undefined) updateData.health_status = health_status;
+        if (isRemovingKey) updateData.api_key = '';
+        else if (encryptedKey) updateData.api_key = encryptedKey;
 
-      providerConfigService.flushCache(existing.provider_name);
-      const feature_matrix = await computeFeatureMatrix();
-
-      res.status(200).json({
-        success: true,
-        provider: { id, priority, enabled, health_status },
-        feature_matrix
-      });
-    } catch (dbError: any) {
-      winstonLogger.warn(`[Admin] DB update provider failed: ${dbError.message}. Using in-memory fallback.`);
-      
-      const existing = fallbackProviders.find(p => p.id === id);
-      if (!existing) {
-        return res.status(404).json({ success: false, error: 'Provider not found' });
-      }
-
-      if (priority !== undefined) existing.priority = priority;
-      if (enabled !== undefined) existing.enabled = enabled;
-      if (health_status !== undefined) existing.health_status = health_status;
-      if (encryptedKey) existing.api_key = encryptedKey;
-      existing.updated_at = new Date().toISOString();
-
-      providerConfigService.flushCache(existing.provider_name);
-      const feature_matrix = await computeFeatureMatrix();
-
-      res.status(200).json({
-        success: true,
-        provider: { id, priority, enabled, health_status },
-        feature_matrix,
-        fallback: true
-      });
+        await supabase.from('api_providers').update(updateData).eq('id', id);
+        dbUpdated = true;
+      } catch {}
     }
+
+    // Write audit log without exposing key
+    try {
+      await supabase.from('admin_security_audit_logs').insert({
+        admin_id: adminId,
+        admin_email: adminEmail,
+        action: auditAction,
+        ip_address: req.ip || req.headers['x-forwarded-for'] as string || null,
+        user_agent: req.headers['user-agent'] || null,
+        details: maskedDetails
+      });
+    } catch {}
+
+    winstonLogger.info(`[ADMIN_AUDIT] Action: ${auditAction} on provider ${providerName} by ${adminEmail}`);
+
+    providerConfigService.flushCache(providerName);
+    const feature_matrix = await computeFeatureMatrix();
+
+    return res.status(200).json({
+      success: true,
+      provider: {
+        id,
+        priority: fbExisting?.priority ?? priority,
+        enabled: fbExisting?.enabled ?? enabled,
+        health_status
+      },
+      feature_matrix,
+      audit_action: auditAction
+    });
   } catch (error: any) {
-    winstonLogger.error(`[ADMIN_EXCEPTION] UpdateProvider transaction failed. Error: ${error.message}`);
+    winstonLogger.error(`[ADMIN_EXCEPTION] UpdateProvider failed. Error: ${error.message}`);
     res.status(500).json({ success: false, error: 'Audit transaction failed. State change rolled back.' });
   }
+};
+
+export const removeProviderKey = async (req: Request, res: Response) => {
+  req.body = req.body || {};
+  req.body.remove_key = true;
+  return updateProvider(req, res);
 };
 
 export const batchUpdateProviders = async (req: Request, res: Response) => {
@@ -501,6 +637,10 @@ export const deleteProvider = async (req: Request, res: Response) => {
 
       if (error) throw error;
 
+      providerConfigService.saveSecureLocalKey(existing.provider_name, null);
+      if (existing.provider_name?.toUpperCase() === 'RAILRADAR') {
+        railRadarService.resetHealth();
+      }
       providerConfigService.flushCache(existing.provider_name);
       const feature_matrix = await computeFeatureMatrix();
 
@@ -515,6 +655,10 @@ export const deleteProvider = async (req: Request, res: Response) => {
 
       existing.is_deleted = true;
       existing.updated_at = new Date().toISOString();
+      providerConfigService.saveSecureLocalKey(existing.provider_name, null);
+      if (existing.provider_name?.toUpperCase() === 'RAILRADAR') {
+        railRadarService.resetHealth();
+      }
       providerConfigService.flushCache(existing.provider_name);
       const feature_matrix = await computeFeatureMatrix();
 

@@ -169,7 +169,7 @@ export class RailRadarAdapter implements RailProvider {
     search: false,
     availability: false,
     liveTracking: true,
-    pnr: false,
+    pnr: true,
     schedule: false
   };
 
@@ -186,7 +186,7 @@ export class RailRadarAdapter implements RailProvider {
   }
 
   async getPNRStatus(params: PNRParams): Promise<any> {
-    throw new UnsupportedCapabilityError(this.providerId, 'pnr');
+    return railRadarService.getPNRStatus(params.pnr);
   }
 
   async getTrainSchedule(params: ScheduleParams): Promise<any> {
@@ -197,6 +197,15 @@ export class RailRadarAdapter implements RailProvider {
     const start = Date.now();
     try {
       const guard = await providerConfigService.isProviderEnabled('RAILRADAR');
+      const serviceHealth = railRadarService.getHealthStatus();
+      if (serviceHealth.status === 'UNHEALTHY') {
+        return {
+          status: 'UNAVAILABLE',
+          latencyMs: Date.now() - start,
+          message: serviceHealth.message || 'AUTH_FAILURE_401',
+          timestamp: new Date().toISOString()
+        };
+      }
       return mapGuardToHealthStatus(guard, Date.now() - start);
     } catch (e: any) {
       return {

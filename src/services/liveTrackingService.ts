@@ -10,6 +10,7 @@ import { rapidApiService } from './rapidApiService';
 import { stationService } from './stationService';
 import { geminiTrainScheduleService } from './geminiTrainScheduleService';
 import { dbService } from './dbService';
+import { providerConfigService } from './providerConfigService';
 
 export interface LiveTrainStatus {
   train_number: string;
@@ -549,6 +550,23 @@ export class LiveTrackingService {
           const res = await irctcService.getLiveStatus(trainNo, requestedDateStr || undefined);
           if (res && !(res as any).not_running) { usedApi = 'IRCTC'; return res; }
           return res;
+        },
+        railradar: async () => {
+          const guard = await providerConfigService.isProviderEnabled('RAILRADAR');
+          if (guard.enabled) {
+            const res = await railRadarService.getTrainStatus(trainNo);
+            if (res) {
+              usedApi = 'RAILRADAR';
+              return res;
+            }
+            return null;
+          } else {
+            const skipLabel = (guard.reason === 'PROVIDER_UNHEALTHY' || guard.reason === 'CIRCUIT_BREAKER_BLOCKED')
+              ? '[PROVIDER_SKIPPED_UNHEALTHY]'
+              : '[PROVIDER_SKIPPED_DISABLED]';
+            winstonLogger.info(`${skipLabel} RAILRADAR | Reason: ${guard.reason}`);
+            return null;
+          }
         },
         db: async () => {
           if (scheduleWithDays.length > 0) {
