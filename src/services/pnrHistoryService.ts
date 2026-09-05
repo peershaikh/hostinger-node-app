@@ -93,11 +93,15 @@ export class PnrHistoryService {
 
     /**
      * Get historical data for smart predictions from pnr_learning
+     * RULE: Only completed observations (chart_prepared = true) are eligible.
+     * In-flight/pending checks must NOT be counted as failed historical journeys.
+     * RULE: Exclude current PNR checks to prevent self-contamination from repeated searches.
      */
     async getHistoricalDataForPrediction(
         source: string,
         destination: string,
-        currentStatus: string
+        currentStatus: string,
+        currentPnr?: string
     ): Promise<{ successRate: number; totalCount: number } | null> {
         try {
             // Parse the current status to get the waitlist number & quota
@@ -110,11 +114,19 @@ export class PnrHistoryService {
             if (isNaN(wlPosition)) return null;
 
             // Query authoritative pnr_learning table for matching waitlist types
-            const { data, error } = await supabase
+            // Only consider completed journeys (chart_prepared = true)
+            let query = supabase
                 .from('pnr_learning')
-                .select('initial_status, final_status')
-                .ilike('initial_status', `%${quotaType}%`)
-                .limit(200);
+                .select('pnr, initial_status, final_status, chart_prepared')
+                .eq('chart_prepared', true)
+                .ilike('initial_status', `%${quotaType}%`);
+
+            // Prevent self-contamination: exclude current PNR checks
+            if (currentPnr) {
+                query = query.neq('pnr', currentPnr);
+            }
+
+            const { data, error } = await query.limit(200);
 
             if (error) {
                 winstonLogger.debug(`[PNR_PREDICTION] Note fetching historical data: ${error.message}`);
@@ -125,6 +137,9 @@ export class PnrHistoryService {
 
             // Filter records with similar WL positions (within 5 positions)
             const similarRecords = data.filter(record => {
+                if (currentPnr && record.pnr === currentPnr) return false;
+                if (!record.chart_prepared) return false;
+
                 const statusStr = record.initial_status || '';
                 const recordWlMatch = statusStr.match(QUOTA_REGEX);
                 if (!recordWlMatch) return false;

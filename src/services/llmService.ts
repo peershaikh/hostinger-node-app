@@ -1,5 +1,6 @@
 import { winstonLogger } from '../middleware/logger';
 import { aiProviderResolver } from './ai/aiProviderResolver';
+import { aiAdminConfigService } from './ai/aiAdminConfigService';
 import {
   PnrPredictionOutput,
   RouteAnalysisOutput,
@@ -38,25 +39,71 @@ export class LlmService {
   }
 
   /**
-   * Predicts PNR confirmation probability.
+   * Predicts PNR confirmation probability with safe configuration-driven multi-provider fallback.
    */
   async predictPNRConfirmation(pnrData: any): Promise<PnrPredictionOutput> {
-    const provider = aiProviderResolver.resolveForFeature('PNR_PREDICTION', 'predictPnr')
-      || aiProviderResolver.resolveProvider('predictPnr');
-    if (!provider || typeof provider.predictPnr !== 'function') {
+    let primary: any = null;
+    let fallback: any = null;
+
+    try {
+      const config = aiAdminConfigService.getConfig();
+      const route = config?.routing?.['PNR_PREDICTION'];
+      if (route?.primaryProvider) {
+        const primaryCandidate = aiProviderResolver.getProvider(route.primaryProvider);
+        if (primaryCandidate && primaryCandidate.capabilities?.predictPnr) {
+          primary = primaryCandidate;
+        }
+      }
+      if (route?.fallbackProvider && route.fallbackProvider !== route.primaryProvider) {
+        const fallbackCandidate = aiProviderResolver.getProvider(route.fallbackProvider);
+        if (fallbackCandidate && fallbackCandidate.capabilities?.predictPnr) {
+          fallback = fallbackCandidate;
+        }
+      }
+    } catch (e: any) {
+      winstonLogger.warn(`[LLM] Error resolving routing from admin config: ${e.message}`);
+    }
+
+    if (!primary || typeof primary.predictPnr !== 'function') {
+      primary = aiProviderResolver.resolveForFeature('PNR_PREDICTION', 'predictPnr')
+        || aiProviderResolver.resolveProvider('predictPnr');
+    }
+
+    if (!primary || typeof primary.predictPnr !== 'function') {
       throw new Error('No capable AI provider available for PNR prediction');
     }
 
+    // 1. Attempt PRIMARY provider exactly once
     try {
-      winstonLogger.info(`[LLM] PNR prediction for ${pnrData.pnr || 'unknown'} using provider ${provider.providerId}`);
-      return await provider.predictPnr(pnrData);
-    } catch (err: any) {
-      if (err?.code === 'RATE_LIMITED' || err?.message?.includes('rate limit') || err?.message?.includes('quota')) {
-        winstonLogger.info(`[LLM] PNR prediction AI rate limited (${err.message}). Propagating for heuristic fallback.`);
+      winstonLogger.info(`[LLM] PNR prediction for ${pnrData.pnr || 'unknown'} using primary provider ${primary.providerId}`);
+      const res = await primary.predictPnr(pnrData);
+      return {
+        ...res,
+        providerId: primary.providerId
+      };
+    } catch (primaryErr: any) {
+      if (primaryErr?.code === 'RATE_LIMITED' || primaryErr?.message?.includes('rate limit') || primaryErr?.message?.includes('quota')) {
+        winstonLogger.info(`[LLM] Primary AI provider ${primary.providerId} rate limited (${primaryErr.message}).`);
       } else {
-        winstonLogger.warn(`[LLM] PNR prediction AI call failed: ${err.message}. Propagating for heuristic fallback.`);
+        winstonLogger.warn(`[LLM] Primary AI provider ${primary.providerId} failed: ${primaryErr.message}`);
       }
-      throw err;
+
+      // 2. Attempt CONFIGURED FALLBACK provider exactly once if distinct and capable
+      if (fallback && fallback.providerId !== primary.providerId && typeof fallback.predictPnr === 'function') {
+        try {
+          winstonLogger.info(`[LLM] Attempting fallback AI provider ${fallback.providerId} for PNR ${pnrData.pnr || 'unknown'}`);
+          const fbRes = await fallback.predictPnr(pnrData);
+          return {
+            ...fbRes,
+            providerId: fallback.providerId
+          };
+        } catch (fallbackErr: any) {
+          winstonLogger.warn(`[LLM] Fallback AI provider ${fallback.providerId} also failed: ${fallbackErr.message}`);
+        }
+      }
+
+      // 3. Propagate error to pnrController for HEURISTIC/CALIBRATED safety fallback
+      throw primaryErr;
     }
   }
 

@@ -26,11 +26,12 @@
     "DEEPSEEK": {
       "providerId": "DEEPSEEK",
       "displayName": "DeepSeek",
-      "enabled": false,
+      "enabled": true,
       "activeModel": "deepseek-v4-flash",
       "allowedModels": [
         "deepseek-v4-flash",
-        "deepseek-v4-pro"
+        "deepseek-v4-pro",
+        "deepseek-chat"
       ],
       "capabilities": {
         "predictPnr": true,
@@ -87,9 +88,9 @@
   },
   "routing": {
     "PNR_PREDICTION": {
-      "primaryProvider": "GEMINI",
-      "fallbackProvider": "DEEPSEEK",
-      "model": "gemini-3.6-flash"
+      "primaryProvider": "DEEPSEEK",
+      "fallbackProvider": "GEMINI",
+      "model": "deepseek-v4-flash"
     },
     "ROUTE_ANALYSIS": {
       "primaryProvider": "GEMINI",

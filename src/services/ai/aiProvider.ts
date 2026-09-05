@@ -92,6 +92,7 @@ export interface PnrPredictionOutput {
   advice: string;
   disclaimer: string;
   riskLevel?: string;
+  providerId?: string;
 }
 
 export interface RouteAnalysisInput {
