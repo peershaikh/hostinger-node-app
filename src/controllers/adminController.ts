@@ -624,7 +624,7 @@ export class AdminController {
     try {
       const { id } = req.params;
       const { planType, durationDays } = req.body;
-      const validPlans = ['free', 'paid', 'beta', 'safar_pro_30m', 'safar_pro_1d', 'safar_pro_7d', 'safar_pro_30d', 'admin'];
+      const validPlans = ['free', 'paid', 'beta', 'safar_pro', 'safar_pro_30m', 'safar_pro_1d', 'safar_pro_7d', 'safar_pro_30d', 'safar_pro_90d', 'admin'];
       if (!planType || !validPlans.includes(planType)) {
         return res.status(400).json({ success: false, error: 'Invalid plan type' });
       }
@@ -640,31 +640,61 @@ export class AdminController {
         planExpiry = expiry.toISOString();
       }
 
-      // 1. Database-level transactional RPC block
+      // 1. Database-level transactional RPC block with resilient fallback
       if (isSupabaseConfigured()) {
-        const { error } = await supabase.rpc('admin_change_user_plan_rpc', {
-          p_admin_id: adminId,
-          p_admin_email: adminEmail,
-          p_target_id: id,
-          p_plan_type: planType,
-          p_plan_expiry: planExpiry,
-          p_ip_address: req.ip || req.headers['x-forwarded-for'] as string || null,
-          p_user_agent: req.headers['user-agent'] || null,
-          p_details: { target: id, planType, durationDays }
-        });
+        try {
+          const { error } = await supabase.rpc('admin_change_user_plan_rpc', {
+            p_admin_id: adminId,
+            p_admin_email: adminEmail,
+            p_target_id: id,
+            p_plan_type: planType,
+            p_plan_expiry: planExpiry,
+            p_ip_address: req.ip || req.headers['x-forwarded-for'] as string || null,
+            p_user_agent: req.headers['user-agent'] || null,
+            p_details: { target: id, planType, durationDays }
+          });
 
-        if (error) throw new Error(error.message);
+          if (error) {
+            winstonLogger.warn(`[ADMIN] admin_change_user_plan_rpc error (${error.message}), falling back to direct update`);
+            await supabase.from('users').update({
+              plan_type: planType,
+              plan_expiry: planExpiry,
+              last_subscription_date: planType !== 'free' ? new Date().toISOString() : undefined
+            }).eq('id', id);
+          }
+        } catch (rpcErr: any) {
+          winstonLogger.warn(`[ADMIN] RPC execution threw: ${rpcErr.message}. Executing direct update`);
+          await supabase.from('users').update({
+            plan_type: planType,
+            plan_expiry: planExpiry,
+            last_subscription_date: planType !== 'free' ? new Date().toISOString() : undefined
+          }).eq('id', id);
+        }
+
+        // Also record to subscription_history for auditing
+        if (planType !== 'free') {
+          supabase.from('subscription_history').insert([{
+            user_id: id,
+            source: 'admin',
+            plan_type: planType,
+            duration_days: durationDays || 30,
+            activated_at: new Date().toISOString(),
+            expires_at: planExpiry || new Date(Date.now() + 30 * 86400000).toISOString()
+          }]).then(({ error: subErr }) => {
+            if (subErr) winstonLogger.warn(`[ADMIN] subscription_history log warning: ${subErr.message}`);
+          });
+        }
       }
 
       // 2. Local state synchronization on success
       const success = await authService.changeUserPlan(id, planType, durationDays);
       if (!success) return res.status(404).json({ success: false, error: 'User not found' });
       
-      winstonLogger.info(`[ADMIN_ACTION] Plan changed to ${planType} for user ${id} via transaction`);
+      winstonLogger.info(`[ADMIN_ACTION] Plan changed to ${planType} for user ${id}`);
       res.json({ success: true, message: `Plan changed to ${planType}` });
     } catch (err: any) {
-      winstonLogger.error(`[ADMIN_EXCEPTION] ChangeUserPlan transaction failed. Reverted. Error: ${err.message}`);
-      res.status(500).json({ success: false, error: 'Audit transaction failed. State change rolled back.' });
+      winstonLogger.error(`[ADMIN_EXCEPTION] ChangeUserPlan failed. Error: ${err.message}`);
+      res.status(500).json({ success: false, error: err.message || 'Change plan operation failed.' });
     }
   }
 

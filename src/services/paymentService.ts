@@ -217,10 +217,11 @@ class PaymentService {
             // Upgrade user
             const PLAN_DURATION_MAPPING: Record<string, number> = {
                 safar_pro_30m: 30,
-                safar_pro: 30 * 24 * 60,
+                safar_pro_1d: 24 * 60,
                 safar_pro_7d: 7 * 24 * 60,
                 safar_pro_30d: 30 * 24 * 60,
-                safar_pro_90d: 90 * 24 * 60
+                safar_pro: 30 * 24 * 60,
+                safar_pro_90d: 365 * 24 * 60
             };
             const durationMinutes = PLAN_DURATION_MAPPING[txn.plan] || 30;
             authService.upgradeToPro(txn.userId, txn.plan as any, durationMinutes, 'payment');
@@ -361,8 +362,8 @@ class PaymentService {
 
                     // Activate Subscription
                     const PLAN_MAPPING: Record<string, number> = {
-                        safar_pro_30m: 30, safar_pro: 30 * 24 * 60, safar_pro_7d: 7 * 24 * 60,
-                        safar_pro_30d: 30 * 24 * 60, safar_pro_90d: 90 * 24 * 60
+                        safar_pro_30m: 30, safar_pro_1d: 24 * 60, safar_pro_7d: 7 * 24 * 60,
+                        safar_pro_30d: 30 * 24 * 60, safar_pro: 30 * 24 * 60, safar_pro_90d: 365 * 24 * 60
                     };
                     
                     const durationMinutes = PLAN_MAPPING[txnData.plan_id] || 30 * 24 * 60;

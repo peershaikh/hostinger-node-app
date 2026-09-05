@@ -24,11 +24,12 @@ export class PaymentController {
             }
 
             const PLAN_MAPPING: Record<string, { amount: number; duration_days: number }> = {
-                safar_pro_30m: { amount: 900, duration_days: 0.0208 }, 
-                safar_pro: { amount: 14900, duration_days: 30 },       
-                safar_pro_7d: { amount: 4900, duration_days: 7 },
-                safar_pro_30d: { amount: 14900, duration_days: 30 },
-                safar_pro_90d: { amount: 39900, duration_days: 90 }
+                safar_pro_30m: { amount: 900, duration_days: 0.0208 }, // ₹9 (30 mins - Blitz PRO)
+                safar_pro_1d: { amount: 1900, duration_days: 1 },      // ₹19 (24 hours)
+                safar_pro_7d: { amount: 1900, duration_days: 7 },      // ₹19 (AI Pass)
+                safar_pro_30d: { amount: 4900, duration_days: 30 },    // ₹49 (Pro Monthly)
+                safar_pro: { amount: 14900, duration_days: 30 },       // ₹149 (Legacy Safar Pro - preserved)
+                safar_pro_90d: { amount: 39900, duration_days: 365 }   // ₹399 (Pro Yearly - 365 days)
             };
 
             const planInfo = PLAN_MAPPING[planType];
