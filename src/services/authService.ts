@@ -1864,24 +1864,26 @@ export class AuthService {
   }
 
   public async claimReviewReward(userId: string | null, deviceId: string): Promise<{ success: boolean, message: string, minutesGranted: number }> {
-      const entity = userId ? await this.getUserById(userId) : this.getOrCreateGuest(deviceId);
-      if (!entity) return { success: false, message: "Account not found", minutesGranted: 0 };
-
-      // Upgrade user to 30 minutes Blitz Pro
       if (userId) {
+          const user = await this.getUserById(userId);
+          if (!user) return { success: false, message: "Account not found", minutesGranted: 0 };
           await this.upgradeToPro(userId, 'safar_pro_30m', 30, 'admin');
+          return {
+              success: true,
+              message: "🎉 Thank you for rating Trayago! 30 Minutes Free Pro Access Unlocked!",
+              minutesGranted: 30
+          };
       } else {
-          // For guests: grant 5 extra searches and 30m split access
-          entity.dailySearchCount = Math.max(0, (entity.dailySearchCount || 0) - 5);
-          entity.splitAccessExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+          const guest = this.getOrCreateGuest(deviceId);
+          if (!guest) return { success: false, message: "Device not recognized", minutesGranted: 0 };
+          guest.dailySearchCount = Math.max(0, (guest.dailySearchCount || 0) - 5);
           this.saveGuests();
+          return {
+              success: true,
+              message: "🎉 Thank you for rating Trayago! 5 Extra Searches Unlocked!",
+              minutesGranted: 30
+          };
       }
-
-      return {
-          success: true,
-          message: "🎉 Thank you for rating Trayago! 30 Minutes Free Pro Access Unlocked!",
-          minutesGranted: 30
-      };
   }
 
   public async getUserStatus(userId: string | null, betaCode?: string, deviceId?: string) {
