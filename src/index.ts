@@ -81,9 +81,14 @@ app.use(cors({
   origin: corsOriginValidator, // PHASE_4C849: strict per-request whitelist
   credentials: true
 }));
-// Cashfree Webhook needs exact raw string for HMAC signature verification
-app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
-app.use(express.json({ limit: '10mb' }));
+// Payment Gateway Webhooks need exact raw string for HMAC signature verification
+app.use(['/api/payments/webhook', '/payments/webhook'], express.raw({ type: 'application/json' }));
+app.use(express.json({
+  limit: '10mb',
+  verify: (req: any, _res, buf) => {
+    req.rawBody = buf.toString('utf8');
+  }
+}));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(mongoSanitize()); // Prevent NoSQL injection attacks
