@@ -473,6 +473,10 @@ export class AuthController {
           avatarUrl: user.avatarUrl || '',
           profileCompletionPercentage: score,
           isBirthdayToday,
+          planType: user.planType || 'free',
+          planExpiry: user.planExpiry || null,
+          hasSplitAccess: user.splitAccessUntil ? new Date(user.splitAccessUntil) > new Date() : false,
+          splitMinutesLeft: user.splitAccessUntil ? Math.max(0, Math.floor((new Date(user.splitAccessUntil).getTime() - Date.now()) / 60000)) : 0,
           rewardEligibility: {
             canClaimBirthdayReward,
             rewardLastClaimedYear: user.birthdayRewardLastClaimedYear || null
