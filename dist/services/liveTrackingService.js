@@ -8,9 +8,11 @@ const apiPriority_1 = require("../utils/apiPriority");
 const dayUtils_1 = require("../utils/dayUtils");
 const cacheService_1 = require("./cacheService");
 const irctcService_1 = require("./irctcService");
+const railRadarService_1 = require("./railRadarService");
 const stationService_1 = require("./stationService");
 const geminiTrainScheduleService_1 = require("./geminiTrainScheduleService");
 const dbService_1 = require("./dbService");
+const providerConfigService_1 = require("./providerConfigService");
 // ── Known major railway junction codes (India) ───────────────────────────────
 const MAJOR_JUNCTION_CODES = new Set([
     // Mumbai zone
@@ -479,6 +481,24 @@ class LiveTrackingService {
                         return res;
                     }
                     return res;
+                },
+                railradar: async () => {
+                    const guard = await providerConfigService_1.providerConfigService.isProviderEnabled('RAILRADAR');
+                    if (guard.enabled) {
+                        const res = await railRadarService_1.railRadarService.getTrainStatus(trainNo);
+                        if (res) {
+                            usedApi = 'RAILRADAR';
+                            return res;
+                        }
+                        return null;
+                    }
+                    else {
+                        const skipLabel = (guard.reason === 'PROVIDER_UNHEALTHY' || guard.reason === 'CIRCUIT_BREAKER_BLOCKED')
+                            ? '[PROVIDER_SKIPPED_UNHEALTHY]'
+                            : '[PROVIDER_SKIPPED_DISABLED]';
+                        logger_1.winstonLogger.info(`${skipLabel} RAILRADAR | Reason: ${guard.reason}`);
+                        return null;
+                    }
                 },
                 db: async () => {
                     if (scheduleWithDays.length > 0) {

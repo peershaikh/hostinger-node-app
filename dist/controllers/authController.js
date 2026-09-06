@@ -312,6 +312,19 @@ class AuthController {
                 res.status(500).json({ success: false, message: error.message });
             }
         };
+        this.claimReviewReward = async (req, res) => {
+            try {
+                const userId = req.headers['x-user-id'] || req.user?.id || null;
+                let deviceId = req.headers['x-device-id'];
+                if (!userId && !deviceId)
+                    deviceId = `ip_${req.ip}`;
+                const result = await authService_1.authService.claimReviewReward(userId, deviceId);
+                return res.json(result);
+            }
+            catch (error) {
+                return res.status(500).json({ success: false, message: error.message });
+            }
+        };
         // ─── Forgot Password Flow ─────────────────────────────────────────────────
         this.forgotPassword = async (req, res) => {
             try {

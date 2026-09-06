@@ -37,8 +37,9 @@ export class RazorpayProvider implements IPaymentProvider {
                 razorpayKey: process.env.RAZORPAY_KEY_ID
             };
         } catch (error: any) {
-            winstonLogger.error(`[RAZORPAY] Order creation failed: ${error.message}`);
-            throw new Error("Payment gateway order creation failed");
+            const errorDesc = error?.error?.description || error?.description || error?.message || JSON.stringify(error);
+            winstonLogger.error(`[RAZORPAY] Order creation failed: ${errorDesc}`);
+            throw new Error(`Payment gateway order creation failed: ${errorDesc}`);
         }
     }
 

@@ -15,15 +15,15 @@ const isMeaningfulResult = (result) => {
         return Object.keys(result).length > 0;
     return true;
 };
-async function fetchWithPriority(ops) {
-    // 1. Dynamically resolve live tracking providers based on Admin priority and capabilities
+async function fetchWithPriority(ops, feature = 'liveTracking') {
+    // 1. Dynamically resolve providers based on Admin priority and capabilities for this feature
     let chain = [];
     try {
-        const resolvedProviders = await railProviderResolver_1.railProviderResolver.resolveProviderChain('liveTracking');
+        const resolvedProviders = await railProviderResolver_1.railProviderResolver.resolveProviderChain(feature);
         chain = resolvedProviders.map(p => p.providerId.toUpperCase());
     }
     catch {
-        chain = ['IRCTC', 'RAILRADAR', 'CONFIRMTKT', 'RAILYATRI'];
+        chain = feature === 'pnr' ? ['IRCTC', 'RAILRADAR'] : ['IRCTC', 'RAILRADAR', 'CONFIRMTKT', 'RAILYATRI'];
     }
     // Ensure DB fallback is always at the end if not explicitly present
     if (!chain.includes('DATABASE')) {

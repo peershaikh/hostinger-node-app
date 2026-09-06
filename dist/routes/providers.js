@@ -12,5 +12,6 @@ router.post('/batch-update', providerController_1.batchUpdateProviders);
 router.post('/rollback', providerController_1.rollbackProviderConfig);
 router.post('/', providerController_1.createProvider);
 router.put('/:id', providerController_1.updateProvider);
+router.delete('/:id/key', providerController_1.removeProviderKey);
 router.delete('/:id', providerController_1.deleteProvider);
 exports.default = router;

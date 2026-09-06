@@ -14,6 +14,7 @@ router.post('/refresh', authController_1.authController.refresh);
 router.post('/logout', authController_1.authController.logout);
 router.post('/check-device-lock', rateLimiter_1.authLimiter, authController_1.authController.checkDeviceLock);
 router.post('/mock-ad', rateLimiter_1.authLimiter, authController_1.authController.mockAdView);
+router.post('/review-reward', rateLimiter_1.authLimiter, authController_1.authController.claimReviewReward);
 router.post('/verify-otp', rateLimiter_1.authLimiter, authController_1.authController.verifyOtp);
 router.get('/status', authController_1.authController.status);
 router.get('/quota-status', authController_1.authController.getQuotaStatus);

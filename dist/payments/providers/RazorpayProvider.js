@@ -37,8 +37,9 @@ class RazorpayProvider {
             };
         }
         catch (error) {
-            logger_1.winstonLogger.error(`[RAZORPAY] Order creation failed: ${error.message}`);
-            throw new Error("Payment gateway order creation failed");
+            const errorDesc = error?.error?.description || error?.description || error?.message || JSON.stringify(error);
+            logger_1.winstonLogger.error(`[RAZORPAY] Order creation failed: ${errorDesc}`);
+            throw new Error(`Payment gateway order creation failed: ${errorDesc}`);
         }
     }
     verifyPaymentSignature(orderId, paymentId, signature) {

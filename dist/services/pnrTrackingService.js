@@ -223,7 +223,7 @@ class PnrTrackingService {
                         .maybeSingle();
                     return data;
                 }
-            });
+            }, 'pnr');
             if (pnrData) {
                 logger_1.winstonLogger.info(`[PNR_SUCCESS] ${pnr} | Source: ${usedApi}`);
                 return { ...pnrData, api_used: usedApi };

@@ -1691,6 +1691,31 @@ class AuthService {
             this.saveGuests();
         return { success: true, message: "Ad watched successfully! +1 Search granted." };
     }
+    async claimReviewReward(userId, deviceId) {
+        if (userId) {
+            const user = await this.getUserById(userId);
+            if (!user)
+                return { success: false, message: "Account not found", minutesGranted: 0 };
+            await this.upgradeToPro(userId, 'safar_pro_30m', 30, 'admin');
+            return {
+                success: true,
+                message: "🎉 Thank you for rating Trayago! 30 Minutes Free Pro Access Unlocked!",
+                minutesGranted: 30
+            };
+        }
+        else {
+            const guest = this.getOrCreateGuest(deviceId);
+            if (!guest)
+                return { success: false, message: "Device not recognized", minutesGranted: 0 };
+            guest.dailySearchCount = Math.max(0, (guest.dailySearchCount || 0) - 5);
+            this.saveGuests();
+            return {
+                success: true,
+                message: "🎉 Thank you for rating Trayago! 5 Extra Searches Unlocked!",
+                minutesGranted: 30
+            };
+        }
+    }
     async getUserStatus(userId, betaCode, deviceId) {
         const isBeta = betaCode ? betaService_1.betaService.isValidCode(betaCode) : false;
         if (!userId) {

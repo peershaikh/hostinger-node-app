@@ -7,12 +7,13 @@ exports.newsRefreshJob = exports.NewsRefreshJob = void 0;
 const node_cron_1 = __importDefault(require("node-cron"));
 const logger_1 = require("../middleware/logger");
 const railwayNewsService_1 = require("../services/railwayNewsService");
+const newsAutoCuratorService_1 = require("../services/news/newsAutoCuratorService");
 /**
- * PHASE_4C750 — News Refresh Job (FIXED)
+ * PHASE_4C750 — News Refresh Job (FIXED) & Phase 087 Autonomous Curator
  *
  * Runs every 6 hours (0:00, 6:00, 12:00, 18:00 UTC).
  * Fetches fresh articles from all RSS providers, deduplicates,
- * and writes to the 30-minute in-process cache.
+ * distills with AI, and triggers the autonomous SEO-safe auto-curator.
  *
  * Also performs an immediate warm-up fetch on server boot
  * so the first user request is never a cold cache miss.
@@ -33,6 +34,16 @@ class NewsRefreshJob {
         node_cron_1.default.schedule('0 */6 * * *', async () => {
             await this.refresh('scheduled 6h cron');
         });
+        // Daily at 02:30 UTC (08:00 AM IST) — archive stale drafts older than 7 days
+        node_cron_1.default.schedule('30 2 * * *', async () => {
+            try {
+                logger_1.winstonLogger.info('[NEWS_CLEANUP_CRON] Running daily maintenance archive on stale drafts...');
+                await newsAutoCuratorService_1.newsAutoCuratorService.archiveStaleDrafts(7);
+            }
+            catch (cleanErr) {
+                logger_1.winstonLogger.warn(`[NEWS_CLEANUP_CRON_WARN] ${cleanErr.message}`);
+            }
+        });
     }
     async trigger(reason = 'manual_trigger') {
         return this.refresh(reason);
@@ -42,6 +53,13 @@ class NewsRefreshJob {
             logger_1.winstonLogger.info(`[NEWS_REFRESH] Triggering refresh (${reason})...`);
             const articles = await railwayNewsService_1.railwayNewsService.refreshNews();
             logger_1.winstonLogger.info(`[NEWS_REFRESH] Complete (${reason}): ${articles.length} articles cached`);
+            // Run autonomous curation to safely promote top unique passenger news to PUBLISHED
+            try {
+                await newsAutoCuratorService_1.newsAutoCuratorService.curateAndPublishDailyBatch();
+            }
+            catch (curatorErr) {
+                logger_1.winstonLogger.warn(`[NEWS_AUTOCURATOR_CRON_WARN] ${curatorErr.message}`);
+            }
             return articles;
         }
         catch (err) {
