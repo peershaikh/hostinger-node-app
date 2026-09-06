@@ -107,6 +107,7 @@ export interface SplitJourney {
   confidence?: 'HIGH' | 'MEDIUM' | 'LOW';
   /** User-facing warning for partial rescues */
   warning?: string;
+  disclaimer?: string;
   explanation?: {
     reason: string;
     summary: string;

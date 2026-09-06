@@ -179,69 +179,255 @@ function isConfirmedAvailability(rawAvail: any): boolean {
   return false;
 }
 
-/**
- * PHASE_4C807 — RAC detection for Partial RAC Rescue feature.
- *
- * Returns true ONLY when the availability status is RAC.
- * WL is explicitly blocked — WL must NEVER qualify as a partial rescue leg.
- * Only invoked by the PARTIAL_RAC_RESCUE secondary evaluation path;
- * the primary confirmed-rescue path uses isConfirmedAvailability().
- */
-function isRACAvailability(rawAvail: any): boolean {
-  if (!rawAvail) return false;
+export type QuotaType = 'GNWL' | 'RLWL' | 'PQWL' | 'TQWL' | 'GENERAL' | 'UNKNOWN';
 
-  let text = '';
-  const availArr = extractAvailabilityArray(rawAvail);
-  if (availArr && availArr.length > 0) {
-    text = availArr[0]?.availabilityText || '';
-  } else if (rawAvail?.data?.availabilityText) {
-    text = rawAvail.data.availabilityText;
-  } else if (rawAvail.availabilityText) {
-    text = rawAvail.availabilityText;
-  } else if (rawAvail.status) {
-    text = rawAvail.status;
-  } else if (rawAvail.current_status) {
-    text = rawAvail.current_status;
-  }
-
-  const status = text.toUpperCase().trim();
-  if (!status) return false;
-
-  // WL in ANY form must NEVER qualify — guard first
-  if (
-    status.includes('WL') ||
-    status.includes('GNWL') ||
-    status.includes('RLWL') ||
-    status.includes('PQWL') ||
-    status.includes('TQWL') ||
-    status.includes('CKWL') ||
-    status.includes('RSWL') ||
-    status.includes('WAITLIST')
-  ) return false;
-
-  // Only RAC qualifies
-  return status.includes('RAC');
+export interface LegAvailabilityAnalysis {
+  statusText: string;
+  rawStatus: string;
+  isConfirmed: boolean;
+  isRAC: boolean;
+  isWaitlist: boolean;
+  wlNumber: number;
+  quotaType: QuotaType;
+  isEligible: boolean; // Confirmed, RAC, or WL <= 50 (non-TQWL)
+  confirmationChancePercent: number;
+  confidenceRating: 'VERY_HIGH' | 'HIGH' | 'MEDIUM' | 'LOW' | 'VERY_LOW';
+  insightText: string;
 }
 
-/**
- * PHASE_4C858 — Approved production rescue policy (Model B3: RAC + CNF).
- * Used by sameTrainRescueForTrain only. findSegmentSplits keeps strict CNF+CNF.
- */
-type RescueHubTier = 'CONFIRMED' | 'PARTIAL_RAC' | null;
+export function parseLegAvailability(rawAvail: any): LegAvailabilityAnalysis {
+  let text = '';
+  let rawStatus = '';
+  let providerPercentage: number | null = null;
 
-function classifyRescueHubTier(legAAvailRaw: any, legBAvailRaw: any): RescueHubTier {
-  const leg1CNF = isConfirmedAvailability(legAAvailRaw);
-  const leg2CNF = isConfirmedAvailability(legBAvailRaw);
+  const availArr = extractAvailabilityArray(rawAvail);
+  if (availArr && availArr.length > 0) {
+    const first = availArr[0];
+    text = first?.availabilityText || first?.status || '';
+    rawStatus = first?.rawStatus || '';
+    if (typeof first?.predictionPercentage === 'number') {
+      providerPercentage = first.predictionPercentage;
+    }
+  } else if (rawAvail?.data?.availabilityText) {
+    text = rawAvail.data.availabilityText;
+    rawStatus = rawAvail.data.rawStatus || '';
+  } else if (rawAvail?.availabilityText) {
+    text = rawAvail.availabilityText;
+    rawStatus = rawAvail.rawStatus || '';
+  } else if (rawAvail?.status) {
+    text = rawAvail.status;
+    rawStatus = rawAvail.rawStatus || '';
+  } else if (rawAvail?.current_status) {
+    text = rawAvail.current_status;
+    rawStatus = rawAvail.rawStatus || '';
+  }
 
-  if (leg1CNF && leg2CNF) return 'CONFIRMED';
+  const upper = `${text} ${rawStatus}`.toUpperCase().trim();
+  const textUpper = text.toUpperCase().trim();
 
-  const leg1RAC = isRACAvailability(legAAvailRaw);
-  const leg2RAC = isRACAvailability(legBAvailRaw);
+  // 1. Confirmed (AVL / AVAILABLE / CNF)
+  const isCnf = textUpper.includes('AVAILABLE') || textUpper.includes('AVL') || textUpper.includes('CNF') || textUpper.includes('CONFIRMED');
+  if (isCnf) {
+    return {
+      statusText: text || 'AVAILABLE',
+      rawStatus,
+      isConfirmed: true,
+      isRAC: false,
+      isWaitlist: false,
+      wlNumber: 0,
+      quotaType: 'GENERAL',
+      isEligible: true,
+      confirmationChancePercent: 100,
+      confidenceRating: 'VERY_HIGH',
+      insightText: 'Confirmed berth allocated upon booking.'
+    };
+  }
 
-  // RAC+CNF or CNF+RAC — WL combinations are blocked by isRACAvailability / isConfirmedAvailability
-  if ((leg1RAC && leg2CNF) || (leg1CNF && leg2RAC)) return 'PARTIAL_RAC';
+  // 2. RAC (Reservation Against Cancellation)
+  const isRac = textUpper.includes('RAC') || upper.includes('RAC');
+  if (isRac) {
+    return {
+      statusText: text || 'RAC',
+      rawStatus,
+      isConfirmed: false,
+      isRAC: true,
+      isWaitlist: false,
+      wlNumber: 0,
+      quotaType: 'GENERAL',
+      isEligible: true,
+      confirmationChancePercent: 96,
+      confidenceRating: 'VERY_HIGH',
+      insightText: 'RAC: Sitting berth guaranteed, high probability of full berth allocation.'
+    };
+  }
 
-  return null;
+  // 3. Regret / Unavailable / Train Departed
+  if (
+    upper.includes('REGRET') ||
+    upper.includes('NOT AVAILABLE') ||
+    upper.includes('CLASS NOT AVAILABLE') ||
+    upper.includes('NO SEATS') ||
+    upper.includes('FULLY SOLD') ||
+    upper.includes('TRAIN DEPARTED') ||
+    upper === 'UNAVAILABLE' ||
+    !textUpper ||
+    textUpper === 'CHECK_IRCTC'
+  ) {
+    return {
+      statusText: text || 'NOT AVAILABLE',
+      rawStatus,
+      isConfirmed: false,
+      isRAC: false,
+      isWaitlist: false,
+      wlNumber: 999,
+      quotaType: 'UNKNOWN',
+      isEligible: false,
+      confirmationChancePercent: 0,
+      confidenceRating: 'VERY_LOW',
+      insightText: 'Seats not available for this segment.'
+    };
+  }
+
+  // 4. Waitlist detection & Quota classification
+  const isWl = upper.includes('WL') || upper.includes('WAITLIST');
+  let quotaType: QuotaType = 'GENERAL';
+  if (upper.includes('TQWL') || upper.includes('CKWL')) {
+    quotaType = 'TQWL';
+  } else if (upper.includes('PQWL')) {
+    quotaType = 'PQWL';
+  } else if (upper.includes('RLWL')) {
+    quotaType = 'RLWL';
+  } else if (upper.includes('GNWL')) {
+    quotaType = 'GNWL';
+  }
+
+  // Extract numeric WL number (e.g. PQWL16/WL12 -> 12, RLWL/WL9 -> 9)
+  let wlNumber = 0;
+  const wlMatches = upper.match(/WL\s*(\d+)/);
+  if (wlMatches && wlMatches[1]) {
+    wlNumber = parseInt(wlMatches[1], 10);
+  } else {
+    const anyDigit = upper.match(/\d+/);
+    if (anyDigit) wlNumber = parseInt(anyDigit[0], 10);
+  }
+
+  // TQWL is rejected (Tatkal quota rarely clears, GNWL gets priority)
+  if (quotaType === 'TQWL') {
+    return {
+      statusText: text,
+      rawStatus,
+      isConfirmed: false,
+      isRAC: false,
+      isWaitlist: true,
+      wlNumber,
+      quotaType,
+      isEligible: false,
+      confirmationChancePercent: 15,
+      confidenceRating: 'VERY_LOW',
+      insightText: 'TQWL (Tatkal Quota Waiting List): Rarely gets confirmed as GNWL gets priority.'
+    };
+  }
+
+  // User rule: WL up to 50 is eligible, above 50 is ineligible
+  const isEligible = isWl && wlNumber > 0 && wlNumber <= 50;
+
+  // Calculate confirmation probability based on quota and WL position
+  let confirmationChancePercent = 50;
+  let confidenceRating: 'VERY_HIGH' | 'HIGH' | 'MEDIUM' | 'LOW' | 'VERY_LOW' = 'MEDIUM';
+  let insightText = '';
+
+  if (quotaType === 'GNWL' || quotaType === 'GENERAL') {
+    if (wlNumber <= 15) {
+      confirmationChancePercent = 90;
+      confidenceRating = 'VERY_HIGH';
+      insightText = `GNWL ${wlNumber}: Very High Confirmation Chance (~90%). Originating quota gets topmost priority during cancellations.`;
+    } else if (wlNumber <= 30) {
+      confirmationChancePercent = 80;
+      confidenceRating = 'HIGH';
+      insightText = `GNWL ${wlNumber}: High Confirmation Chance (~80%). Strong clearance trend before departure.`;
+    } else {
+      confirmationChancePercent = 68;
+      confidenceRating = 'MEDIUM';
+      insightText = `GNWL ${wlNumber}: Moderate Confirmation Chance (~68%). Advance cancellations typically clear this range.`;
+    }
+  } else if (quotaType === 'RLWL') {
+    if (wlNumber <= 12) {
+      confirmationChancePercent = 75;
+      confidenceRating = 'HIGH';
+      insightText = `RLWL ${wlNumber}: High Confirmation Chance (~75%). Intermediate major town quota with consistent clearance.`;
+    } else if (wlNumber <= 25) {
+      confirmationChancePercent = 62;
+      confidenceRating = 'MEDIUM';
+      insightText = `RLWL ${wlNumber}: Moderate Confirmation Chance (~62%). Clears on intermediate station cancellations.`;
+    } else {
+      confirmationChancePercent = 48;
+      confidenceRating = 'MEDIUM';
+      insightText = `RLWL ${wlNumber}: Fair Confirmation Chance (~48%).`;
+    }
+  } else if (quotaType === 'PQWL') {
+    if (wlNumber <= 10) {
+      confirmationChancePercent = 60;
+      confidenceRating = 'MEDIUM';
+      insightText = `PQWL ${wlNumber}: Moderate Confirmation Chance (~60%). Shared among small intermediate stations.`;
+    } else if (wlNumber <= 25) {
+      confirmationChancePercent = 45;
+      confidenceRating = 'LOW';
+      insightText = `PQWL ${wlNumber}: Low-to-Moderate Chance (~45%). Pooled quota pool is smaller.`;
+    } else {
+      confirmationChancePercent = 35;
+      confidenceRating = 'LOW';
+      insightText = `PQWL ${wlNumber}: Low Chance (~35%). Small quota pool.`;
+    }
+  }
+
+  // Factor in provider's prediction percentage if available
+  if (providerPercentage && providerPercentage > 0) {
+    confirmationChancePercent = Math.round((confirmationChancePercent + providerPercentage) / 2);
+  }
+
+  return {
+    statusText: text,
+    rawStatus,
+    isConfirmed: false,
+    isRAC: false,
+    isWaitlist: true,
+    wlNumber,
+    quotaType,
+    isEligible,
+    confirmationChancePercent,
+    confidenceRating,
+    insightText
+  };
+}
+
+export type RescueHubTier = 'CONFIRMED' | 'PARTIAL_RAC' | 'HIGH_CHANCE_WL' | null;
+
+export interface ClassifiedRescueHub {
+  tier: RescueHubTier;
+  leg1Info: LegAvailabilityAnalysis;
+  leg2Info: LegAvailabilityAnalysis;
+}
+
+export function classifyRescueHubTier(legAAvailRaw: any, legBAvailRaw: any): ClassifiedRescueHub {
+  const leg1Info = parseLegAvailability(legAAvailRaw);
+  const leg2Info = parseLegAvailability(legBAvailRaw);
+
+  if (!leg1Info.isEligible || !leg2Info.isEligible) {
+    return { tier: null, leg1Info, leg2Info };
+  }
+
+  // 1. Both Confirmed
+  if (leg1Info.isConfirmed && leg2Info.isConfirmed) {
+    return { tier: 'CONFIRMED', leg1Info, leg2Info };
+  }
+
+  // 2. RAC + CNF or RAC + RAC (no waitlist)
+  if (!leg1Info.isWaitlist && !leg2Info.isWaitlist) {
+    return { tier: 'PARTIAL_RAC', leg1Info, leg2Info };
+  }
+
+  // 3. High chance waitlist (at least one leg is WL <= 50)
+  return { tier: 'HIGH_CHANCE_WL', leg1Info, leg2Info };
 }
 
 function getAvailabilityText(rawAvail: any): string {
@@ -343,15 +529,13 @@ export class SegmentAvailabilityEngine {
           this.getSegmentLegAvailability(trainNo, hub, destStop.Station_Code, legBDate, classType, quota, apiBudget),
         ]);
 
-        // Verify if both are confirmed
-        const leg1CNF = isConfirmedAvailability(legAAvailRaw);
-        const leg2CNF = isConfirmedAvailability(legBAvailRaw);
+        const { tier: segmentTier, leg1Info, leg2Info } = classifyRescueHubTier(legAAvailRaw, legBAvailRaw);
 
-        if (leg1CNF && leg2CNF) {
-          winstonLogger.info(`[SEGMENT_ENGINE] 🎉 Confirmed same-train segment split found on train ${trainNo} via ${hub}`);
+        if (segmentTier !== null) {
+          winstonLogger.info(`[SEGMENT_ENGINE] 🎉 Same-train segment split (${segmentTier}) found on train ${trainNo} via ${hub}`);
           
-          const text1 = getAvailabilityText(legAAvailRaw);
-          const text2 = getAvailabilityText(legBAvailRaw);
+          const text1 = leg1Info.statusText || getAvailabilityText(legAAvailRaw);
+          const text2 = leg2Info.statusText || getAvailabilityText(legBAvailRaw);
 
           // Build map day numbers
           const dayNumberMap = new Map<string, number>();
@@ -387,14 +571,11 @@ export class SegmentAvailabilityEngine {
             dayNumberMap.get(destStop.Station_Code) || 1
           );
 
-          const leg1AvailArr = extractAvailabilityArray(legAAvailRaw);
-          const leg2AvailArr = extractAvailabilityArray(legBAvailRaw);
-
           const leg1HubCode = hubStop.Station_Code;
           const leg1: Leg = {
-            trainNo,
-            name: train.name || `Train ${trainNo}`,
-            trainName: train.name || `Train ${trainNo}`,
+            trainNo: trainNo,
+            name: train.trainName || train.name || '',
+            trainName: train.trainName || train.name || '',
             departure: srcStop.Departure_Time,
             arrival: hubStop.Arrival_time,
             dayNumber: dayNumberMap.get(hubStop.Station_Code) || 1,
@@ -402,10 +583,9 @@ export class SegmentAvailabilityEngine {
             api_used: 'LIVE',
             availability: {
               status: text1,
-              wlCount: 0,
-              coach: leg1AvailArr?.[0]?.coach || legAAvailRaw?.data?.coach || legAAvailRaw?.coach
+              wlCount: leg1Info.wlNumber,
+              coach: legAAvailRaw?.data?.coach || legAAvailRaw?.coach
             },
-            // PHASE_4C862 — leg station codes for UI availability re-check
             fromCode: srcStop.Station_Code,
             toCode: leg1HubCode,
             from: srcStop.Station_Code,
@@ -418,9 +598,9 @@ export class SegmentAvailabilityEngine {
           } as Leg;
 
           const leg2: Leg = {
-            trainNo,
-            name: train.name || `Train ${trainNo}`,
-            trainName: train.name || `Train ${trainNo}`,
+            trainNo: trainNo,
+            name: train.trainName || train.name || '',
+            trainName: train.trainName || train.name || '',
             departure: hubStop.Departure_Time,
             arrival: destStop.Arrival_time,
             dayNumber: dayNumberMap.get(destStop.Station_Code) || 1,
@@ -428,8 +608,8 @@ export class SegmentAvailabilityEngine {
             api_used: 'LIVE',
             availability: {
               status: text2,
-              wlCount: 0,
-              coach: leg2AvailArr?.[0]?.coach || legBAvailRaw?.data?.coach || legBAvailRaw?.coach
+              wlCount: leg2Info.wlNumber,
+              coach: legBAvailRaw?.data?.coach || legBAvailRaw?.coach
             },
             fromCode: leg1HubCode,
             toCode: destStop.Station_Code,
@@ -442,16 +622,17 @@ export class SegmentAvailabilityEngine {
             travelDate: legBDate,
           } as Leg;
 
-          // FIX_3 (PHASE_4C728): dynamic badge from actual availability text
+          // Dynamic badge & disclaimer based on segment tier
+          const minChance = Math.min(leg1Info.confirmationChancePercent, leg2Info.confirmationChancePercent);
           const availBadge = ((): string => {
-            const s1 = text1.toUpperCase();
-            const s2 = text2.toUpperCase();
-            if ((s1.includes('AVAILABLE') || s1.includes('AVL') || s1.includes('CNF')) &&
-                (s2.includes('AVAILABLE') || s2.includes('AVL') || s2.includes('CNF')))
-              return 'CONFIRMED';
-            if (s1.includes('RAC') || s2.includes('RAC')) return 'RAC';
-            return 'CHECK_IRCTC';
+            if (segmentTier === 'CONFIRMED') return 'CONFIRMED';
+            if (segmentTier === 'PARTIAL_RAC') return 'RAC';
+            return `WL ≤ 50 (~${minChance}%)`;
           })();
+
+          const disclaimer = segmentTier === 'HIGH_CHANCE_WL'
+            ? 'Ye ek AI-based prediction hai, 100% confirmation ki guarantee nahi hai. Final chart preparation par depend karta hai.'
+            : undefined;
 
           const split: SplitJourney = {
             hub,
@@ -468,10 +649,17 @@ export class SegmentAvailabilityEngine {
             legs: [leg1, leg2],
             isSameTrain: true,
             rescueType: 'SAME_TRAIN_SEGMENT',
+            disclaimer,
+            confidence: segmentTier === 'CONFIRMED' ? 'HIGH' : segmentTier === 'PARTIAL_RAC' ? 'MEDIUM' : 'LOW',
+            warning: segmentTier === 'HIGH_CHANCE_WL'
+              ? `Segment includes Waitlist (${text1} / ${text2}). Overall confirmation probability: ~${minChance}%.`
+              : segmentTier === 'PARTIAL_RAC'
+              ? 'One segment is RAC. You can board the train, but berth allocation may differ.'
+              : undefined,
           };
 
-          const insight1 = getPredictionInsight(text1);
-          const insight2 = getPredictionInsight(text2);
+          const insight1 = leg1Info.insightText || getPredictionInsight(text1);
+          const insight2 = leg2Info.insightText || getPredictionInsight(text2);
           if (insight1 || insight2) {
             split.ai_insight = [insight1, insight2].filter(Boolean).join(' | ');
           }
@@ -962,11 +1150,11 @@ export class SegmentAvailabilityEngine {
       winstonLogger.info(`[RESCUE_TIMING] hub=${hub} LEG_MS=${legMs} (parallel)`);
 
 
-      const hubTier = classifyRescueHubTier(legAAvailRaw, legBAvailRaw);
+      const { tier: hubTier, leg1Info, leg2Info } = classifyRescueHubTier(legAAvailRaw, legBAvailRaw);
 
-      if (hubTier === 'CONFIRMED' || hubTier === 'PARTIAL_RAC') {
-        const text1 = getAvailabilityText(legAAvailRaw);
-        const text2 = getAvailabilityText(legBAvailRaw);
+      if (hubTier !== null) {
+        const text1 = leg1Info.statusText || getAvailabilityText(legAAvailRaw);
+        const text2 = leg2Info.statusText || getAvailabilityText(legBAvailRaw);
 
         // Build day number map for timing references
         const dayNumberMap = new Map<string, number>();
@@ -987,11 +1175,11 @@ export class SegmentAvailabilityEngine {
 
         const trainDisplayName = srcStop?.Train_Name || `Train ${tNo}`;
         const isConfirmed = hubTier === 'CONFIRMED';
+        const isPartialRac = hubTier === 'PARTIAL_RAC';
+        const isHighChanceWl = hubTier === 'HIGH_CHANCE_WL';
 
         // P0-2 (PHASE_4C885): hoist legs as variables so they can be referenced
         // both as named properties (leg1/leg2) and in the legs[] array.
-        // Previously legs:[] was hardcoded, hiding all timing/station data from the
-        // frontend renderSplitJourney which iterates split.legs to render detail rows.
         const rescueLeg1: Leg = {
           trainNo: tNo,
           name: trainDisplayName,
@@ -999,7 +1187,7 @@ export class SegmentAvailabilityEngine {
           departure: srcStop?.Departure_Time || '',
           arrival: hubStop?.Arrival_time || '',
           dayNumber: srcDay,
-          availability: { status: text1, wlCount: 0, coach: undefined },
+          availability: { status: text1, wlCount: leg1Info.wlNumber, coach: undefined },
           fromCode: srcStop.Station_Code,
           toCode: hub,
           from: srcStop.Station_Code,
@@ -1018,7 +1206,7 @@ export class SegmentAvailabilityEngine {
           departure: hubStop?.Departure_Time || '',
           arrival: destStop?.Arrival_time || '',
           dayNumber: hubDay,
-          availability: { status: text2, wlCount: 0, coach: undefined },
+          availability: { status: text2, wlCount: leg2Info.wlNumber, coach: undefined },
           fromCode: hub,
           toCode: destStop.Station_Code,
           from: hub,
@@ -1030,46 +1218,81 @@ export class SegmentAvailabilityEngine {
           travelDate: legBDate,
         } as Leg;
 
+        const minChance = Math.min(leg1Info.confirmationChancePercent, leg2Info.confirmationChancePercent);
+
+        // Dynamic badges
+        const badges: string[] = ['SAME TRAIN'];
+        if (isConfirmed) {
+          badges.push('100% CONFIRMED');
+        } else if (isPartialRac) {
+          badges.push('RAC + CONFIRMED');
+        } else {
+          badges.push(`WL ≤ 50 (~${minChance}% CHANCE)`);
+        }
+
+        // Warning and disclaimer
+        let warning: string | undefined;
+        let disclaimer: string | undefined;
+        let confidence: 'HIGH' | 'MEDIUM' | 'LOW' = 'HIGH';
+        let score = 95;
+
+        if (isConfirmed) {
+          confidence = 'HIGH';
+          score = 95;
+        } else if (isPartialRac) {
+          confidence = 'MEDIUM';
+          score = 75;
+          warning = 'One segment is RAC. You can board the train, but berth allocation may differ.';
+        } else {
+          confidence = minChance >= 70 ? 'MEDIUM' : 'LOW';
+          const maxWl = Math.max(leg1Info.wlNumber, leg2Info.wlNumber);
+          score = Math.max(50, Math.round(70 - maxWl / 2));
+          warning = `Segment includes Waitlist (${text1} / ${text2}). Overall confirmation probability: ~${minChance}%.`;
+          disclaimer = 'Ye ek AI-based prediction hai, 100% confirmation ki guarantee nahi hai. Final chart preparation par depend karta hai.';
+        }
+
+        const steps = [
+          `Book 2 tickets on this same train: first from ${sCode} to ${hub} (${text1}), and second from ${hub} to ${dCode} (${text2}).`,
+          `When the train reaches ${hub}, simply move to your new seat/berth. You will stay in this seat until your final destination (${dCode}). No other seat changes are required!`
+        ];
+
         const rescue: SplitJourney = {
           isSameTrain: true,
-          // SAME_TRAIN_SEGMENT keeps controller pass-through (no API change required).
-          // Partial RAC tier is distinguished by score, confidence, warning, and badges.
           rescueType: 'SAME_TRAIN_SEGMENT',
-          ...(isConfirmed ? {} : {
-            confidence: 'MEDIUM' as const,
-            warning: 'One segment is RAC. You can board the train, but berth allocation may differ.',
-          }),
           hub,
-          score: isConfirmed ? 90 : 60,
+          score,
+          confidence,
+          warning,
+          disclaimer,
           travelDate: date,
           bufferMinutes: parseToMins(hubStop?.Departure_Time || '') - parseToMins(hubStop?.Arrival_time || ''),
           totalDuration: 0,
-          badges: isConfirmed ? ['SAME TRAIN', 'NO TRANSFER'] : ['Potential Rescue', 'RAC + CONFIRMED'],
+          badges,
           rollover: false,
           leg1: rescueLeg1,
           leg2: rescueLeg2,
           legs: [rescueLeg1, rescueLeg2],
-          steps: isConfirmed
-            ? [
-                `Book 2 tickets on this same train: first from ${sCode} to ${hub}, and second from ${hub} to ${dCode}.`,
-                `When the train reaches ${hub}, simply move to your new seat. You will stay in this seat until your final destination (${dCode}). No other seat changes are required!`
-              ]
-            : [
-                `Book 2 tickets on this same train: first from ${sCode} to ${hub} (RAC/WL), and second from ${hub} to ${dCode} (Confirmed).`,
-                `When the train reaches ${hub}, simply move to your new seat. You will stay in this seat until your final destination (${dCode}). No other seat changes are required!`
-              ],
+          steps,
         };
+
+        const insight1 = leg1Info.insightText || getPredictionInsight(text1);
+        const insight2 = leg2Info.insightText || getPredictionInsight(text2);
+        if (insight1 || insight2) {
+          rescue.ai_insight = [insight1, insight2].filter(Boolean).join(' | ');
+        }
 
         if (isConfirmed) {
           winstonLogger.info(`[RESCUE_ENGINE] ✅ Confirmed rescue option found via ${hub}`);
+        } else if (isPartialRac) {
+          winstonLogger.info(`[RESCUE_ENGINE] ⚠️ Partial RAC rescue option found via ${hub}`);
         } else {
-          winstonLogger.info(`[RESCUE_ENGINE] ⚠️ Partial RAC rescue option found via ${hub} (Model B3 policy)`);
+          winstonLogger.info(`[RESCUE_ENGINE] ℹ️ High-chance WL rescue option found via ${hub} (minChance=${minChance}%)`);
         }
         return rescue;
       } else {
-        const t1 = getAvailabilityText(legAAvailRaw);
-        const t2 = getAvailabilityText(legBAvailRaw);
-        winstonLogger.info(`[RESCUE_ENGINE] Hub ${hub} rejected — leg1=${t1} leg2=${t2} (not CNF+CNF or RAC+CNF)`);
+        const t1 = leg1Info.statusText || getAvailabilityText(legAAvailRaw);
+        const t2 = leg2Info.statusText || getAvailabilityText(legBAvailRaw);
+        winstonLogger.info(`[RESCUE_ENGINE] Hub ${hub} rejected — leg1=${t1} leg2=${t2} (exceeds WL 50 or TQWL/unavailable)`);
         return null;
       }
     });

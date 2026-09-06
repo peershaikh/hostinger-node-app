@@ -53,6 +53,11 @@ export interface SplitJourney {
   delayRisk?: string;
   legs?: Leg[];
   isSameTrain?: boolean;
+  disclaimer?: string;
+  warning?: string;
+  confidence?: 'HIGH' | 'MEDIUM' | 'LOW';
+  rescueType?: string;
+  steps?: string[];
 }
 
 export interface LiveTrainStatus {
