@@ -216,6 +216,16 @@ app.use('/ai', ai_1.default);
 // Live train endpoint — both prefixed and un-prefixed
 app.get('/api/live-train/:trainNo', rateLimiter_1.liveLimiter, (0, usageMiddleware_1.usageMiddleware)('live'), trainController_1.trainController.getLiveStatus);
 app.get('/live-train/:trainNo', rateLimiter_1.liveLimiter, (0, usageMiddleware_1.usageMiddleware)('live'), trainController_1.trainController.getLiveStatus);
+// ====================== CRAWLERS & APP VERIFICATION ROUTES ======================
+// Instruct search engine bots not to index raw API subdomain (resolves [404] GET /robots.txt)
+app.get(['/robots.txt', '/api/robots.txt'], (_req, res) => {
+    res.type('text/plain').send("User-agent: *\nDisallow: /\n");
+});
+// Android Digital Asset Links / PWA deep link verification (resolves [404] GET /.well-known/assetlinks.json)
+app.get(['/.well-known/assetlinks.json', '/well-known/assetlinks.json', '/api/.well-known/assetlinks.json'], (_req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.status(200).json([]);
+});
 // ====================== ERROR HANDLING ======================
 app.use(errorHandler_1.notFoundHandler);
 app.use(csrfProtection_1.csrfErrorHandler); // PHASE_4C759 Fix #2 - CSRF violations (EBADCSRFTOKEN)

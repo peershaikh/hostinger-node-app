@@ -341,7 +341,7 @@ class ProviderConfigService {
             return [];
         }
         else if (nameUpper === 'RAILRADAR') {
-            const k = process.env.RAILRADAR_API_KEY || '';
+            const k = process.env.RAILRADAR_API_KEY || 'rg_1779d71c5040d3f2fc60f64be806085a';
             if (k)
                 keys.push(k.trim());
         }

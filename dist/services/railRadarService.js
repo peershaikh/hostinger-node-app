@@ -264,61 +264,11 @@ class RailRadarService {
     }
     /**
      * Real Live Train Status fetch: GET /trains/{number}/live
-     * Cache: 90s
+     * RailRadar Free/Hobby plan only supports PNR queries (live tracking endpoint returns 401 Unauthorized).
+     * Returning null immediately avoids 401 auth failures in logs and allows fallback chain to resolve via IRCTC / local schedule.
      */
     async getTrainStatus(trainNo) {
-        if (!trainNo)
-            return null;
-        const cacheKey = `railradar_live_${trainNo}`;
-        const cached = cacheService_1.cacheService.get(cacheKey);
-        if (cached) {
-            logger_1.winstonLogger.info(`[RAILRADAR_CACHE_HIT] Train ${trainNo}`);
-            return cached;
-        }
-        if (this.isAuthUnhealthy || Date.now() < this.unavailableUntil) {
-            logger_1.winstonLogger.warn(`[RAILRADAR_SKIPPED] Provider currently unhealthy or backed off.`);
-            return null;
-        }
-        const keys = await providerConfigService_1.providerConfigService.getKeysFor('RAILRADAR');
-        if (keys.length === 0) {
-            return null;
-        }
-        const apiKey = keys[0];
-        if (!apiKey || apiKey.startsWith('********') || apiKey === 'mock_encrypted_railradar_key') {
-            return null;
-        }
-        return this.coalesce(`live_${trainNo}`, async () => {
-            // Check quota before outbound request
-            if (!this.checkAndIncrementQuota()) {
-                return null;
-            }
-            try {
-                logger_1.winstonLogger.info(`[RAILRADAR_CALL] Fetching live status for ${trainNo}`);
-                const url = `${BASE_URL}/trains/${trainNo}/live`;
-                const response = await axios_1.default.get(url, {
-                    headers: {
-                        "Authorization": `Bearer ${apiKey}`,
-                        "Accept": "application/json"
-                    },
-                    timeout: REQUEST_TIMEOUT_MS
-                });
-                if (!response.data) {
-                    throw new Error("Empty response from RailRadar");
-                }
-                const rawData = response.data.data || response.data;
-                const mapped = this.mapRailRadarLive(rawData, trainNo);
-                if (mapped) {
-                    // 90-second cache for successful live status response
-                    cacheService_1.cacheService.set(cacheKey, mapped, 90);
-                    logger_1.winstonLogger.info(`[RAILRADAR_SUCCESS] Train ${trainNo} status: ${mapped.status}`);
-                    return mapped;
-                }
-                return null;
-            }
-            catch (err) {
-                return this.handleFailure('LIVE', trainNo, err);
-            }
-        });
+        return null;
     }
     /**
      * Failure classification engine conforming strictly to Part 4 requirements.

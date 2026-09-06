@@ -168,7 +168,7 @@ export class RailRadarAdapter implements RailProvider {
   public readonly capabilities: Readonly<ProviderCapabilities> = {
     search: false,
     availability: false,
-    liveTracking: true,
+    liveTracking: false,
     pnr: true,
     schedule: false
   };
@@ -182,7 +182,7 @@ export class RailRadarAdapter implements RailProvider {
   }
 
   async getLiveStatus(params: LiveStatusParams): Promise<any> {
-    return railRadarService.getTrainStatus(params.trainNo);
+    throw new UnsupportedCapabilityError(this.providerId, 'liveTracking');
   }
 
   async getPNRStatus(params: PNRParams): Promise<any> {

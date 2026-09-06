@@ -337,7 +337,7 @@ export class ProviderConfigService {
       // RapidAPI is deprecated. Return empty key set to fail fast without external calls.
       return [];
     } else if (nameUpper === 'RAILRADAR') {
-      const k = process.env.RAILRADAR_API_KEY || '';
+      const k = process.env.RAILRADAR_API_KEY || 'rg_1779d71c5040d3f2fc60f64be806085a';
       if (k) keys.push(k.trim());
     } else if (nameUpper === 'RAILYATRI') {
       const k = process.env.RAILYATRI_API_KEY || process.env.RAPIDAPI_KEY || '';

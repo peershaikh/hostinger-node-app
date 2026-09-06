@@ -238,6 +238,17 @@ app.use('/ai', aiRoutes);
 app.get('/api/live-train/:trainNo', liveLimiter, usageMiddleware('live'), trainController.getLiveStatus);
 app.get('/live-train/:trainNo', liveLimiter, usageMiddleware('live'), trainController.getLiveStatus);
 
+// ====================== CRAWLERS & APP VERIFICATION ROUTES ======================
+// Instruct search engine bots not to index raw API subdomain (resolves [404] GET /robots.txt)
+app.get(['/robots.txt', '/api/robots.txt'], (_req, res) => {
+  res.type('text/plain').send("User-agent: *\nDisallow: /\n");
+});
+
+// Android Digital Asset Links / PWA deep link verification (resolves [404] GET /.well-known/assetlinks.json)
+app.get(['/.well-known/assetlinks.json', '/well-known/assetlinks.json', '/api/.well-known/assetlinks.json'], (_req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.status(200).json([]);
+});
 
 // ====================== ERROR HANDLING ======================
 app.use(notFoundHandler);
