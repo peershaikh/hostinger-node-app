@@ -109,6 +109,48 @@ const GLOBAL_PAUSE_MAX_MS = 10 * 60 * 1_000;     // 10 min
 
 // ---------------------------------------------------------------------------
 
+// PHASE_087N52 — Canary constants
+// ---------------------------------------------------------------------------
+
+/**
+ * The fixed 8-train canary set.
+ *
+ * 15648, 12321, 22359, 12224, 22149, 12346, 11098 → INSERT path (no existing DB rows)
+ * 11139 → UPDATE/idempotent merge path (already has ~16 DB rows)
+ *
+ * Exported for test access.
+ */
+export const CANARY_TRAIN_NOS: readonly string[] = [
+  '15648', '12321', '22359', '12224', '22149', '12346', '11098', '11139',
+] as const;
+
+/** Per-train result in a canary run. */
+export interface CanaryTrainResult {
+  trainNo: string;
+  outcome: 'updated' | 'skipped' | 'failed' | 'rate_limited';
+  baselineRowCount: number;
+  postRowCount?: number;
+  baselineSNs?: number[];
+  postSNs?: number[];
+  durationMs: number;
+}
+
+/** Full return value from runCanary(). */
+export interface CanaryResult {
+  canaryApproved: boolean;
+  fullSyncOff: boolean;
+  abortReason?: string;
+  trains: CanaryTrainResult[];
+  updated: number;
+  skipped: number;
+  failed: number;
+  rateLimited: number;
+  totalDurationMs: number;
+  idempotencyRun: boolean;
+}
+
+// ---------------------------------------------------------------------------
+
 export class TrainScheduleSyncJob {
   /** Prevents double-registration if start() is called twice (mirrors hubCatalogRefreshJob pattern) */
   private started = false;
@@ -186,6 +228,233 @@ export class TrainScheduleSyncJob {
   }
 
   // ---------------------------------------------------------------------------
+  // Public API: One-time canary — PHASE_087N52
+  // ---------------------------------------------------------------------------
+
+  /**
+   * PHASE_087N52 — One-time 8-train canary write run.
+   *
+   * Gates:
+   *   MUST have SCHEDULE_SYNC_CANARY_APPROVED=true in env  (absent/false → zero write, returns immediately)
+   *   MUST have ENABLE_TRAIN_SCHEDULE_SYNC=false             (true → abort, log error, return)
+   *
+   * Behaviour:
+   *   1. Reads a pre-write baseline for all 8 canary trains (row counts + SN arrays).
+   *   2. Processes trains serially with the full syncOneTrainWithBackoff() path.
+   *      – All V0–V6 guards, PHASE_5B091 integrity gate, rate-limit, backoff, pacing preserved.
+   *      – Sync flag is temporarily forced ON only inside the write path for canary trains.
+   *   3. Reads a post-write snapshot and logs it.
+   *   4. If idempotencyRun=true, repeats step 2 and verifies row counts are stable.
+   *
+   * Returns a CanaryResult — never throws (errors are captured per-train or in abortReason).
+   */
+  async runCanary(idempotencyRun = false): Promise<CanaryResult> {
+    const canaryApproved  = process.env.SCHEDULE_SYNC_CANARY_APPROVED === 'true';
+    const fullSyncOff     = !featureFlags.trainScheduleSync;
+
+    const baseResult: CanaryResult = {
+      canaryApproved,
+      fullSyncOff,
+      trains:          [],
+      updated:         0,
+      skipped:         0,
+      failed:          0,
+      rateLimited:     0,
+      totalDurationMs: 0,
+      idempotencyRun,
+    };
+
+    // Gate 1: canary must be explicitly approved
+    if (!canaryApproved) {
+      const reason = 'CANARY_GATE_OFF: SCHEDULE_SYNC_CANARY_APPROVED is not true — zero writes';
+      winstonLogger.info(`[SCHEDULE_SYNC_CANARY] SKIPPED reason=${reason}`);
+      baseResult.abortReason = reason;
+      return baseResult;
+    }
+
+    // Gate 2: full sync MUST remain off
+    if (!fullSyncOff) {
+      const reason = 'ABORT: ENABLE_TRAIN_SCHEDULE_SYNC is true — canary must run with full sync OFF';
+      winstonLogger.error(`[SCHEDULE_SYNC_CANARY] ${reason}`);
+      baseResult.abortReason = reason;
+      return baseResult;
+    }
+
+    // Gate 3: shared isRunning guard — prevents overlap with nightly sync or concurrent canary
+    if (this.isRunning) {
+      const reason = 'ABORT: isRunning=true — another sync or canary is already executing';
+      winstonLogger.warn(`[SCHEDULE_SYNC_CANARY] SKIPPED reason=${reason}`);
+      baseResult.abortReason = reason;
+      return baseResult;
+    }
+
+    this.isRunning = true;
+    // Reset rate-limit state fresh for the canary run
+    this._consecutive429Count = 0;
+    this._postPauseMode = false;
+
+    const canaryStart = Date.now();
+    winstonLogger.info(
+      `[SCHEDULE_SYNC_CANARY] RUN_STARTED trains=${CANARY_TRAIN_NOS.length} idempotencyRun=${idempotencyRun}`
+    );
+
+    try {
+      // ── Step 1: Pre-write baseline (read-only) ────────────────────────────
+      winstonLogger.info('[SCHEDULE_SYNC_CANARY] Capturing pre-write baseline...');
+      const baseline = await this.canaryReadBaseline(CANARY_TRAIN_NOS);
+
+      // ── Step 2: Process each canary train ─────────────────────────────────
+      // The canary must write to the DB, but featureFlags.trainScheduleSync is false.
+      // We temporarily patch the flag for canary trains only, inside the try block,
+      // restoring it on exit. This is the narrowest possible write-scope change.
+      (featureFlags as any).trainScheduleSync = true;
+
+      try {
+        for (let i = 0; i < CANARY_TRAIN_NOS.length; i++) {
+          const trainNo  = CANARY_TRAIN_NOS[i];
+          const trainStart = Date.now();
+
+          let outcome: 'updated' | 'skipped' | 'failed' | 'rate_limited';
+          try {
+            const rawOutcome = await this.syncOneTrainWithBackoff(trainNo);
+            outcome = rawOutcome === 'auth_failure' ? 'failed' : rawOutcome;
+          } catch (err: any) {
+            winstonLogger.warn(`[SCHEDULE_SYNC_CANARY] TRAIN_EXCEPTION trainNo=${trainNo} error=${err.message}`);
+            outcome = 'failed';
+          }
+
+          const trainDuration = Date.now() - trainStart;
+          const trainResult: CanaryTrainResult = {
+            trainNo,
+            outcome,
+            baselineRowCount: baseline[trainNo]?.rowCount ?? 0,
+            baselineSNs:      baseline[trainNo]?.sns      ?? [],
+            durationMs:       trainDuration,
+          };
+          baseResult.trains.push(trainResult);
+
+          if (outcome === 'updated')      baseResult.updated++;
+          else if (outcome === 'skipped') baseResult.skipped++;
+          else if (outcome === 'failed')  baseResult.failed++;
+          else                            baseResult.rateLimited++;
+
+          winstonLogger.info(
+            `[SCHEDULE_SYNC_CANARY] TRAIN_DONE trainNo=${trainNo} outcome=${outcome} durationMs=${trainDuration}`
+          );
+
+          // Inter-call delay — same as nightly sync (includes post-pause doubling)
+          if (i < CANARY_TRAIN_NOS.length - 1) {
+            const delayMs = this._postPauseMode
+              ? SYNC_BASE_INTER_CALL_MS * 2
+              : SYNC_BASE_INTER_CALL_MS;
+            await this.sleep(delayMs);
+          }
+        }
+      } finally {
+        // Always restore the full-sync flag — even if an exception occurs above
+        (featureFlags as any).trainScheduleSync = false;
+      }
+
+      // ── Step 3: Post-write snapshot ────────────────────────────────────────
+      winstonLogger.info('[SCHEDULE_SYNC_CANARY] Capturing post-write snapshot...');
+      const postSnap = await this.canaryReadBaseline(CANARY_TRAIN_NOS);
+
+      for (const t of baseResult.trains) {
+        t.postRowCount = postSnap[t.trainNo]?.rowCount ?? 0;
+        t.postSNs      = postSnap[t.trainNo]?.sns      ?? [];
+
+        const hasDuplicateSNs = t.postSNs.length !== new Set(t.postSNs).size;
+        const snOrdered       = t.postSNs.every((sn, i) => i === 0 || sn > (t.postSNs![i - 1]));
+
+        winstonLogger.info(
+          `[SCHEDULE_SYNC_CANARY] POST_VERIFY trainNo=${t.trainNo} outcome=${t.outcome}` +
+          ` baselineRows=${t.baselineRowCount} postRows=${t.postRowCount}` +
+          ` duplicateSNs=${hasDuplicateSNs} snOrdered=${snOrdered}`
+        );
+      }
+
+      // ── Step 4: Idempotency second run (optional) ─────────────────────────
+      if (idempotencyRun) {
+        winstonLogger.info('[SCHEDULE_SYNC_CANARY] Starting idempotency second pass...');
+        (featureFlags as any).trainScheduleSync = true;
+        try {
+          for (let i = 0; i < CANARY_TRAIN_NOS.length; i++) {
+            const trainNo = CANARY_TRAIN_NOS[i];
+            try {
+              await this.syncOneTrainWithBackoff(trainNo);
+            } catch (err: any) {
+              winstonLogger.warn(`[SCHEDULE_SYNC_CANARY] IDEMPOTENCY_EXCEPTION trainNo=${trainNo} error=${err.message}`);
+            }
+            if (i < CANARY_TRAIN_NOS.length - 1) {
+              await this.sleep(this._postPauseMode ? SYNC_BASE_INTER_CALL_MS * 2 : SYNC_BASE_INTER_CALL_MS);
+            }
+          }
+        } finally {
+          (featureFlags as any).trainScheduleSync = false;
+        }
+
+        const idempSnap = await this.canaryReadBaseline(CANARY_TRAIN_NOS);
+        for (const t of baseResult.trains) {
+          const idempRows = idempSnap[t.trainNo]?.rowCount ?? 0;
+          const stable    = idempRows === (t.postRowCount ?? 0);
+          winstonLogger.info(
+            `[SCHEDULE_SYNC_CANARY] IDEMPOTENCY_CHECK trainNo=${t.trainNo} postRows=${t.postRowCount} idempRows=${idempRows} stable=${stable}`
+          );
+        }
+      }
+
+      baseResult.totalDurationMs = Date.now() - canaryStart;
+      winstonLogger.info(
+        `[SCHEDULE_SYNC_CANARY] RUN_COMPLETE updated=${baseResult.updated} skipped=${baseResult.skipped}` +
+        ` failed=${baseResult.failed} rateLimited=${baseResult.rateLimited}` +
+        ` totalDurationMs=${baseResult.totalDurationMs}`
+      );
+
+    } catch (err: any) {
+      baseResult.abortReason = `RUNTIME_ERROR: ${err.message}`;
+      winstonLogger.error(`[SCHEDULE_SYNC_CANARY] RUN_ERROR error=${err.message}`);
+    } finally {
+      // Belt-and-suspenders: guarantee flag is restored and lock released
+      (featureFlags as any).trainScheduleSync = false;
+      this.isRunning = false;
+    }
+
+    return baseResult;
+  }
+
+  /**
+   * Reads the current train_schedule baseline for a list of train numbers.
+   * Returns a map of trainNo → { rowCount, sns }.
+   * Read-only — never writes.
+   */
+  private async canaryReadBaseline(
+    trainNos: readonly string[]
+  ): Promise<Record<string, { rowCount: number; sns: number[] }>> {
+    const result: Record<string, { rowCount: number; sns: number[] }> = {};
+    for (const trainNo of trainNos) {
+      try {
+        const { data, error } = await supabase
+          .from('train_schedule')
+          .select('SN')
+          .eq('Train_No', trainNo)
+          .order('SN', { ascending: true });
+
+        if (error) {
+          winstonLogger.warn(`[SCHEDULE_SYNC_CANARY] BASELINE_READ_ERROR trainNo=${trainNo} error=${error.message}`);
+          result[trainNo] = { rowCount: 0, sns: [] };
+        } else {
+          const sns = (data ?? []).map((r: any) => Number(r.SN));
+          result[trainNo] = { rowCount: sns.length, sns };
+        }
+      } catch (err: any) {
+        winstonLogger.warn(`[SCHEDULE_SYNC_CANARY] BASELINE_EXCEPTION trainNo=${trainNo} error=${err.message}`);
+        result[trainNo] = { rowCount: 0, sns: [] };
+      }
+    }
+    return result;
+  }
+
+  // ---------------------------------------------------------------------------
   // Private: Main sync loop
   // ---------------------------------------------------------------------------
 
@@ -228,6 +497,15 @@ export class TrainScheduleSyncJob {
         if (result === 'updated')      updated++;
         else if (result === 'skipped') skipped++;
         else if (result === 'rate_limited') { rateLimited++; skipped++; }
+        else if (result === 'auth_failure') {
+          const remaining = batch.length - i - 1;
+          winstonLogger.error(
+            `[SCHEDULE_SYNC] SYNC_ABORTED reason=AUTH_FAILURE trainNo=${trainNo} processed=${i + 1} remaining=${remaining}`
+          );
+          failed++;
+          aborted = remaining;
+          break;
+        }
         else                           failed++;
       } catch (err: any) {
         winstonLogger.warn(`[SCHEDULE_SYNC] TRAIN_FAILED trainNo=${trainNo} error=${err.message}`);
@@ -256,11 +534,11 @@ export class TrainScheduleSyncJob {
    *   - Global pause logic for quota exhaustion (3 consecutive 429 responses).
    *   - Non-retryable outcomes (V0–V6 skip, DRY_RUN, AUTH_FAILURE) pass through immediately.
    *
-   * Returns: 'updated' | 'skipped' | 'failed' | 'rate_limited'
+   * Returns: 'updated' | 'skipped' | 'failed' | 'rate_limited' | 'auth_failure'
    */
   private async syncOneTrainWithBackoff(
     trainNo: string
-  ): Promise<'updated' | 'skipped' | 'failed' | 'rate_limited'> {
+  ): Promise<'updated' | 'skipped' | 'failed' | 'rate_limited' | 'auth_failure'> {
     for (let attempt = 0; attempt <= SYNC_MAX_RETRIES; attempt++) {
       const result = await this.syncOneTrain(trainNo);
 
@@ -293,8 +571,8 @@ export class TrainScheduleSyncJob {
         return 'rate_limited';
       }
 
-      // Non-retry, non-429 outcome (updated | skipped | failed) — reset counter and return.
-      if (result === 'updated' || result === 'skipped' || result === 'failed') {
+      // Non-retry, non-429 outcome (updated | skipped | failed | auth_failure) — reset counter and return.
+      if (result === 'updated' || result === 'skipped' || result === 'failed' || result === 'auth_failure') {
         this._consecutive429Count = 0;
         return result;
       }
@@ -566,7 +844,7 @@ export class TrainScheduleSyncJob {
 
   private async syncOneTrain(
     trainNo: string
-  ): Promise<'updated' | 'skipped' | 'failed' | 'rate_limited' | 'retry'> {
+  ): Promise<'updated' | 'skipped' | 'failed' | 'rate_limited' | 'retry' | 'auth_failure'> {
     // Step 1: Read existing schedule from DB
     const { data: existing, error: existingErr } = await supabase
       .from('train_schedule')
@@ -612,7 +890,7 @@ export class TrainScheduleSyncJob {
       winstonLogger.error(
         `[SCHEDULE_SYNC] TRAIN_FAILED trainNo=${trainNo} reason=AUTH_FAILURE`
       );
-      return 'failed';
+      return 'auth_failure';
     }
 
     // V0 equivalent — extract station array from VALID_SCHEDULE or handle EXPECTED_NO_DATA / MALFORMED_RESPONSE
@@ -676,7 +954,7 @@ export class TrainScheduleSyncJob {
       ''
     ).toUpperCase().trim();
 
-    if (!liveLastCode || liveLastCode.length < 2) {
+    if (!liveLastCode || liveLastCode.length < 1 || !/^[A-Z0-9]{1,8}$/.test(liveLastCode)) {
       winstonLogger.info(
         `[SCHEDULE_SYNC] TRAIN_SKIPPED trainNo=${trainNo} reason=EMPTY_TERMINUS liveStops=${liveStops}`
       );
@@ -712,7 +990,7 @@ export class TrainScheduleSyncJob {
         Arrival_time:   (s.arrival    || s.arrivalTime   || '--:--'),
         Departure_Time: (s.departure  || s.departureTime || '--:--'),
       }))
-      .filter((r: any) => r.Station_Code.length >= 2); // V6: skip rows with empty/short station codes
+      .filter((r: any) => r.Station_Code.length >= 1 && /^[A-Z0-9]{1,8}$/.test(r.Station_Code)); // V6: skip rows with empty/invalid station codes (PHASE_087N282: allow 1-char codes like R, G)
 
     if (rows.length === 0) {
       winstonLogger.info(
