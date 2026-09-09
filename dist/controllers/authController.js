@@ -289,8 +289,9 @@ class AuthController {
         this.getRescueEntitlement = async (req, res) => {
             try {
                 const userId = req.headers['x-user-id'] || req.query.userId || null;
+                const actionType = req.query.action || req.headers['x-action-type'] || undefined;
                 const { entitlementService } = require('../services/entitlementService');
-                const data = await entitlementService.checkRescueOrSplitEntitlement(userId);
+                const data = await entitlementService.checkRescueOrSplitEntitlement(userId, actionType);
                 return res.json({ success: true, data });
             }
             catch (err) {
@@ -303,8 +304,9 @@ class AuthController {
                 if (!userId) {
                     return res.status(401).json({ success: false, error: 'Authentication required' });
                 }
+                const actionType = req.body.actionType || req.body.action || 'rescue';
                 const { entitlementService } = require('../services/entitlementService');
-                const result = await entitlementService.consumeFreeRescueCredit(userId);
+                const result = await entitlementService.consumeFreeCredit(userId, actionType);
                 return res.json(result);
             }
             catch (err) {

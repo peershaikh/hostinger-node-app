@@ -294,8 +294,9 @@ export class AuthController {
   getRescueEntitlement = async (req: Request, res: Response) => {
     try {
       const userId = (req.headers['x-user-id'] as string) || (req.query.userId as string) || null;
+      const actionType = (req.query.action as 'rescue' | 'split') || (req.headers['x-action-type'] as 'rescue' | 'split') || undefined;
       const { entitlementService } = require('../services/entitlementService');
-      const data = await entitlementService.checkRescueOrSplitEntitlement(userId);
+      const data = await entitlementService.checkRescueOrSplitEntitlement(userId, actionType);
       return res.json({ success: true, data });
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err.message });
@@ -308,8 +309,9 @@ export class AuthController {
       if (!userId) {
         return res.status(401).json({ success: false, error: 'Authentication required' });
       }
+      const actionType = (req.body.actionType as 'rescue' | 'split') || (req.body.action as 'rescue' | 'split') || 'rescue';
       const { entitlementService } = require('../services/entitlementService');
-      const result = await entitlementService.consumeFreeRescueCredit(userId);
+      const result = await entitlementService.consumeFreeCredit(userId, actionType);
       return res.json(result);
     } catch (err: any) {
       return res.status(500).json({ success: false, error: err.message });

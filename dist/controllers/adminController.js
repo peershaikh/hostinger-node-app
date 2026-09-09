@@ -2369,7 +2369,7 @@ class AdminController {
             res.status(500).json({ success: false, error: 'Failed to fetch last digest' });
         }
     }
-    // ── Waitlist Funnel Telemetry (PHASE_T1) ──────────────────────────────────
+    // ── Waitlist Funnel Telemetry (PHASE_T1 & PHASE_T6) ──────────────────────
     async getWaitlistFunnelAnalytics(req, res) {
         try {
             const today = new Date().toISOString().split('T')[0];
@@ -2378,6 +2378,8 @@ class AdminController {
                 rescue_cta_clicked: 0,
                 split_cta_shown: 0,
                 split_cta_clicked: 0,
+                rescue_free_used: 0,
+                split_free_used: 0,
                 free_credit_consumed: 0,
                 paywall_shown: 0,
                 blitz_cta_clicked: 0,
@@ -2394,6 +2396,10 @@ class AdminController {
                             if (counts[row.event_type] !== undefined) {
                                 counts[row.event_type]++;
                             }
+                            // If legacy event was emitted, track in total
+                            if (row.event_type === 'rescue_free_used' || row.event_type === 'split_free_used') {
+                                counts.free_credit_consumed++;
+                            }
                         });
                     }
                 }
@@ -2407,6 +2413,8 @@ class AdminController {
                 rescue_cta_clicked: 38,
                 split_cta_shown: 89,
                 split_cta_clicked: 45,
+                rescue_free_used: 19,
+                split_free_used: 12,
                 free_credit_consumed: 31,
                 paywall_shown: 24,
                 blitz_cta_clicked: 11,
