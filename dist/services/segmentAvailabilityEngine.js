@@ -4,6 +4,7 @@ exports.segmentAvailabilityEngine = exports.SegmentAvailabilityEngine = exports.
 exports.parseLegAvailability = parseLegAvailability;
 exports.classifyRescueHubTier = classifyRescueHubTier;
 const supabase_1 = require("../config/supabase");
+const featureFlags_1 = require("../config/featureFlags");
 const logger_1 = require("../middleware/logger");
 const availabilityProvider_1 = require("./availabilityProvider");
 const cacheService_1 = require("./cacheService");
@@ -660,14 +661,15 @@ class SegmentAvailabilityEngine {
                     this._runB1DualReadCompare(trainNo, srcCode, destCode, [], null);
                     return [];
                 }
-                // PHASE 5B136: in no-write mode nothing was persisted, so the DB re-read
+                // PHASE 5B136 / PHASE_087N325: in no-write or unapproved-sync mode nothing was persisted, so the DB re-read
                 // below would find no rows. Consume the validated in-memory rows handed
                 // over by _injectScheduleFromIRCTC instead. Entries are deliberately NOT
                 // removed on read so coalesced concurrent callers all observe them.
-                if ((0, supabase_1.isNoWriteMode)()) {
+                const allowDbScheduleWrite = featureFlags_1.featureFlags.trainScheduleSync && !(0, supabase_1.isNoWriteMode)();
+                if (!allowDbScheduleWrite) {
                     const memoryStops = this.noWriteInjectedSchedules.get(trainNo);
                     if (memoryStops && memoryStops.length > 0) {
-                        logger_1.winstonLogger.warn(`[NO_WRITE] Train ${trainNo}: skipped train_schedule DB re-read; building hubs from ${memoryStops.length} in-memory validated rows.`);
+                        logger_1.winstonLogger.warn(`[SCHEDULE_INJECT_MEMORY] Train ${trainNo}: skipped train_schedule DB re-read (allowDbScheduleWrite=false); building hubs from ${memoryStops.length} in-memory validated rows.`);
                         const memoryHubs = await this._buildHubsFromStops(memoryStops, srcCode, destCode);
                         if (memoryHubs.length > 0) {
                             cacheService_1.cacheService.set(hubCacheKey, memoryHubs, 86400); // 24h — key and TTL unchanged
@@ -675,7 +677,7 @@ class SegmentAvailabilityEngine {
                         this._runB1DualReadCompare(trainNo, srcCode, destCode, memoryHubs, memoryStops);
                         return memoryHubs;
                     }
-                    logger_1.winstonLogger.warn(`[NO_WRITE] Train ${trainNo}: no in-memory schedule available; falling through to DB re-read (expected to return no rows).`);
+                    logger_1.winstonLogger.warn(`[SCHEDULE_INJECT_MEMORY] Train ${trainNo}: no in-memory schedule available; falling through to DB re-read.`);
                 }
                 // Single retry after injection
                 const { data: stopsRetry, error: retryErr } = await supabase_1.supabase
@@ -885,15 +887,16 @@ class SegmentAvailabilityEngine {
                 logger_1.winstonLogger.warn(`[SCHEDULE_INJECT_REJECTED] Train ${trainNo} failed integrity validation: ${integrity.message}`);
                 return false;
             }
-            // ── PHASE 5B136: LOCAL_E2E_NO_WRITE in-memory hand-off ──────────────
+            // ── PHASE 5B136 / PHASE_087N325: Guarded in-memory hand-off ──────────────
             // Blocking the upsert alone is not enough: this write is load-bearing for
             // a later read. _injectScheduleFromIRCTC would return false, getMidpointHubs
             // would return [] and same-train rescue would silently stop producing
             // splits — changing route selection rather than just suppressing writes.
-            // So in no-write mode the already-validated rows are handed to
+            // When allowDbScheduleWrite is false, the already-validated rows are handed to
             // getMidpointHubs in memory: no UPSERT, no orphan DELETE, no DB re-read.
             // The IRCTC fetch and validateScheduleRows above are untouched.
-            if ((0, supabase_1.isNoWriteMode)()) {
+            const allowDbScheduleWrite = featureFlags_1.featureFlags.trainScheduleSync && !(0, supabase_1.isNoWriteMode)();
+            if (!allowDbScheduleWrite) {
                 const memoryRows = rows
                     .map((r) => ({
                     Station_Code: r.Station_Code,
@@ -909,7 +912,7 @@ class SegmentAvailabilityEngine {
                         this.noWriteInjectedSchedules.delete(oldestKey);
                 }
                 this.noWriteInjectedSchedules.set(trainNo, memoryRows);
-                logger_1.winstonLogger.warn(`[NO_WRITE] Train ${trainNo}: skipped train_schedule UPSERT and orphan DELETE; handing ${memoryRows.length} validated rows to _buildHubsFromStops in memory.`);
+                logger_1.winstonLogger.warn(`[SCHEDULE_INJECT_SUPPRESSED] Train ${trainNo}: skipped train_schedule UPSERT and orphan DELETE (allowDbScheduleWrite=false); handing ${memoryRows.length} validated rows to _buildHubsFromStops in memory.`);
                 return true;
             }
             // Upsert in batches of 100 to stay within Supabase limits
