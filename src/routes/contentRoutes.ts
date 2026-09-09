@@ -12,6 +12,7 @@ export const router = Router();
 router.get('/banner', contentController.getActiveBanners);
 router.get('/campaigns', contentController.getActiveCampaigns);
 router.get('/referral-offers', contentController.getActiveReferralOffers);
+router.get('/popup-offer', contentController.getPopupOffer);
 
 // ==========================================
 // ADMIN ENDPOINTS
@@ -19,6 +20,10 @@ router.get('/referral-offers', contentController.getActiveReferralOffers);
 // ==========================================
 
 router.use('/admin', requireAuth, requireAdmin as any);
+
+// Popup Offer & In-App Promotional Engine (Phase 2)
+router.get('/admin/popup-offer', contentController.getPopupOffer);
+router.post('/admin/popup-offer', contentController.updatePopupOffer);
 
 // Banners
 router.get('/admin/banners', contentController.getBanners);

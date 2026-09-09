@@ -70,6 +70,7 @@ router.use(requireAuth);
 
 // Dashboard Admin API
 router.get('/analytics', adminLimiter as any, requireAdmin as any, adminController.getAdminAnalytics.bind(adminController));
+router.get('/live-pulse', adminLimiter as any, requireAdmin as any, adminController.getAdminLivePulse.bind(adminController));
 router.get('/analytics/history', adminLimiter as any, requireAdmin as any, adminController.getAnalyticsHistory.bind(adminController));
 router.get('/analytics/export', adminLimiter as any, requireAdmin as any, adminController.exportAnalyticsLogs.bind(adminController));
 router.get('/daily-operations', adminLimiter as any, requireAdmin as any, adminController.getDailyOperations.bind(adminController));
@@ -80,12 +81,9 @@ router.get('/production-incidents', adminLimiter as any, requireAdmin as any, ad
 // Phase 10.8.42 (T8): morning ops digest summary
 router.get('/last-digest', adminLimiter as any, requireAdmin as any, adminController.getLastDigest.bind(adminController));
 
-
-
-
-
 // Payment & Revenue API
 router.get('/revenue', adminLimiter as any, requireAdmin as any, adminController.getPaymentRevenue.bind(adminController));
+router.get('/transactions', adminLimiter as any, requireAdmin as any, adminController.listPaymentTransactions.bind(adminController));
 router.get('/subscriptions', adminLimiter as any, requireAdmin as any, adminController.getPaymentSubscriptions.bind(adminController));
 router.get('/payment-metrics', adminLimiter as any, requireAdmin as any, adminController.getPaymentMetrics.bind(adminController));
 
@@ -98,9 +96,16 @@ router.get('/feedback/categories', adminLimiter as any, requireAdmin as any, adm
 router.get('/feedback/analytics', adminLimiter as any, requireAdmin as any, adminController.getFeedbackCategoryAnalytics.bind(adminController));
 router.post('/push/test', adminLimiter as any, requireAdmin as any, adminController.testPushNotification.bind(adminController));
 
-// ─── User Management ────────────────────────────────────────────────────────
+// Intelligence & Demand Analytics (Phases 4 & 5)
+router.get('/search-demand', adminLimiter as any, requireAdmin as any, adminController.getSearchDemandAnalytics.bind(adminController));
+router.get('/pnr-intelligence', adminLimiter as any, requireAdmin as any, adminController.getPnrIntelligence.bind(adminController));
+
+// ─── User Management & 360 Engagement (Phase 6) ─────────────────────────────
 router.get('/users', adminLimiter as any, requireAdmin as any, adminController.listUsers.bind(adminController));
 router.get('/users/:id', adminLimiter as any, requireAdmin as any, adminController.getUser.bind(adminController));
+router.get('/users/:id/360', adminLimiter as any, requireAdmin as any, adminController.getUser360.bind(adminController));
+router.post('/users/:id/gift-perk', adminLimiter as any, requireAdmin as any, adminController.giftUserPerk.bind(adminController));
+router.post('/users/:id/send-message', adminLimiter as any, requireAdmin as any, adminController.sendDirectUserNotification.bind(adminController));
 router.post('/users/:id/block', adminLimiter as any, requireAdmin as any, adminController.blockUser.bind(adminController));
 router.post('/users/:id/unblock', adminLimiter as any, requireAdmin as any, adminController.unblockUser.bind(adminController));
 router.post('/users/:id/reset-limits', adminLimiter as any, requireAdmin as any, adminController.resetUserLimits.bind(adminController));

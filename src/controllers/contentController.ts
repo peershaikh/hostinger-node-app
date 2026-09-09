@@ -34,6 +34,24 @@ export class ContentController {
     }
   }
 
+  public async getPopupOffer(req: Request, res: Response) {
+    try {
+      const offer = await contentService.getPopupOffer();
+      res.json({ success: true, data: offer });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  public async updatePopupOffer(req: Request, res: Response) {
+    try {
+      const offer = await contentService.updatePopupOffer(req.body);
+      res.json({ success: true, data: offer });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
   // ==========================================
   // ADMIN ENDPOINTS (CRUD)
   // ==========================================

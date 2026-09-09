@@ -15,6 +15,8 @@ export interface BetaCode {
   unlimitedLiveTracking: boolean;
   unlimitedSplitSearch: boolean;
   isActive: boolean;
+  targetPlan?: string;
+  durationDays?: number;
   createdAt?: string;
 }
 
@@ -269,6 +271,38 @@ export class BetaService {
     }
 
     return newCode;
+  }
+
+  public async upsertPromoCode(codeData: Partial<BetaCode> & { code: string }): Promise<BetaCode> {
+    const codeUpper = codeData.code.toUpperCase().trim();
+    let existing = this.getCode(codeUpper);
+    if (existing) {
+      if (codeData.description !== undefined) existing.description = codeData.description;
+      if (codeData.targetPlan !== undefined) existing.targetPlan = codeData.targetPlan;
+      if (codeData.durationDays !== undefined) existing.durationDays = codeData.durationDays;
+      if (codeData.isActive !== undefined) existing.isActive = codeData.isActive;
+      this.saveData();
+      return existing;
+    } else {
+      const newCode: BetaCode = {
+        code: codeUpper,
+        description: codeData.description || 'Promotional Offer Code',
+        maxRedemptions: codeData.maxRedemptions || 1000000,
+        currentRedemptions: 0,
+        expiresAt: codeData.expiresAt || null,
+        unlimitedSearch: true,
+        unlimitedPnr: true,
+        unlimitedLiveTracking: true,
+        unlimitedSplitSearch: true,
+        isActive: codeData.isActive !== undefined ? codeData.isActive : true,
+        targetPlan: codeData.targetPlan || 'safar_pro_30d',
+        durationDays: codeData.durationDays || 30,
+        createdAt: new Date().toISOString()
+      };
+      this.codes.push(newCode);
+      this.saveData();
+      return newCode;
+    }
   }
 
   public async disableCode(code: string): Promise<boolean> {

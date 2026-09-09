@@ -24,19 +24,28 @@ router.post('/redeem', authMiddleware, async (req: any, res: any) => {
     const success = await betaService.redeemCode(userId, trimmedCode);
 
     if (success) {
-      // Find duration days
+      // Find duration days & target plan
       const codeDetails = betaService.getCode(trimmedCode);
       let durationDays: number | undefined = undefined;
-      if (codeDetails && codeDetails.expiresAt) {
+      const targetPlan = codeDetails?.targetPlan || 'safar_pro_30d';
+
+      if (codeDetails?.durationDays) {
+        durationDays = codeDetails.durationDays;
+      } else if (codeDetails && codeDetails.expiresAt) {
         const msDiff = new Date(codeDetails.expiresAt).getTime() - Date.now();
         durationDays = Math.max(0.1, msDiff / (24 * 60 * 60 * 1000)); // at least 0.1 days
       } else {
         durationDays = 30; // fallback to default 30 days
       }
       
-      await authService.changeUserPlan(userId, 'beta', durationDays);
+      await authService.changeUserPlan(userId, targetPlan as any, durationDays);
 
-      return res.json({ success: true, message: 'Beta Access Active' });
+      return res.json({ 
+        success: true, 
+        message: `Plan activated successfully! Enjoy ${durationDays} days of ${targetPlan}.`,
+        plan: targetPlan,
+        durationDays
+      });
     } else {
       return res.status(400).json({ success: false, error: 'Invalid, expired, or fully claimed beta code' });
     }
