@@ -20,6 +20,8 @@ router.get('/status', authController.status);
 router.get('/quota-status', authController.getQuotaStatus);
 router.post('/can-use-feature', authController.canUseFeature);
 router.post('/can-use-split', authController.canUseSplit);
+router.get('/rescue-entitlement', authController.getRescueEntitlement);
+router.post('/rescue-consume-free', authController.consumeRescueFreeCredit);
 router.post('/app-open', authController.appOpen);
 router.get('/profile', authController.getProfile);
 router.put('/profile', authController.updateProfile);

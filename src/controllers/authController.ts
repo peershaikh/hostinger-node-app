@@ -291,6 +291,31 @@ export class AuthController {
     }
   };
 
+  getRescueEntitlement = async (req: Request, res: Response) => {
+    try {
+      const userId = (req.headers['x-user-id'] as string) || (req.query.userId as string) || null;
+      const { entitlementService } = require('../services/entitlementService');
+      const data = await entitlementService.checkRescueOrSplitEntitlement(userId);
+      return res.json({ success: true, data });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  };
+
+  consumeRescueFreeCredit = async (req: Request, res: Response) => {
+    try {
+      const userId = (req.headers['x-user-id'] as string) || req.body.userId || null;
+      if (!userId) {
+        return res.status(401).json({ success: false, error: 'Authentication required' });
+      }
+      const { entitlementService } = require('../services/entitlementService');
+      const result = await entitlementService.consumeFreeRescueCredit(userId);
+      return res.json(result);
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  };
+
   checkDeviceLock = async (req: Request, res: Response) => {
     try {
       const { deviceId, userId } = req.body;

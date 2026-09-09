@@ -286,6 +286,31 @@ class AuthController {
                 return res.status(400).json({ success: false, error: err.message });
             }
         };
+        this.getRescueEntitlement = async (req, res) => {
+            try {
+                const userId = req.headers['x-user-id'] || req.query.userId || null;
+                const { entitlementService } = require('../services/entitlementService');
+                const data = await entitlementService.checkRescueOrSplitEntitlement(userId);
+                return res.json({ success: true, data });
+            }
+            catch (err) {
+                return res.status(500).json({ success: false, error: err.message });
+            }
+        };
+        this.consumeRescueFreeCredit = async (req, res) => {
+            try {
+                const userId = req.headers['x-user-id'] || req.body.userId || null;
+                if (!userId) {
+                    return res.status(401).json({ success: false, error: 'Authentication required' });
+                }
+                const { entitlementService } = require('../services/entitlementService');
+                const result = await entitlementService.consumeFreeRescueCredit(userId);
+                return res.json(result);
+            }
+            catch (err) {
+                return res.status(500).json({ success: false, error: err.message });
+            }
+        };
         this.checkDeviceLock = async (req, res) => {
             try {
                 const { deviceId, userId } = req.body;

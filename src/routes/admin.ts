@@ -99,6 +99,7 @@ router.post('/push/test', adminLimiter as any, requireAdmin as any, adminControl
 // Intelligence & Demand Analytics (Phases 4 & 5)
 router.get('/search-demand', adminLimiter as any, requireAdmin as any, adminController.getSearchDemandAnalytics.bind(adminController));
 router.get('/pnr-intelligence', adminLimiter as any, requireAdmin as any, adminController.getPnrIntelligence.bind(adminController));
+router.get('/funnel-analytics', adminLimiter as any, requireAdmin as any, adminController.getWaitlistFunnelAnalytics.bind(adminController));
 
 // ─── User Management & 360 Engagement (Phase 6) ─────────────────────────────
 router.get('/users', adminLimiter as any, requireAdmin as any, adminController.listUsers.bind(adminController));

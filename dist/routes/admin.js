@@ -69,6 +69,7 @@ router.get('/health', (_req, res) => {
 router.use(authMiddleware_1.requireAuth);
 // Dashboard Admin API
 router.get('/analytics', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getAdminAnalytics.bind(adminController_1.adminController));
+router.get('/live-pulse', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getAdminLivePulse.bind(adminController_1.adminController));
 router.get('/analytics/history', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getAnalyticsHistory.bind(adminController_1.adminController));
 router.get('/analytics/export', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.exportAnalyticsLogs.bind(adminController_1.adminController));
 router.get('/daily-operations', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getDailyOperations.bind(adminController_1.adminController));
@@ -80,6 +81,7 @@ router.get('/production-incidents', rateLimiter_1.adminLimiter, adminAuth_1.requ
 router.get('/last-digest', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getLastDigest.bind(adminController_1.adminController));
 // Payment & Revenue API
 router.get('/revenue', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getPaymentRevenue.bind(adminController_1.adminController));
+router.get('/transactions', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.listPaymentTransactions.bind(adminController_1.adminController));
 router.get('/subscriptions', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getPaymentSubscriptions.bind(adminController_1.adminController));
 router.get('/payment-metrics', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getPaymentMetrics.bind(adminController_1.adminController));
 router.get('/audit-logs', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.listAuditLogs.bind(adminController_1.adminController));
@@ -90,9 +92,16 @@ router.get('/feedback', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, ad
 router.get('/feedback/categories', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.listFeedbackCategories.bind(adminController_1.adminController));
 router.get('/feedback/analytics', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getFeedbackCategoryAnalytics.bind(adminController_1.adminController));
 router.post('/push/test', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.testPushNotification.bind(adminController_1.adminController));
-// ─── User Management ────────────────────────────────────────────────────────
+// Intelligence & Demand Analytics (Phases 4 & 5)
+router.get('/search-demand', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getSearchDemandAnalytics.bind(adminController_1.adminController));
+router.get('/pnr-intelligence', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getPnrIntelligence.bind(adminController_1.adminController));
+router.get('/funnel-analytics', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getWaitlistFunnelAnalytics.bind(adminController_1.adminController));
+// ─── User Management & 360 Engagement (Phase 6) ─────────────────────────────
 router.get('/users', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.listUsers.bind(adminController_1.adminController));
 router.get('/users/:id', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getUser.bind(adminController_1.adminController));
+router.get('/users/:id/360', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getUser360.bind(adminController_1.adminController));
+router.post('/users/:id/gift-perk', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.giftUserPerk.bind(adminController_1.adminController));
+router.post('/users/:id/send-message', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.sendDirectUserNotification.bind(adminController_1.adminController));
 router.post('/users/:id/block', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.blockUser.bind(adminController_1.adminController));
 router.post('/users/:id/unblock', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.unblockUser.bind(adminController_1.adminController));
 router.post('/users/:id/reset-limits', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.resetUserLimits.bind(adminController_1.adminController));
