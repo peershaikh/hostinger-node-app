@@ -571,7 +571,11 @@ export async function resolveSegmentForAvailability(
   // can distinguish "stop confirmed absent" from "stop absent in DB, live not checked".
   const scheduleIsDbOnly = ctx.source === 'db' && !ctx.runningDaysAuthoritative;
 
-  const fromStop = ctx.stops.find(s => (s.Station_Code || '').toUpperCase().trim() === fromIn);
+  let fromStop = ctx.stops.find(s => (s.Station_Code || '').toUpperCase().trim() === fromIn);
+  if (!fromStop) {
+    const { areStationsCompatible } = require('./stationAliases');
+    fromStop = ctx.stops.find(s => areStationsCompatible(fromIn, (s.Station_Code || '').toUpperCase().trim()));
+  }
   if (!fromStop) {
     if (scheduleIsDbOnly) {
       winstonLogger.info(
@@ -592,7 +596,11 @@ export async function resolveSegmentForAvailability(
     };
   }
 
-  const toStop = ctx.stops.find(s => (s.Station_Code || '').toUpperCase().trim() === toIn);
+  let toStop = ctx.stops.find(s => (s.Station_Code || '').toUpperCase().trim() === toIn);
+  if (!toStop) {
+    const { areStationsCompatible } = require('./stationAliases');
+    toStop = ctx.stops.find(s => areStationsCompatible(toIn, (s.Station_Code || '').toUpperCase().trim()));
+  }
   if (!toStop) {
     if (scheduleIsDbOnly) {
       winstonLogger.info(
@@ -613,7 +621,11 @@ export async function resolveSegmentForAvailability(
     };
   }
 
-  if (Number(fromStop.SN) >= Number(toStop.SN)) {
+  if (Number(fromStop.SN) > Number(toStop.SN)) {
+    const tmp = fromStop;
+    fromStop = toStop;
+    toStop = tmp;
+  } else if (Number(fromStop.SN) === Number(toStop.SN)) {
     return {
       success: false,
       reason: 'SEGMENT_NOT_BOOKABLE',
