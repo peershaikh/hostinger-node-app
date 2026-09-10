@@ -17,6 +17,7 @@ import { providerConfigService } from './providerConfigService';
 import transferDistancesData from '../data/transferDistances.json';
 import { normalizeTrainNumber } from '../utils/availabilityCacheKeys';
 import type { RunningDaysEntry } from './trainStationResolver';
+import { PAN_INDIA_CLUSTERS, TERMINAL_ALIASES } from './stationAliases';
 
 // ——— Extended Leg with source/destination codes ——————————————————————————————
 interface RichLeg extends Leg {
@@ -852,16 +853,16 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "mumbai-varanasi": ["BSL", "NGP", "ET", "PRYJ", "BSB"],
   "mumbai-patna": ["NGP", "ET", "PRYJ", "DDU", "PNBE"],
   "mumbai-lucknow": ["BSL", "ET", "BPL", "JHS", "CNB", "LKO"],
-  "mumbai-delhi": ["BRC", "RTM", "KOTA", "AGC", "NDLS"],
+  "mumbai-delhi": ["ST", "BRC", "RTM", "KOTA", "MTJ", "BSL", "ET", "BPL", "VGLJ", "GWL", "AGC", "ADI", "AII", "JP", "RE"],
   "mumbai-jaipur": ["BRC", "RTM", "KOTA", "JP"],
-  "mumbai-kolkata": ["NGP", "ET", "BSL", "PRYJ", "HWH"],
+  "mumbai-kolkata": ["BSL", "NGP", "R", "BSP", "ROU", "TATA", "KGP", "ET", "JBP", "PCOI", "PRYJ", "DDU", "GAYA", "ASN"],
   "mumbai-hyderabad": ["SUR", "SC", "PUNE"],
   "mumbai-secunderabad": ["SUR", "SC", "PUNE", "NGP"],
   "mumbai-vijayawada": ["SUR", "SC", "NGP", "BZA"],
   "mumbai-bhubaneswar": ["NGP", "VSKP", "BZA", "BBS"],
   "mumbai-vishakhapatnam": ["NGP", "SC", "BZA", "VSKP"],
   "mumbai-visakhapatnam": ["NGP", "SC", "BZA", "VSKP"],
-  "mumbai-chennai": ["SUR", "SC", "NGP", "BZA", "MAS"],
+  "mumbai-chennai": ["PUNE", "SUR", "WADI", "GTL", "RU"],
   "mumbai-madurai": ["SUR", "SC", "SA", "MDU"],
   "mumbai-coimbatore": ["SUR", "SC", "SA", "CBE"],
   "mumbai-ahmedabad": ["BRC", "ST", "ADI"],
@@ -882,9 +883,10 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "delhi-guwahati": ["CNB", "PNBE", "KGP", "NJP", "GHY"],
   "delhi-bhopal": ["AGC", "JHS", "BPL"],
   "delhi-jaipur": ["AGC", "KOTA", "JP"],
-  "delhi-ahmedabad": ["RTM", "BRC", "ADI"],
+  "delhi-ahmedabad": ["RE", "AWR", "JP", "AII", "ABR", "PNU", "KOTA", "RTM", "BRC"],
+  "ahmedabad-delhi": ["PNU", "ABR", "AII", "JP", "AWR", "RE", "BRC", "RTM", "KOTA"],
   "delhi-surat": ["RTM", "BRC", "ST"],
-  "delhi-mumbai": ["KOTA", "RTM", "BRC", "PUNE"],
+  "delhi-mumbai": ["MTJ", "KOTA", "RTM", "BRC", "ST", "AGC", "GWL", "VGLJ", "BPL", "ET", "BSL", "RE", "JP", "AII", "ADI"],
   "delhi-hyderabad": ["JHS", "ET", "NGP", "SC"],
   "delhi-secunderabad": ["JHS", "ET", "NGP", "SC"],
   "delhi-bangalore": ["JHS", "ET", "NGP", "SC", "SBC"],
@@ -904,7 +906,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "kolkata-puri": ["KGP", "BLS", "CTC", "BBS", "KUR"],
   "kolkata-guwahati": ["MLDT", "NJP", "GHY"],
   "kolkata-dibrugarh": ["MLDT", "NJP", "GHY", "DBRG"],
-  "kolkata-mumbai": ["KGP", "TATA", "NGP", "ET", "BSL", "PUNE"],
+  "kolkata-mumbai": ["KGP", "TATA", "ROU", "BSP", "R", "NGP", "BSL", "ASN", "GAYA", "DDU", "PRYJ", "PCOI", "JBP", "ET"],
   "kolkata-delhi": ["ASN", "DHN", "MGS", "CNB", "NDLS"],
   "kolkata-chennai": ["KGP", "BBS", "VSKP", "BZA", "MAS"],
   "kolkata-bangalore": ["KGP", "VSKP", "BZA", "SC", "SBC"],
@@ -924,7 +926,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "chennai-bangalore": ["KPD", "JTJ", "BWT"],
   "chennai-bengaluru": ["KPD", "JTJ", "BWT"],
   "chennai-trivandrum": ["SA", "CBE", "ERS"],
-  "chennai-mumbai": ["BZA", "SC", "NGP", "BSL", "PUNE"],
+  "chennai-mumbai": ["RU", "GTL", "WADI", "SUR", "PUNE"],
   "chennai-delhi": ["BZA", "NGP", "ET", "BPL", "NDLS"],
   "chennai-kolkata": ["BZA", "VSKP", "KGP", "HWH"],
   "chennai-hyderabad": ["GDR", "RU", "BZA", "SC"],
@@ -2936,6 +2938,16 @@ export class SplitJourneyEngine {
     const pairKey2 = `${destCity.toLowerCase()}-${sourceCity.toLowerCase()}`;
 
     const exclude = new Set([...sCodes, ...dCodes]);
+    // PHASE_087N283: Destination & Source City Cluster Hub Exclusion
+    // If destination or source belongs to a metro cluster, NO sister terminal can serve as an intermediate hub.
+    const allQueryCodes = [...sCodes, ...dCodes].map(c => (c || '').toUpperCase().trim());
+    for (const cluster of PAN_INDIA_CLUSTERS) {
+      if (cluster.some(stn => allQueryCodes.includes(stn))) {
+        for (const stn of cluster) {
+          exclude.add(stn);
+        }
+      }
+    }
     let hubs: string[] = [];
 
     // Deterministic corridors contain curated priority hubs for well-known routes.
@@ -3139,6 +3151,39 @@ export class SplitJourneyEngine {
     // ranked hub list so bounded chunked search can reach the tail. MAX_HUBS stays
     // as the per-chunk governor in the pairing loop below.
     hubs = finalHubs;
+
+    // PHASE_087N283: Terminal-aware hub priority sort before PHASE1_HUB_CAP
+    // Prioritize candidate corridor hubs corresponding to the source terminal railway.
+    const primarySource = (sCodes[0] || '').toUpperCase().trim();
+    const isCentralOrigin = ['CSMT', 'CSTM', 'LTT', 'DR', 'DDR', 'KYN', 'TNA', 'PNVL'].includes(primarySource) ||
+      (!['BDTS', 'MMCT', 'BCT', 'BVI'].includes(primarySource) && sCodes.some(c => ['CSMT', 'CSTM', 'LTT', 'DR', 'DDR', 'KYN', 'TNA', 'PNVL'].includes((c || '').toUpperCase().trim())));
+    const isWesternOrigin = ['BDTS', 'MMCT', 'BCT', 'BVI'].includes(primarySource) ||
+      (!['CSMT', 'CSTM', 'LTT', 'DR', 'DDR', 'KYN', 'TNA', 'PNVL'].includes(primarySource) && sCodes.some(c => ['BDTS', 'MMCT', 'BCT', 'BVI'].includes((c || '').toUpperCase().trim())));
+    const isDeccanOrigin = ['PUNE'].includes(primarySource) || sCodes.some(c => ['PUNE'].includes((c || '').toUpperCase().trim()));
+
+    if (isCentralOrigin) {
+      const CENTRAL_PRIORITY_HUBS = new Set([
+        'BSL', 'ET', 'BPL', 'VGLJ', 'JHS', 'GWL', 'AGC', 'NGP', 'R', 'BSP', 'ROU', 'TATA', 'KGP',
+        'JBP', 'PCOI', 'PRYJ', 'DDU', 'GAYA', 'ASN', 'PUNE', 'SUR', 'WADI', 'GTL', 'RU'
+      ]);
+      const central = hubs.filter(h => CENTRAL_PRIORITY_HUBS.has(h));
+      const others = hubs.filter(h => !CENTRAL_PRIORITY_HUBS.has(h));
+      hubs = [...central, ...others];
+    } else if (isWesternOrigin) {
+      const WESTERN_PRIORITY_HUBS = new Set([
+        'ST', 'BRC', 'RTM', 'KOTA', 'MTJ', 'ADI', 'AII', 'JP', 'RE', 'AWR', 'ABR', 'PNU'
+      ]);
+      const western = hubs.filter(h => WESTERN_PRIORITY_HUBS.has(h));
+      const others = hubs.filter(h => !WESTERN_PRIORITY_HUBS.has(h));
+      hubs = [...western, ...others];
+    } else if (isDeccanOrigin) {
+      const DECCAN_PRIORITY_HUBS = new Set([
+        'SUR', 'WADI', 'GTL', 'RU', 'DMM', 'RC', 'KPD'
+      ]);
+      const deccan = hubs.filter(h => DECCAN_PRIORITY_HUBS.has(h));
+      const others = hubs.filter(h => !DECCAN_PRIORITY_HUBS.has(h));
+      hubs = [...deccan, ...others];
+    }
 
     winstonLogger.debug(`[SPLIT_TRACE] Total candidate hubs after all filters: ${hubs.length} → [${hubs.join(', ')}]`);
     
