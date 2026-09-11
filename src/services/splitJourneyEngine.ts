@@ -872,6 +872,12 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "mumbai-bhopal": ["BSL", "ET", "BPL"],
   "mumbai-itarsi": ["BSL", "ET"],
   "mumbai-gorakhpur": ["BSL", "NGP", "ET", "BPL", "CNB", "LKO", "GKP"],
+  "mumbai-basti": ["LKO", "CNB", "GD", "GKP", "VGLJ", "BPL", "ET", "BSL", "KOTA", "AY"],
+  "basti-mumbai": ["LKO", "CNB", "GD", "GKP", "VGLJ", "BPL", "ET", "BSL", "KOTA", "AY"],
+  "mumbai-bst": ["LKO", "CNB", "GD", "GKP", "VGLJ", "BPL", "ET", "BSL", "KOTA", "AY"],
+  "bst-mumbai": ["LKO", "CNB", "GD", "GKP", "VGLJ", "BPL", "ET", "BSL", "KOTA", "AY"],
+  "mumbai-bsti": ["LKO", "CNB", "GD", "GKP", "VGLJ", "BPL", "ET", "BSL", "KOTA", "AY"],
+  "bsti-mumbai": ["LKO", "CNB", "GD", "GKP", "VGLJ", "BPL", "ET", "BSL", "KOTA", "AY"],
 
   // —— Delhi corridors ——
   "delhi-lko": ["CNB", "PRYJ"],
