@@ -852,7 +852,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   // —— Mumbai extended ——
   "mumbai-varanasi": ["BSL", "NGP", "ET", "PRYJ", "BSB"],
   "mumbai-patna": ["NGP", "ET", "PRYJ", "DDU", "PNBE"],
-  "mumbai-lucknow": ["BSL", "ET", "BPL", "JHS", "CNB", "LKO"],
+  "mumbai-lucknow": ["CNB", "VGLJ", "BPL", "ET", "BSL", "JHS", "BINA", "ORAI", "ST", "KOTA"],
   "mumbai-delhi": ["ST", "BRC", "RTM", "KOTA", "MTJ", "BSL", "ET", "BPL", "VGLJ", "GWL", "AGC", "ADI", "AII", "JP", "RE"],
   "mumbai-jaipur": ["KOTA", "SWM", "RTM", "BRC", "ST", "AII", "ABR", "NAD", "FL", "ADI"],
   "mumbai-kolkata": ["NGP", "ET", "BSP", "JBP", "ROU", "DDU", "TATA", "GAYA", "BSL", "ASN", "KGP", "PCOI"],
@@ -983,7 +983,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "hyderabad-guwahati": ["BZA", "KGP", "HWH", "NJP", "GHY"],
 
   // —— Lucknow corridors ——
-  "lucknow-mumbai": ["CNB", "JHS", "ET", "BSL", "NGP"],
+  "lucknow-mumbai": ["CNB", "VGLJ", "BPL", "ET", "BSL", "JHS", "BINA", "ORAI", "ST", "KOTA"],
   "lucknow-kolkata": ["PRYJ", "DDU", "GAYA", "ASN", "HWH"],
   "lucknow-chennai": ["CNB", "PRYJ", "BSB", "HWH", "BZA", "MAS"],
   "lucknow-hyderabad": ["CNB", "ET", "NGP", "SC"],
