@@ -878,6 +878,14 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "bst-mumbai": ["LKO", "CNB", "GD", "GKP", "VGLJ", "BPL", "ET", "BSL", "KOTA", "AY"],
   "mumbai-bsti": ["LKO", "CNB", "GD", "GKP", "VGLJ", "BPL", "ET", "BSL", "KOTA", "AY"],
   "bsti-mumbai": ["LKO", "CNB", "GD", "GKP", "VGLJ", "BPL", "ET", "BSL", "KOTA", "AY"],
+  "mumbai-prayagraj": ["JBP", "STA", "ET", "MKP", "BSL", "KTE", "CNB", "BPL", "VGLJ", "JHS"],
+  "prayagraj-mumbai": ["JBP", "STA", "ET", "MKP", "BSL", "KTE", "CNB", "BPL", "VGLJ", "JHS"],
+  "mumbai-pcoi": ["JBP", "STA", "ET", "MKP", "BSL", "KTE", "CNB", "BPL", "VGLJ", "JHS"],
+  "pcoi-mumbai": ["JBP", "STA", "ET", "MKP", "BSL", "KTE", "CNB", "BPL", "VGLJ", "JHS"],
+  "mumbai-pryj": ["JBP", "STA", "ET", "MKP", "BSL", "KTE", "CNB", "BPL", "VGLJ", "JHS"],
+  "pryj-mumbai": ["JBP", "STA", "ET", "MKP", "BSL", "KTE", "CNB", "BPL", "VGLJ", "JHS"],
+  "mumbai-ald": ["JBP", "STA", "ET", "MKP", "BSL", "KTE", "CNB", "BPL", "VGLJ", "JHS"],
+  "ald-mumbai": ["JBP", "STA", "ET", "MKP", "BSL", "KTE", "CNB", "BPL", "VGLJ", "JHS"],
 
   // —— Delhi corridors ——
   "delhi-lko": ["CNB", "PRYJ"],
