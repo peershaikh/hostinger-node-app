@@ -855,7 +855,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "mumbai-lucknow": ["BSL", "ET", "BPL", "JHS", "CNB", "LKO"],
   "mumbai-delhi": ["ST", "BRC", "RTM", "KOTA", "MTJ", "BSL", "ET", "BPL", "VGLJ", "GWL", "AGC", "ADI", "AII", "JP", "RE"],
   "mumbai-jaipur": ["BRC", "RTM", "KOTA", "JP"],
-  "mumbai-kolkata": ["BSL", "NGP", "R", "BSP", "ROU", "TATA", "KGP", "ET", "JBP", "PCOI", "PRYJ", "DDU", "GAYA", "ASN"],
+  "mumbai-kolkata": ["NGP", "ET", "BSP", "JBP", "ROU", "DDU", "TATA", "GAYA", "BSL", "ASN", "KGP", "PCOI"],
   "mumbai-hyderabad": ["SUR", "SC", "PUNE"],
   "mumbai-secunderabad": ["SUR", "SC", "PUNE", "NGP"],
   "mumbai-vijayawada": ["SUR", "SC", "NGP", "BZA"],
@@ -906,7 +906,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "kolkata-puri": ["KGP", "BLS", "CTC", "BBS", "KUR"],
   "kolkata-guwahati": ["MLDT", "NJP", "GHY"],
   "kolkata-dibrugarh": ["MLDT", "NJP", "GHY", "DBRG"],
-  "kolkata-mumbai": ["KGP", "TATA", "ROU", "BSP", "R", "NGP", "BSL", "ASN", "GAYA", "DDU", "PRYJ", "PCOI", "JBP", "ET"],
+  "kolkata-mumbai": ["KGP", "ASN", "TATA", "GAYA", "ROU", "DDU", "BSP", "JBP", "NGP", "ET", "BSL", "PCOI"],
   "kolkata-delhi": ["ASN", "DHN", "MGS", "CNB", "NDLS"],
   "kolkata-chennai": ["KGP", "BBS", "VSKP", "BZA", "MAS"],
   "kolkata-bangalore": ["KGP", "VSKP", "BZA", "SC", "SBC"],
@@ -4842,7 +4842,8 @@ export class SplitJourneyEngine {
   private isRedundantAgainstDirect(
     split: any,
     directTrains: any[],
-    sCodes: string[]
+    sCodes: string[],
+    dCodes?: string[]
   ): 'redundant' | 'not-redundant' | 'unknown' {
     // No directs offered at all — nothing to be redundant against. This is a real
     // answer, not an unknown: the split stands on its own.
@@ -4853,6 +4854,73 @@ export class SplitJourneyEngine {
       : [split?.leg1, split?.leg2].filter(Boolean);
     const finalLeg = legs[legs.length - 1];
     if (!finalLeg) return 'unknown';
+
+    // CHANGE B: If Leg1 train already reaches destination cluster (e.g. HWH/SHM/SRC)
+    // AND Leg2 is a later arrival on the same corridor (shadow split) -> mark redundant
+    const firstLeg = legs[0];
+    if (firstLeg && finalLeg && firstLeg.trainNo !== finalLeg.trainNo) {
+      const firstTrainNo = normalizeTrainNumber(String(firstLeg.trainNo || firstLeg.number || '').trim());
+      const directLeg1 = directTrains.find((t: any) => {
+        const tNo = normalizeTrainNumber(String(t?.trainNo || t?.number || t?.train_number || '').trim());
+        return tNo === firstTrainNo;
+      });
+
+      const targetDCodes = Array.isArray(dCodes) && dCodes.length > 0
+        ? new Set(dCodes.map(c => String(c).toUpperCase().trim()))
+        : null;
+
+      let leg1ServesDest = !!directLeg1;
+      if (!leg1ServesDest && targetDCodes && Array.isArray(firstLeg._resolvedStops)) {
+        const boardStop = firstLeg._resolvedStops.find(
+          (s: any) => String(s.Station_Code || '').toUpperCase().trim() === String(firstLeg.fromCode || '').toUpperCase().trim()
+        );
+        const destStop = firstLeg._resolvedStops.find(
+          (s: any) => targetDCodes.has(String(s.Station_Code || '').toUpperCase().trim())
+        );
+        if (boardStop && destStop && Number(boardStop.SN) < Number(destStop.SN)) {
+          leg1ServesDest = true;
+        }
+      }
+
+      if (leg1ServesDest) {
+        let directDur = 0;
+        if (directLeg1) {
+          directDur = typeof directLeg1.durationMins === 'number' && directLeg1.durationMins > 0
+            ? directLeg1.durationMins
+            : typeof directLeg1.duration_mins === 'number' && directLeg1.duration_mins > 0
+              ? directLeg1.duration_mins
+              : typeof directLeg1.duration === 'number' && directLeg1.duration > 0
+                ? directLeg1.duration
+                : 0;
+          if (directDur === 0) {
+            const rawStr = String(directLeg1.total_journey_time || directLeg1.duration_str || directLeg1.durationStr || '').trim();
+            const clean = rawStr.replace(/[^0-9:]/g, '');
+            if (clean.includes(':')) {
+              const p = clean.split(':').map(Number);
+              directDur = (p[0] || 0) * 60 + (p[1] || 0);
+            }
+          }
+          if (directDur === 0 && directLeg1.departure && directLeg1.arrival) {
+            const depM = this.parseToMins(directLeg1.departure);
+            const dayN = parseInt(directLeg1.dayNumber || directLeg1.day_number || '1') || 1;
+            const arrM = ((dayN - 1) * 1440) + this.parseToMins(directLeg1.arrival);
+            if (arrM > depM) directDur = arrM - depM;
+          }
+        }
+
+        const splitDur = typeof split.totalDuration === 'number' && split.totalDuration > 0
+          ? split.totalDuration
+          : 0;
+
+        if (directDur > 0 && splitDur > directDur) {
+          winstonLogger.info(
+            `[SHADOW_SPLIT_REJECTED] Leg1 ${firstTrainNo} already reaches destination (${directDur}m). ` +
+            `Leg2 ${finalLeg.trainNo} is a later arrival (total=${splitDur}m). Dropping shadow split.`
+          );
+          return 'redundant';
+        }
+      }
+    }
 
     const finalTrainNo = normalizeTrainNumber(String(finalLeg.trainNo || finalLeg.number || '').trim());
     if (!finalTrainNo || finalTrainNo === '00000') return 'not-redundant';
@@ -4988,7 +5056,7 @@ export class SplitJourneyEngine {
 
       // Check redundancy: only reject when a confirmed, bookable direct alternative
       // actually proves the split candidate is redundant.
-      const redundancy = this.isRedundantAgainstDirect(candidate, directTrains, sCodes);
+      const redundancy = this.isRedundantAgainstDirect(candidate, directTrains, sCodes, dCodes);
       if (redundancy === 'redundant') {
         rejected++;
         winstonLogger.warn(
