@@ -854,7 +854,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "mumbai-patna": ["NGP", "ET", "PRYJ", "DDU", "PNBE"],
   "mumbai-lucknow": ["BSL", "ET", "BPL", "JHS", "CNB", "LKO"],
   "mumbai-delhi": ["ST", "BRC", "RTM", "KOTA", "MTJ", "BSL", "ET", "BPL", "VGLJ", "GWL", "AGC", "ADI", "AII", "JP", "RE"],
-  "mumbai-jaipur": ["BRC", "RTM", "KOTA", "JP"],
+  "mumbai-jaipur": ["KOTA", "SWM", "RTM", "BRC", "ST", "AII", "ABR", "NAD", "FL", "ADI"],
   "mumbai-kolkata": ["NGP", "ET", "BSP", "JBP", "ROU", "DDU", "TATA", "GAYA", "BSL", "ASN", "KGP", "PCOI"],
   "mumbai-hyderabad": ["SUR", "SC", "PUNE"],
   "mumbai-secunderabad": ["SUR", "SC", "PUNE", "NGP"],
@@ -993,7 +993,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "lucknow-ahmedabad": ["JHS", "KOTA", "RTM", "ADI"],
 
   // —— Jaipur corridors ——
-  "jaipur-mumbai": ["KOTA", "RTM", "BPL", "BSL", "NGP"],
+  "jaipur-mumbai": ["SWM", "KOTA", "RTM", "BRC", "ST", "AII", "ABR", "NAD", "FL", "ADI"],
   "jaipur-chennai": ["KOTA", "BPL", "NGP", "SC", "MAS"],
   "jaipur-kolkata": ["AGC", "CNB", "PRYJ", "DDU", "HWH"],
   "jaipur-bangalore": ["KOTA", "BPL", "ET", "NGP", "SC", "SBC"],
