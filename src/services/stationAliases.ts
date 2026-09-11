@@ -12,12 +12,15 @@ export const PAN_INDIA_CLUSTERS: string[][] = [
   ['SC', 'HYB', 'KCG'],
   ['PUNE', 'CCH', 'LNL', 'SVJR', 'KK', 'HDP'],
   ['ADI', 'SBT', 'SBIB', 'GNC'],
-  ['BSB', 'BSBS', 'DDU', 'MUV'],
-  ['PRYJ', 'PRRB', 'NYN', 'ALD', 'PCOI', 'SFG'],
+  ['BSB', 'BSBS', 'DDU', 'MUV', 'MGS'],
+  ['PRYJ', 'PRRB', 'NYN', 'ALD', 'PCOI', 'SFG', 'COI'],
   ['PNBE', 'PPTA', 'RJPB', 'DNR'],
   ['LKO', 'LJN', 'ASH'],
   ['GHY', 'KYQ'],
-  ['ST', 'UDN']
+  ['ST', 'UDN'],
+  ['BPL', 'RKMP', 'HBJ'],
+  ['VGLJ', 'JHS'],
+  ['AY', 'AYC', 'FD']
 ];
 
 export const TERMINAL_ALIASES: Record<string, string[]> = {};
@@ -38,6 +41,14 @@ export const IRCTC_CANONICAL: Record<string, string> = {
   SBT:  'ADI',
   // PHASE_5B037 — Bengaluru: Yeshwantpur → SBC (IRCTC canonical)
   YPR:  'SBC',
+  // Renamed station aliases to modern operational codes
+  ALD:  'PRYJ',
+  COI:  'PCOI',
+  MGS:  'DDU',
+  MUV:  'BSBS',
+  JHS:  'VGLJ',
+  HBJ:  'RKMP',
+  FD:   'AYC',
 };
 
 export function areStationsCompatible(code1: string, code2: string): boolean {

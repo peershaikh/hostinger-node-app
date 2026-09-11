@@ -72,6 +72,56 @@ export class StationController {
           { Station_Code: 'SC', Station_Name: 'Secunderabad' },
           { Station_Code: 'HYB', Station_Name: 'Hyderabad Deccan' },
           { Station_Code: 'KCG', Station_Name: 'Kacheguda' }
+        ],
+        'PRAYAGRAJ': [
+          { Station_Code: 'PRYJ', Station_Name: 'Prayagraj Junction' },
+          { Station_Code: 'PCOI', Station_Name: 'Prayagraj Chheoki' },
+          { Station_Code: 'PRRB', Station_Name: 'Prayagraj Rambag' },
+          { Station_Code: 'SFG', Station_Name: 'Subedarganj' },
+          { Station_Code: 'ALD', Station_Name: 'Allahabad Jn (Old Code)' }
+        ],
+        'ALLAHABAD': [
+          { Station_Code: 'PRYJ', Station_Name: 'Prayagraj Junction (Formerly Allahabad)' },
+          { Station_Code: 'PCOI', Station_Name: 'Prayagraj Chheoki' },
+          { Station_Code: 'ALD', Station_Name: 'Allahabad Jn' },
+          { Station_Code: 'PRRB', Station_Name: 'Prayagraj Rambag' }
+        ],
+        'VARANASI': [
+          { Station_Code: 'BSB', Station_Name: 'Varanasi Junction' },
+          { Station_Code: 'BSBS', Station_Name: 'Banaras' },
+          { Station_Code: 'DDU', Station_Name: 'Pt. Deen Dayal Upadhyaya (Mughalsarai)' },
+          { Station_Code: 'MUV', Station_Name: 'Manduadih' }
+        ],
+        'BANARAS': [
+          { Station_Code: 'BSBS', Station_Name: 'Banaras' },
+          { Station_Code: 'BSB', Station_Name: 'Varanasi Junction' },
+          { Station_Code: 'MUV', Station_Name: 'Manduadih' }
+        ],
+        'MUGHALSARAI': [
+          { Station_Code: 'DDU', Station_Name: 'Pt. Deen Dayal Upadhyaya (Formerly Mughalsarai)' },
+          { Station_Code: 'MGS', Station_Name: 'Mughalsarai Jn' }
+        ],
+        'AYODHYA': [
+          { Station_Code: 'AY', Station_Name: 'Ayodhya Dham' },
+          { Station_Code: 'AYC', Station_Name: 'Ayodhya Cantt (Formerly Faizabad)' }
+        ],
+        'FAIZABAD': [
+          { Station_Code: 'AYC', Station_Name: 'Ayodhya Cantt (Formerly Faizabad)' },
+          { Station_Code: 'FD', Station_Name: 'Faizabad Jn' },
+          { Station_Code: 'AY', Station_Name: 'Ayodhya Dham' }
+        ],
+        'BHOPAL': [
+          { Station_Code: 'BPL', Station_Name: 'Bhopal Junction' },
+          { Station_Code: 'RKMP', Station_Name: 'Rani Kamalapati (Habibganj)' }
+        ],
+        'HABIBGANJ': [
+          { Station_Code: 'RKMP', Station_Name: 'Rani Kamalapati (Formerly Habibganj)' },
+          { Station_Code: 'HBJ', Station_Name: 'Habibganj' },
+          { Station_Code: 'BPL', Station_Name: 'Bhopal Junction' }
+        ],
+        'JHANSI': [
+          { Station_Code: 'VGLJ', Station_Name: 'Virangana Lakshmibai Jhansi' },
+          { Station_Code: 'JHS', Station_Name: 'Jhansi Junction' }
         ]
       };
 
