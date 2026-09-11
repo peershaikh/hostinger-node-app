@@ -13,7 +13,7 @@ export const PAN_INDIA_CLUSTERS: string[][] = [
   ['PUNE', 'CCH', 'LNL', 'SVJR', 'KK', 'HDP'],
   ['ADI', 'SBT', 'SBIB', 'GNC'],
   ['BSB', 'BSBS', 'DDU', 'MUV'],
-  ['PRYJ', 'PRRB', 'NYN', 'ALD'],
+  ['PRYJ', 'PRRB', 'NYN', 'ALD', 'PCOI', 'SFG'],
   ['PNBE', 'PPTA', 'RJPB', 'DNR'],
   ['LKO', 'LJN', 'ASH'],
   ['GHY', 'KYQ'],

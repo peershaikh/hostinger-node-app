@@ -51,8 +51,43 @@ try {
   }
 })();
 
+// Known coordinates for renamed stations or stations missing from GeoJSON fallback
+const KNOWN_STATION_COORDINATES: Record<string, { lat: number; lon: number }> = {
+  PRYJ: { lat: 25.446241, lon: 81.828816 }, // Prayagraj Jn (formerly ALD)
+  PCOI: { lat: 25.379668, lon: 81.864916 }, // Prayagraj Chheoki (formerly COI)
+  ALD:  { lat: 25.446241, lon: 81.828816 }, // Allahabad Jn
+  COI:  { lat: 25.379668, lon: 81.864916 }, // Chheoki
+  DDU:  { lat: 25.278149, lon: 83.119250 }, // Pt. Deen Dayal Upadhyaya Jn (formerly MGS)
+  MGS:  { lat: 25.278149, lon: 83.119250 }, // Mughalsarai Jn
+  BSBS: { lat: 25.300001, lon: 82.972079 }, // Banaras (formerly MUV)
+  MUV:  { lat: 25.300001, lon: 82.972079 }, // Manduadih
+  VGLJ: { lat: 25.443585, lon: 78.552985 }, // Virangana Lakshmibai Jhansi (formerly JHS)
+  JHS:  { lat: 25.443585, lon: 78.552985 }, // Jhansi Jn
+  RKMP: { lat: 23.221979, lon: 77.439429 }, // Rani Kamalapati (formerly HBJ)
+  HBJ:  { lat: 23.221979, lon: 77.439429 }, // Habibganj
+  AYC:  { lat: 26.768996, lon: 82.135574 }, // Ayodhya Cantt (formerly FD)
+  FD:   { lat: 26.768996, lon: 82.135574 }, // Faizabad Jn
+  NYN:  { lat: 25.393138, lon: 81.860042 }, // Naini Jn
+  SFG:  { lat: 25.439879, lon: 81.789897 }, // Subedarganj
+  PYGS: { lat: 25.437800, lon: 81.861700 }, // Prayagraj Sangam
+  PRRB: { lat: 25.441900, lon: 81.857600 }, // Prayagraj Rambag
+  CSMT: { lat: 18.940100, lon: 72.835600 },
+  CSTM: { lat: 18.940100, lon: 72.835600 },
+};
+
+const RENAMED_STATION_MAP: Record<string, string> = {
+  PRYJ: 'ALD',
+  PCOI: 'COI',
+  DDU: 'MGS',
+  BSBS: 'MUV',
+  VGLJ: 'JHS',
+  RKMP: 'HBJ',
+  AYC: 'FD',
+  CSMT: 'CSTM',
+};
+
 // Global coordinates mapping loaded from local GeoJSON fallback
-let COORDINATES_MAP: Record<string, { lat: number; lon: number }> = {};
+let COORDINATES_MAP: Record<string, { lat: number; lon: number }> = { ...KNOWN_STATION_COORDINATES };
 
 try {
   const stationsPath = path.join(__dirname, '../data/full_stations.json');
@@ -67,6 +102,10 @@ try {
           };
         }
       });
+      // Re-apply known overrides to ensure precedence
+      for (const [code, coords] of Object.entries(KNOWN_STATION_COORDINATES)) {
+        COORDINATES_MAP[code] = coords;
+      }
       winstonLogger.info(`[STATION] Loaded ${Object.keys(COORDINATES_MAP).length} coordinates from full_stations.json`);
     }
   }
@@ -374,6 +413,12 @@ export class StationService {
     const cached = cacheService.get<{ lat: number; lon: number }>(cacheKey);
     if (cached) return cached;
 
+    if (KNOWN_STATION_COORDINATES[cleanCode]) {
+      const coords = KNOWN_STATION_COORDINATES[cleanCode];
+      cacheService.set(cacheKey, coords, 86400);
+      return coords;
+    }
+
     const info = await this.getStationInfo(cleanCode) as any;
     if (info && info.latitude !== null && info.longitude !== null && info.latitude !== undefined) {
       const coords = {
@@ -391,6 +436,13 @@ export class StationService {
       return coords;
     }
 
+    const renamedCode = RENAMED_STATION_MAP[cleanCode];
+    if (renamedCode && COORDINATES_MAP[renamedCode]) {
+      const coords = COORDINATES_MAP[renamedCode];
+      cacheService.set(cacheKey, coords, 86400);
+      return coords;
+    }
+
     if (cleanCode === 'CSMT' && COORDINATES_MAP['CSTM']) {
       return COORDINATES_MAP['CSTM'];
     }
@@ -404,7 +456,10 @@ export class StationService {
   getCoordinatesSync(code: string): { lat: number; lon: number } | null {
     if (!code) return null;
     const cleanCode = this.normalizeInput(code);
+    if (KNOWN_STATION_COORDINATES[cleanCode]) return KNOWN_STATION_COORDINATES[cleanCode];
     if (COORDINATES_MAP[cleanCode]) return COORDINATES_MAP[cleanCode];
+    const renamedCode = RENAMED_STATION_MAP[cleanCode];
+    if (renamedCode && COORDINATES_MAP[renamedCode]) return COORDINATES_MAP[renamedCode];
     if (cleanCode === 'CSMT' && COORDINATES_MAP['CSTM']) return COORDINATES_MAP['CSTM'];
     if (cleanCode === 'CSTM' && COORDINATES_MAP['CSMT']) return COORDINATES_MAP['CSMT'];
     return null;

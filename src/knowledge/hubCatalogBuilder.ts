@@ -58,7 +58,10 @@ export async function buildHubCandidatesFromStops(
     const isBetween = srcSn < destSn
       ? s.SN > srcSn && s.SN < destSn
       : s.SN < srcSn && s.SN > destSn;
-    return isBetween && isMajorHub(s.Station_Code);
+    return isBetween
+      && isMajorHub(s.Station_Code)
+      && !areStationsCompatible(s.Station_Code, srcStop.Station_Code)
+      && !areStationsCompatible(s.Station_Code, destStop.Station_Code);
   });
 
   if (intermediateStops.length === 0) return [];
