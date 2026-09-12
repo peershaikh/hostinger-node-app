@@ -47,17 +47,21 @@ const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const admin = __importStar(require("firebase-admin"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const deviceDetector_1 = require("../utils/deviceDetector");
+const analyticsService_1 = require("../services/analyticsService");
 // PHASE_5B142 Fix: on localhost (http) browsers require secure:false for cookies.
 // secure:true + sameSite:none is correct for production cross-domain (www → app),
 // but httpOnly cookies with secure:true are silently dropped on http:// in Safari
 // and older Chrome. sameSite:lax is safe for same-site localhost (port isolation
 // is same-site per spec, so :3000 → :5000 still qualifies).
 const isProd = process.env.NODE_ENV === 'production';
+const cookieDomain = process.env.COOKIE_DOMAIN || (isProd ? '.trayago.in' : undefined);
 const REFRESH_COOKIE_OPTIONS = {
     httpOnly: true,
     secure: isProd,
     sameSite: (isProd ? 'none' : 'lax'),
-    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    maxAge: 90 * 24 * 60 * 60 * 1000, // 90 days (matches 90d refreshToken)
+    ...(cookieDomain ? { domain: cookieDomain } : {})
 };
 class AuthController {
     constructor() {
@@ -84,7 +88,21 @@ class AuthController {
                 if (!payload || !payload.email) {
                     return res.status(400).json({ success: false, error: 'Invalid Google token' });
                 }
-                const result = await authService_1.authService.googleLogin(payload.email, payload.name || '', payload.picture || '', deviceId, referralCode);
+                const deviceMeta = (0, deviceDetector_1.detectDeviceAndGeo)(req);
+                const result = await authService_1.authService.googleLogin(payload.email, payload.name || '', payload.picture || '', deviceId, referralCode, deviceMeta);
+                // Track signup event asynchronously if it was a new registration
+                analyticsService_1.analyticsService.trackEvent('USER_SIGNUP', null, {
+                    userId: result.user.id,
+                    email: result.user.email,
+                    deviceType: deviceMeta.deviceType,
+                    platform: deviceMeta.platform,
+                    browser: deviceMeta.browser,
+                    clientType: deviceMeta.clientType,
+                    ip: deviceMeta.ip,
+                    state: deviceMeta.state || 'Unknown',
+                    city: deviceMeta.city,
+                    authProvider: 'google'
+                }).catch(() => { });
                 res.cookie('refreshToken', result.tokens.refreshToken, REFRESH_COOKIE_OPTIONS);
                 return res.json({
                     success: true,
@@ -135,11 +153,22 @@ class AuthController {
                         });
                     }
                 }
-                const result = await authService_1.authService.signup(email, password, referralCode, deviceId, otp, fullName, mobileNumber, dob);
-                // Associate device ID with user for abuse prevention
-                if (deviceId) {
-                    // This is handled in the signup method now
-                }
+                const deviceMeta = (0, deviceDetector_1.detectDeviceAndGeo)(req);
+                const result = await authService_1.authService.signup(email, password, referralCode, deviceId, otp, fullName, mobileNumber, dob, deviceMeta);
+                // Track signup event asynchronously
+                analyticsService_1.analyticsService.trackEvent('USER_SIGNUP', null, {
+                    userId: result.user.id,
+                    email: result.user.email,
+                    deviceType: deviceMeta.deviceType,
+                    platform: deviceMeta.platform,
+                    browser: deviceMeta.browser,
+                    clientType: deviceMeta.clientType,
+                    ip: deviceMeta.ip,
+                    state: deviceMeta.state || 'Unknown',
+                    city: deviceMeta.city,
+                    userAgent: deviceMeta.rawUserAgent,
+                    authProvider: 'email_otp'
+                }).catch(() => { });
                 res.cookie('refreshToken', result.tokens.refreshToken, REFRESH_COOKIE_OPTIONS); // PHASE_5B142 Fix
                 return res.json({
                     success: true,

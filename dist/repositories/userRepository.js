@@ -76,6 +76,18 @@ class UserRepository {
             payload.mobile_verified_at = user.mobileVerifiedAt;
         if (user.birthdayRewardLastClaimedYear !== undefined)
             payload.birthday_reward_last_claimed_year = user.birthdayRewardLastClaimedYear;
+        if (user.deviceType !== undefined)
+            payload.device_type = user.deviceType;
+        if (user.platform !== undefined)
+            payload.platform = user.platform;
+        if (user.browser !== undefined)
+            payload.browser = user.browser;
+        if (user.clientType !== undefined)
+            payload.client_type = user.clientType;
+        if (user.signupIp !== undefined)
+            payload.signup_ip = user.signupIp;
+        if (user.signupState !== undefined)
+            payload.signup_state = user.signupState;
         // Delete camelCase fields to avoid DB errors
         delete payload.dailySearchCount;
         delete payload.dailyPnrCount;
@@ -106,6 +118,10 @@ class UserRepository {
         delete payload.mobileVerificationMethod;
         delete payload.mobileVerifiedAt;
         delete payload.birthdayRewardLastClaimedYear;
+        delete payload.deviceType;
+        delete payload.clientType;
+        delete payload.signupIp;
+        delete payload.signupState;
         return payload;
     }
     mapToApp(dbUser) {
@@ -143,7 +159,13 @@ class UserRepository {
             mobileVerified: dbUser.mobile_verified ?? dbUser.mobileVerified ?? false,
             mobileVerificationMethod: dbUser.mobile_verification_method || dbUser.mobileVerificationMethod || null,
             mobileVerifiedAt: dbUser.mobile_verified_at || dbUser.mobileVerifiedAt || null,
-            birthdayRewardLastClaimedYear: dbUser.birthday_reward_last_claimed_year || dbUser.birthdayRewardLastClaimedYear || null
+            birthdayRewardLastClaimedYear: dbUser.birthday_reward_last_claimed_year || dbUser.birthdayRewardLastClaimedYear || null,
+            deviceType: dbUser.device_type || dbUser.deviceType || undefined,
+            platform: dbUser.platform || undefined,
+            browser: dbUser.browser || undefined,
+            clientType: dbUser.client_type || dbUser.clientType || undefined,
+            signupIp: dbUser.signup_ip || dbUser.signupIp || undefined,
+            signupState: dbUser.signup_state || dbUser.signupState || undefined
         };
     }
     async findById(id) {
@@ -191,8 +213,31 @@ class UserRepository {
         try {
             const payload = this.mapToDB(user);
             const { data, error } = await supabase_1.supabase.from('users').insert(payload).select().single();
-            if (error)
+            if (error) {
+                // Resilient column retry: if new optional device columns don't exist in Supabase yet, retry without them
+                const isMissingColumn = error.message?.includes('column') && (error.message?.includes('device_type') ||
+                    error.message?.includes('platform') ||
+                    error.message?.includes('browser') ||
+                    error.message?.includes('client_type') ||
+                    error.message?.includes('signup_ip') ||
+                    error.message?.includes('signup_state') ||
+                    error.message?.includes('avatar_url') ||
+                    error.message?.includes('mobile_number'));
+                if (isMissingColumn) {
+                    logger_1.winstonLogger.warn(`[AUTH_SUPABASE] Resilient Column Warning on insert: ${error.message}. Retrying core payload.`);
+                    delete payload.device_type;
+                    delete payload.platform;
+                    delete payload.browser;
+                    delete payload.client_type;
+                    delete payload.signup_ip;
+                    delete payload.signup_state;
+                    const { data: retryData, error: retryError } = await supabase_1.supabase.from('users').insert(payload).select().single();
+                    if (retryError)
+                        throw new DatabaseError(retryError.code, retryError.message);
+                    return this.mapToApp(retryData || user);
+                }
                 throw new DatabaseError(error.code, error.message);
+            }
             return this.mapToApp(data);
         }
         catch (err) {
@@ -216,7 +261,13 @@ class UserRepository {
                     error.message?.includes('mobile_number') ||
                     error.message?.includes('mobile_verified') ||
                     error.message?.includes('mobile_verification_method') ||
-                    error.message?.includes('mobile_verified_at'));
+                    error.message?.includes('mobile_verified_at') ||
+                    error.message?.includes('device_type') ||
+                    error.message?.includes('platform') ||
+                    error.message?.includes('browser') ||
+                    error.message?.includes('client_type') ||
+                    error.message?.includes('signup_ip') ||
+                    error.message?.includes('signup_state'));
                 if (isMissingColumn) {
                     logger_1.winstonLogger.warn(`[AUTH_SUPABASE] Resilient Column Warning: Column does not exist on remote database: ${error.message}. Proceeding with local file persistence fallback.`);
                     return { id, ...updates };

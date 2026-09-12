@@ -14,6 +14,8 @@ import fs from 'fs';
 import path from 'path';
 import * as admin from 'firebase-admin';
 import jwt from 'jsonwebtoken';
+import { detectDeviceAndGeo } from '../utils/deviceDetector';
+import { analyticsService } from '../services/analyticsService';
 
 // PHASE_5B142 Fix: on localhost (http) browsers require secure:false for cookies.
 // secure:true + sameSite:none is correct for production cross-domain (www → app),
@@ -21,11 +23,13 @@ import jwt from 'jsonwebtoken';
 // and older Chrome. sameSite:lax is safe for same-site localhost (port isolation
 // is same-site per spec, so :3000 → :5000 still qualifies).
 const isProd = process.env.NODE_ENV === 'production';
+const cookieDomain = process.env.COOKIE_DOMAIN || (isProd ? '.trayago.in' : undefined);
 const REFRESH_COOKIE_OPTIONS = {
   httpOnly: true,
   secure: isProd,
   sameSite: (isProd ? 'none' : 'lax') as 'none' | 'lax',
-  maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+  maxAge: 90 * 24 * 60 * 60 * 1000, // 90 days (matches 90d refreshToken)
+  ...(cookieDomain ? { domain: cookieDomain } : {})
 };
 
 export class AuthController {
@@ -56,13 +60,30 @@ export class AuthController {
         return res.status(400).json({ success: false, error: 'Invalid Google token' });
       }
 
+      const deviceMeta = detectDeviceAndGeo(req);
+
       const result = await authService.googleLogin(
         payload.email,
         payload.name || '',
         payload.picture || '',
         deviceId,
-        referralCode
+        referralCode,
+        deviceMeta
       );
+
+      // Track signup event asynchronously if it was a new registration
+      analyticsService.trackEvent('USER_SIGNUP', null, {
+        userId: result.user.id,
+        email: result.user.email,
+        deviceType: deviceMeta.deviceType,
+        platform: deviceMeta.platform,
+        browser: deviceMeta.browser,
+        clientType: deviceMeta.clientType,
+        ip: deviceMeta.ip,
+        state: deviceMeta.state || 'Unknown',
+        city: deviceMeta.city,
+        authProvider: 'google'
+      }).catch(() => {});
 
       res.cookie('refreshToken', result.tokens.refreshToken, REFRESH_COOKIE_OPTIONS);
 
@@ -120,12 +141,24 @@ export class AuthController {
         }
       }
 
-      const result = await authService.signup(email, password, referralCode, deviceId, otp, fullName, mobileNumber, dob);
+      const deviceMeta = detectDeviceAndGeo(req);
 
-      // Associate device ID with user for abuse prevention
-      if (deviceId) {
-        // This is handled in the signup method now
-      }
+      const result = await authService.signup(email, password, referralCode, deviceId, otp, fullName, mobileNumber, dob, deviceMeta);
+
+      // Track signup event asynchronously
+      analyticsService.trackEvent('USER_SIGNUP', null, {
+        userId: result.user.id,
+        email: result.user.email,
+        deviceType: deviceMeta.deviceType,
+        platform: deviceMeta.platform,
+        browser: deviceMeta.browser,
+        clientType: deviceMeta.clientType,
+        ip: deviceMeta.ip,
+        state: deviceMeta.state || 'Unknown',
+        city: deviceMeta.city,
+        userAgent: deviceMeta.rawUserAgent,
+        authProvider: 'email_otp'
+      }).catch(() => {});
 
       res.cookie('refreshToken', result.tokens.refreshToken, REFRESH_COOKIE_OPTIONS); // PHASE_5B142 Fix
 

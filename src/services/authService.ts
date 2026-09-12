@@ -59,6 +59,14 @@ export interface User {
   mobileVerificationMethod?: string | null;
   mobileVerifiedAt?: string | null;
   birthdayRewardLastClaimedYear?: number | null;
+
+  // Device & Platform Intelligence
+  deviceType?: 'mobile' | 'desktop' | 'tablet';
+  platform?: string;
+  browser?: string;
+  clientType?: string;
+  signupIp?: string;
+  signupState?: string;
 }
 
 export interface GuestUsage {
@@ -588,7 +596,15 @@ export class AuthService {
                       mobileVerified: row.mobile_verified ?? row.mobileVerified ?? localUser.mobileVerified ?? false,
                       mobileVerificationMethod: row.mobile_verification_method || row.mobileVerificationMethod || localUser.mobileVerificationMethod || null,
                       mobileVerifiedAt: row.mobile_verified_at || row.mobileVerifiedAt || localUser.mobileVerifiedAt || null,
-                      birthdayRewardLastClaimedYear: row.birthday_reward_last_claimed_year || row.birthdayRewardLastClaimedYear || localUser.birthdayRewardLastClaimedYear || null
+                      birthdayRewardLastClaimedYear: row.birthday_reward_last_claimed_year || row.birthdayRewardLastClaimedYear || localUser.birthdayRewardLastClaimedYear || null,
+                      tokenVersion: row.token_version ?? row.tokenVersion ?? localUser.tokenVersion ?? 1,
+                      sessionEpoch: row.session_epoch ?? row.sessionEpoch ?? localUser.sessionEpoch ?? 1,
+                      deviceType: row.device_type || row.deviceType || localUser.deviceType || undefined,
+                      platform: row.platform || row.platform || localUser.platform || undefined,
+                      browser: row.browser || row.browser || localUser.browser || undefined,
+                      clientType: row.client_type || row.clientType || localUser.clientType || undefined,
+                      signupIp: row.signup_ip || row.signupIp || localUser.signupIp || undefined,
+                      signupState: row.signup_state || row.signupState || localUser.signupState || undefined
                   };
               });
               
@@ -874,7 +890,7 @@ export class AuthService {
     return true;
   }
 
-  public async signup(email: string, password: string, referredByCode?: string, deviceId?: string, otp?: string, fullName?: string, mobileNumber?: string, dob?: string) {
+  public async signup(email: string, password: string, referredByCode?: string, deviceId?: string, otp?: string, fullName?: string, mobileNumber?: string, dob?: string, deviceMeta?: Partial<User>) {
     if (await this.getUserByEmail(email)) {
       throw new Error('Email already exists');
     }
@@ -915,7 +931,13 @@ export class AuthService {
       sessionEpoch: 1,
       fullName: fullName || '',
       mobileNumber: mobileNumber || '',
-      dob: dob || ''
+      dob: dob || '',
+      deviceType: deviceMeta?.deviceType || (deviceId?.startsWith('dev_') ? 'desktop' : 'mobile'),
+      platform: deviceMeta?.platform || 'Unknown',
+      browser: deviceMeta?.browser || 'Unknown',
+      clientType: deviceMeta?.clientType || 'desktop_web',
+      signupIp: deviceMeta?.signupIp,
+      signupState: deviceMeta?.signupState
     };
 
     newUser.referralCode = await generateReferralCode(newUser.id);
@@ -1054,7 +1076,7 @@ export class AuthService {
     };
   }
 
-  public async googleLogin(email: string, fullName: string, avatarUrl: string, deviceId?: string, referralCode?: string) {
+  public async googleLogin(email: string, fullName: string, avatarUrl: string, deviceId?: string, referralCode?: string, deviceMeta?: Partial<User>) {
     let user = await this.getUserByEmail(email);
     let referralMeta: { applied: boolean; message?: string; referredBy?: string } | undefined;
 
@@ -1097,7 +1119,13 @@ export class AuthService {
 
         fullName: fullName || '',
         avatarUrl: avatarUrl || '',
-        mobileVerified: false
+        mobileVerified: false,
+        deviceType: deviceMeta?.deviceType || (deviceId?.startsWith('dev_') ? 'desktop' : 'mobile'),
+        platform: deviceMeta?.platform || 'Unknown',
+        browser: deviceMeta?.browser || 'Unknown',
+        clientType: deviceMeta?.clientType || 'desktop_web',
+        signupIp: deviceMeta?.signupIp,
+        signupState: deviceMeta?.signupState
       };
 
       // Referral logic
@@ -1259,13 +1287,12 @@ export class AuthService {
     // PHASE_4C965 Stage 1: emit sessionEpoch (E) in ACCESS tokens only.
     // Refresh token payload is unchanged (rotation still keyed on tokenVersion/R).
     const accessPayload = { ...payload, sessionEpoch: user.sessionEpoch || 1 };
-    // PHASE_4C970 LOGOUT FIX: Access token: 24h (was 2h — still caused silent refresh failures
-    // on cross-domain when cookie was missing, leading to 10-15 min logout UX).
-    // Refresh token: 30d (unchanged).
+    // PERMANENT LOGIN GUARANTEE: Access token: 30d (was 24h, eliminates morning logout).
+    // Refresh token: 90d (was 30d, guarantees resilient long-term rolling session).
     // With refreshToken stored in localStorage (fallback for .com/.online), the interceptor
     // can always recover the session silently without triggering OTP re-login.
-    const accessToken = jwt.sign(accessPayload, jwtSecret, { expiresIn: '24h' });
-    const refreshToken = jwt.sign(payload, refreshSecret, { expiresIn: '30d' });
+    const accessToken = jwt.sign(accessPayload, jwtSecret, { expiresIn: '30d' });
+    const refreshToken = jwt.sign(payload, refreshSecret, { expiresIn: '90d' });
     return { accessToken, refreshToken };
   }
 

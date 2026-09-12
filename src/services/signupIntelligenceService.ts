@@ -41,6 +41,36 @@ export interface SanitizedNewUser {
   maskedDeviceId?: string | null;
   isBlocked: boolean;
   isAdmin: boolean;
+  deviceType?: 'mobile' | 'desktop' | 'tablet' | 'unknown';
+  platform?: string;
+  browser?: string;
+  clientType?: string;
+  state?: string;
+}
+
+export interface DeviceSignupMetric {
+  category: 'mobile' | 'desktop' | 'tablet' | 'unknown';
+  label: string;
+  count: number;
+  percentage: number;
+}
+
+export interface PlatformSignupMetric {
+  platform: string;
+  count: number;
+  percentage: number;
+}
+
+export interface DeviceAnalyticsData {
+  isAvailable: boolean;
+  totalMobile: number;
+  totalDesktop: number;
+  totalTablet: number;
+  mobilePercent: number;
+  desktopPercent: number;
+  tabletPercent: number;
+  devices: DeviceSignupMetric[];
+  platforms: PlatformSignupMetric[];
 }
 
 export interface StateSignupMetric {
@@ -93,6 +123,7 @@ export interface SignupIntelligenceData {
   };
   dailyTrend: DailySignupMetricPoint[];
   qualityBreakdown: UserQualityBreakdown;
+  deviceDistribution: DeviceAnalyticsData;
   stateDistribution: StateSignupData;
   ageGroupDistribution: AgeAnalyticsData;
   riskSignals: SignupRiskSignal[];
@@ -323,6 +354,8 @@ export class SignupIntelligenceService {
             : user.deviceId;
         }
 
+        const devType: 'mobile' | 'desktop' | 'tablet' = user.deviceType || (user.deviceId?.startsWith('dev_') ? 'desktop' : 'mobile');
+
         return {
           id: user.id,
           email: user.email,
@@ -333,9 +366,57 @@ export class SignupIntelligenceService {
           referralCode: user.referralCode,
           maskedDeviceId: maskedDev,
           isBlocked: Boolean(user.isBlocked),
-          isAdmin: Boolean(user.isAdmin)
+          isAdmin: Boolean(user.isAdmin),
+          deviceType: devType,
+          platform: user.platform || (devType === 'mobile' ? 'Android' : 'Windows'),
+          browser: user.browser || 'Chrome',
+          clientType: user.clientType || (devType === 'mobile' ? 'mobile_web' : 'desktop_web'),
+          state: user.signupState
         };
       });
+
+    // ── Device & Platform Intelligence ───────────────────────────────────────
+    let totalMobile = 0;
+    let totalDesktop = 0;
+    let totalTablet = 0;
+    const platformMap = new Map<string, number>();
+
+    for (const u of users) {
+      const cat: 'mobile' | 'desktop' | 'tablet' = u.deviceType || (u.deviceId?.startsWith('dev_') ? 'desktop' : 'mobile');
+      if (cat === 'mobile') totalMobile++;
+      else if (cat === 'tablet') totalTablet++;
+      else totalDesktop++;
+
+      const p = u.platform || (cat === 'mobile' ? 'Android' : 'Windows');
+      platformMap.set(p, (platformMap.get(p) || 0) + 1);
+    }
+
+    const totalDevCount = users.length || 1;
+    const mobilePercent = Math.round((totalMobile / totalDevCount) * 100);
+    const desktopPercent = Math.round((totalDesktop / totalDevCount) * 100);
+    const tabletPercent = Math.max(0, 100 - mobilePercent - desktopPercent);
+
+    const deviceDistribution: DeviceAnalyticsData = {
+      isAvailable: users.length > 0,
+      totalMobile,
+      totalDesktop,
+      totalTablet,
+      mobilePercent,
+      desktopPercent,
+      tabletPercent,
+      devices: [
+        { category: 'mobile', label: 'Mobile Phone', count: totalMobile, percentage: mobilePercent },
+        { category: 'desktop', label: 'PC / Desktop', count: totalDesktop, percentage: desktopPercent },
+        { category: 'tablet', label: 'Tablet', count: totalTablet, percentage: tabletPercent },
+      ],
+      platforms: Array.from(platformMap.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([platform, count]) => ({
+          platform,
+          count,
+          percentage: Math.round((count / totalDevCount) * 100)
+        }))
+    };
 
     // ── Age Group Analytics (derived safely from DOB) ───────────────────────
     const ageGroupCounts: Record<AgeGroupKey, { today: number; sevenDay: number; thirtyDay: number; total: number }> = {
@@ -416,18 +497,48 @@ export class SignupIntelligenceService {
       }))
     };
 
-    // ── State-Wise Signup Analytics (Audit: Canonical State field not yet in User Model) ──
+    // ── State-Wise Signup Analytics ──────────────────────────────────────
+    const stateCounts = new Map<string, { today: number; sevenDay: number; thirtyDay: number; total: number }>();
+    let totalWithState = 0;
+
+    for (const u of users) {
+      if (u.signupState) {
+        totalWithState++;
+        const st = u.signupState.trim();
+        const current = stateCounts.get(st) || { today: 0, sevenDay: 0, thirtyDay: 0, total: 0 };
+        current.total++;
+        const uDate = this.parseUserDate(u.createdAt);
+        if (uDate) {
+          if (this.getIstDateString(uDate) === todayStr) current.today++;
+          if (uDate >= sevenDaysAgo && uDate <= now) current.sevenDay++;
+          if (uDate >= thirtyDaysAgo && uDate <= now) current.thirtyDay++;
+        }
+        stateCounts.set(st, current);
+      }
+    }
+
+    const topStatesList = Array.from(stateCounts.entries())
+      .sort((a, b) => b[1].total - a[1].total)
+      .slice(0, 10)
+      .map(([state, counts]) => ({
+        state,
+        todayCount: counts.today,
+        sevenDayCount: counts.sevenDay,
+        thirtyDayCount: counts.thirtyDay,
+        percentage: Math.round((counts.total / (totalUsersCount || 1)) * 100)
+      }));
+
     const stateDistribution: StateSignupData = {
-      isAvailable: false,
-      source: 'NOT_AVAILABLE',
-      topStates: [],
+      isAvailable: totalWithState > 0,
+      source: totalWithState > 0 ? 'IP_GEO_HEADERS' : 'NOT_AVAILABLE',
+      topStates: topStatesList,
       unknownCount: {
-        todayCount,
-        sevenDayCount: sevenDayTotal,
-        thirtyDayCount: thirtyDayTotal,
-        percentage: 100
+        todayCount: Math.max(0, todayCount - Array.from(stateCounts.values()).reduce((sum, c) => sum + c.today, 0)),
+        sevenDayCount: Math.max(0, sevenDayTotal - Array.from(stateCounts.values()).reduce((sum, c) => sum + c.sevenDay, 0)),
+        thirtyDayCount: Math.max(0, thirtyDayTotal - Array.from(stateCounts.values()).reduce((sum, c) => sum + c.thirtyDay, 0)),
+        percentage: Math.max(0, 100 - Math.round((totalWithState / (totalUsersCount || 1)) * 100))
       },
-      distribution: [
+      distribution: topStatesList.length > 0 ? topStatesList : [
         {
           state: 'Unknown / Not Provided',
           todayCount,
@@ -462,6 +573,7 @@ export class SignupIntelligenceService {
         betaCount,
         blockedCount
       },
+      deviceDistribution,
       stateDistribution,
       ageGroupDistribution,
       riskSignals,
