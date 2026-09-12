@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.paymentController = exports.PaymentController = void 0;
 const paymentService_1 = require("../services/paymentService");
+const contentService_1 = require("../services/contentService");
 const crypto_1 = __importDefault(require("crypto"));
 const logger_1 = require("../middleware/logger");
 // LEGACY: Unused in Beta. These were the old Razorpay routes.
@@ -17,6 +18,7 @@ class PaymentController {
                     return res.status(401).json({ success: false, message: 'Unauthorized' });
                 }
                 const planType = req.body.planType || req.body.plan;
+                const promoCode = typeof req.body.promoCode === 'string' ? req.body.promoCode.trim().toUpperCase() : undefined;
                 const { amount, currency, duration, price, gateway } = req.body;
                 if (amount || currency || duration || price) {
                     return res.status(400).json({ success: false, message: 'Client must not provide pricing data' });
@@ -32,9 +34,33 @@ class PaymentController {
                     safar_pro: { amount: 14900, duration_days: 30 }, // ₹149 (Legacy Safar Pro - preserved)
                     safar_pro_90d: { amount: 39900, duration_days: 365 } // ₹399 (Pro Yearly - 365 days)
                 };
-                const planInfo = PLAN_MAPPING[planType];
+                let planInfo = PLAN_MAPPING[planType];
                 if (!planInfo) {
                     return res.status(400).json({ success: false, message: 'Invalid planType' });
+                }
+                // Dynamic admin promo offer synchronization (e.g. ₹19 for 30 days)
+                try {
+                    const activeOffer = await contentService_1.contentService.getPopupOffer();
+                    if (activeOffer && activeOffer.isActive) {
+                        const offerPlan = activeOffer.planType || 'safar_pro_30d';
+                        const offerCode = activeOffer.couponCode ? String(activeOffer.couponCode).trim().toUpperCase() : '';
+                        const rawOfferPrice = String(activeOffer.offerPrice || '').replace(/[^\d.]/g, '');
+                        const offerPriceRupees = parseFloat(rawOfferPrice);
+                        const offerDurationDays = Number(activeOffer.durationDays) || 30;
+                        const matchesPlan = (offerPlan === planType);
+                        const codeMatches = (promoCode && offerCode && promoCode === offerCode);
+                        if ((matchesPlan && codeMatches) || (matchesPlan && !promoCode && !isNaN(offerPriceRupees) && offerPriceRupees > 0)) {
+                            const offerPaise = Math.round(offerPriceRupees * 100);
+                            planInfo = {
+                                amount: offerPaise,
+                                duration_days: offerDurationDays
+                            };
+                            logger_1.winstonLogger.info(`[PAYMENT] Dynamic offer synced for ${planType}: ₹${offerPriceRupees} (${offerPaise} paise) for ${offerDurationDays} days`);
+                        }
+                    }
+                }
+                catch (offerErr) {
+                    logger_1.winstonLogger.warn(`[PAYMENT] Active promo offer sync check failed: ${offerErr.message}`);
                 }
                 const providerName = process.env.PAYMENT_PROVIDER || 'razorpay';
                 const isProviderConfigured = providerName === 'cashfree'

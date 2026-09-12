@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { paymentService } from '../services/paymentService';
+import { contentService } from '../services/contentService';
 import crypto from 'crypto';
 import { winstonLogger } from '../middleware/logger';
 
@@ -13,6 +14,7 @@ export class PaymentController {
             }
 
             const planType = req.body.planType || req.body.plan;
+            const promoCode = typeof req.body.promoCode === 'string' ? req.body.promoCode.trim().toUpperCase() : undefined;
             const { amount, currency, duration, price, gateway } = req.body;
             
             if (amount || currency || duration || price) {
@@ -32,9 +34,36 @@ export class PaymentController {
                 safar_pro_90d: { amount: 39900, duration_days: 365 }   // ₹399 (Pro Yearly - 365 days)
             };
 
-            const planInfo = PLAN_MAPPING[planType];
+            let planInfo = PLAN_MAPPING[planType];
             if (!planInfo) {
                 return res.status(400).json({ success: false, message: 'Invalid planType' });
+            }
+
+            // Dynamic admin promo offer synchronization (e.g. ₹19 for 30 days)
+            try {
+                const activeOffer = await contentService.getPopupOffer();
+                if (activeOffer && activeOffer.isActive) {
+                    const offerPlan = activeOffer.planType || 'safar_pro_30d';
+                    const offerCode = activeOffer.couponCode ? String(activeOffer.couponCode).trim().toUpperCase() : '';
+                    
+                    const rawOfferPrice = String(activeOffer.offerPrice || '').replace(/[^\d.]/g, '');
+                    const offerPriceRupees = parseFloat(rawOfferPrice);
+                    const offerDurationDays = Number(activeOffer.durationDays) || 30;
+
+                    const matchesPlan = (offerPlan === planType);
+                    const codeMatches = (promoCode && offerCode && promoCode === offerCode);
+                    
+                    if ((matchesPlan && codeMatches) || (matchesPlan && !promoCode && !isNaN(offerPriceRupees) && offerPriceRupees > 0)) {
+                        const offerPaise = Math.round(offerPriceRupees * 100);
+                        planInfo = {
+                            amount: offerPaise,
+                            duration_days: offerDurationDays
+                        };
+                        winstonLogger.info(`[PAYMENT] Dynamic offer synced for ${planType}: ₹${offerPriceRupees} (${offerPaise} paise) for ${offerDurationDays} days`);
+                    }
+                }
+            } catch (offerErr: any) {
+                winstonLogger.warn(`[PAYMENT] Active promo offer sync check failed: ${offerErr.message}`);
             }
 
             const providerName = process.env.PAYMENT_PROVIDER || 'razorpay';

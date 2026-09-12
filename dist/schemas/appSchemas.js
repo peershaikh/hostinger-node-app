@@ -5,7 +5,8 @@ const zod_1 = require("zod");
 // --- PAYMENT SCHEMAS ---
 // Enforces strict payload validation: rejects amount, price, currency, discount, provider, status, or any unknown key.
 exports.createOrderSchema = zod_1.z.object({
-    planType: zod_1.z.enum(['safar_pro_30m', 'safar_pro_1d', 'safar_pro_7d', 'safar_pro_30d', 'safar_pro_90d', 'safar_pro'])
+    planType: zod_1.z.enum(['safar_pro_30m', 'safar_pro_1d', 'safar_pro_7d', 'safar_pro_30d', 'safar_pro_90d', 'safar_pro']),
+    promoCode: zod_1.z.string().max(50).optional()
 }).strict();
 // --- PNR SCHEMAS ---
 // Must be exactly 10 numeric digits.
