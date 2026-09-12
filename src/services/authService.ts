@@ -890,7 +890,7 @@ export class AuthService {
     return true;
   }
 
-  public async signup(email: string, password: string, referredByCode?: string, deviceId?: string, otp?: string, fullName?: string, mobileNumber?: string, dob?: string, deviceMeta?: Partial<User>) {
+  public async signup(email: string, password: string, referredByCode?: string, deviceId?: string, otp?: string, fullName?: string, mobileNumber?: string, dob?: string, deviceMeta?: Partial<User>, signupState?: string) {
     if (await this.getUserByEmail(email)) {
       throw new Error('Email already exists');
     }
@@ -937,7 +937,7 @@ export class AuthService {
       browser: deviceMeta?.browser || 'Unknown',
       clientType: deviceMeta?.clientType || 'desktop_web',
       signupIp: deviceMeta?.signupIp,
-      signupState: deviceMeta?.signupState
+      signupState: signupState || deviceMeta?.signupState
     };
 
     newUser.referralCode = await generateReferralCode(newUser.id);
@@ -2056,12 +2056,13 @@ export class AuthService {
     return !!otherUser;
   }
 
-  public async updateUserProfile(userId: string, updates: { fullName?: string; dob?: string; mobileNumber?: string; preferences?: { notifyEmail?: boolean; notifyBirthday?: boolean; notifyMarketing?: boolean } }): Promise<User> {
+  public async updateUserProfile(userId: string, updates: { fullName?: string; dob?: string; mobileNumber?: string; state?: string; preferences?: { notifyEmail?: boolean; notifyBirthday?: boolean; notifyMarketing?: boolean } }): Promise<User> {
     const user = await this.getUserById(userId);
     if (!user) throw new Error('User not found');
 
     if (updates.fullName !== undefined) user.fullName = updates.fullName;
     if (updates.dob !== undefined) user.dob = updates.dob;
+    if (updates.state !== undefined) user.signupState = updates.state;
     
     if (updates.preferences !== undefined) {
       if (updates.preferences.notifyEmail !== undefined) user.notifyEmail = !!updates.preferences.notifyEmail;
@@ -2084,6 +2085,7 @@ export class AuthService {
           fullName: user.fullName,
           dob: user.dob,
           mobileNumber: user.mobileNumber,
+          signupState: user.signupState,
           mobileVerified: user.mobileVerified,
           mobileVerificationMethod: user.mobileVerificationMethod,
           mobileVerifiedAt: user.mobileVerifiedAt

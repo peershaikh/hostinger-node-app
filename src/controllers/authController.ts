@@ -16,6 +16,7 @@ import * as admin from 'firebase-admin';
 import jwt from 'jsonwebtoken';
 import { detectDeviceAndGeo } from '../utils/deviceDetector';
 import { analyticsService } from '../services/analyticsService';
+import { isValidRegion, normalizeRegion } from '../constants/states';
 
 // PHASE_5B142 Fix: on localhost (http) browsers require secure:false for cookies.
 // secure:true + sameSite:none is correct for production cross-domain (www → app),
@@ -102,7 +103,7 @@ export class AuthController {
 
   signup = async (req: Request, res: Response) => {
     try {
-      const { email, password, referralCode, deviceId, otp, fullName, mobileNumber, dob } = req.body;
+      const { email, password, referralCode, deviceId, otp, fullName, mobileNumber, dob, state } = req.body;
       if (!email || !password || !otp) {
         return res.status(400).json({ success: false, error: 'Email, password, and OTP required' });
       }
@@ -130,6 +131,14 @@ export class AuthController {
         }
       }
 
+      let validatedState: string | undefined = undefined;
+      if (state !== undefined && state !== '') {
+        if (typeof state !== 'string' || !isValidRegion(state)) {
+          return res.status(400).json({ success: false, error: 'Invalid state or region selected' });
+        }
+        validatedState = normalizeRegion(state);
+      }
+
       // Check device lock for abuse prevention
       if (deviceId) {
         const isLocked = authService.checkDeviceLock(deviceId, null);
@@ -143,7 +152,7 @@ export class AuthController {
 
       const deviceMeta = detectDeviceAndGeo(req);
 
-      const result = await authService.signup(email, password, referralCode, deviceId, otp, fullName, mobileNumber, dob, deviceMeta);
+      const result = await authService.signup(email, password, referralCode, deviceId, otp, fullName, mobileNumber, dob, deviceMeta, validatedState);
 
       // Track signup event asynchronously
       analyticsService.trackEvent('USER_SIGNUP', null, {
@@ -154,7 +163,7 @@ export class AuthController {
         browser: deviceMeta.browser,
         clientType: deviceMeta.clientType,
         ip: deviceMeta.ip,
-        state: deviceMeta.state || 'Unknown',
+        state: validatedState || deviceMeta.state || 'Unknown',
         city: deviceMeta.city,
         userAgent: deviceMeta.rawUserAgent,
         authProvider: 'email_otp'
@@ -530,6 +539,7 @@ export class AuthController {
           fullName: user.fullName || '',
           mobileNumber: user.mobileNumber || '',
           dob: user.dob || '',
+          state: user.signupState || '',
           avatarUrl: user.avatarUrl || '',
           profileCompletionPercentage: score,
           isBirthdayToday,
@@ -565,7 +575,7 @@ export class AuthController {
         return res.status(401).json({ success: false, error: 'Unauthorized' });
       }
 
-      const { fullName, dob, preferences, mobileNumber } = req.body;
+      const { fullName, dob, preferences, mobileNumber, state } = req.body;
 
       // Validate inputs
       if (fullName !== undefined) {
@@ -590,7 +600,15 @@ export class AuthController {
         }
       }
 
-      const updatedUser = await authService.updateUserProfile(userId, { fullName, dob, preferences, mobileNumber });
+      let validatedState: string | undefined = undefined;
+      if (state !== undefined && state !== '') {
+        if (typeof state !== 'string' || !isValidRegion(state)) {
+          return res.status(400).json({ success: false, error: 'Invalid state or region selected' });
+        }
+        validatedState = normalizeRegion(state);
+      }
+
+      const updatedUser = await authService.updateUserProfile(userId, { fullName, dob, preferences, mobileNumber, state: validatedState });
 
       // Calculate new completion score
       let score = 40;
