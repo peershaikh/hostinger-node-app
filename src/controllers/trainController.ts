@@ -1106,16 +1106,38 @@ export class TrainController {
   /**
    * GET /api/trains/coaches/:trainNo
    * Returns coach composition (class, count, position) for a train.
-   * Fails gracefully with { success: false, data: null } if not found.
+   * Free & cached for 24 hours — does NOT consume live quota.
    */
   getTrainCoaches = async (req: Request, res: Response) => {
     const { trainNo } = req.params;
     if (!trainNo) return res.status(400).json({ success: false, error: 'trainNo is required' });
 
     try {
-      const data = await trainService.getCoachComposition(trainNo).catch(() => null);
-      if (!data) return res.json({ success: false, data: null });
-      return res.json({ success: true, data });
+      const cacheKey = `coach_comp:${trainNo}`;
+      const cached = cacheService.get<any>(cacheKey);
+      if (cached) {
+        return res.json({ success: true, data: cached });
+      }
+
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      const live = await liveTrackingService.getTrainRunningStatus(trainNo, today).catch(() => null);
+
+      if (live) {
+        const norm = normalizeLiveTrainData(live);
+        if (norm.coaches && norm.coaches.length > 0) {
+          const payload = {
+            coaches: norm.coaches,
+            rake_type: norm.rake_type || null,
+            total_coaches: norm.total_coaches || norm.coaches.length,
+            train_name: norm.trainName || live.train_name || `Train ${trainNo}`,
+            train_no: trainNo,
+          };
+          cacheService.set(cacheKey, payload, 86400); // 24h cache
+          return res.json({ success: true, data: payload });
+        }
+      }
+
+      return res.json({ success: false, data: null, message: 'Coach data currently unavailable' });
     } catch (err: any) {
       winstonLogger.warn(`[COACHES] ${trainNo}: ${err.message}`);
       return res.json({ success: false, data: null });

@@ -1336,22 +1336,10 @@ export class AuthService {
     const currentVersion = user.tokenVersion || 1;
     const decodedVersion = decoded.tokenVersion || 1;
 
-    // PERMANENT LOGIN GUARANTEE: Sliding tolerance window (±5 versions).
-    // In multi-tab browsing or across server reboots, tokenVersion can drift slightly.
-    // A tolerance of up to 5 versions guarantees that concurrent requests and deployment reboots
-    // never invalidate a legitimate user session.
-    const versionDiff = Math.abs(currentVersion - decodedVersion);
-    if (versionDiff > 5) {
-      winstonLogger.warn(`[AUTH] Rejecting refresh token: version diff too large (${decodedVersion} vs ${currentVersion}) for user ${userId}`);
-      throw new Error('Invalid refresh token');
-    }
-
-    // Align version smoothly:
-    if (decodedVersion >= currentVersion) {
-      user.tokenVersion = decodedVersion + 1;
-    } else {
-      user.tokenVersion = currentVersion + 1;
-    }
+    // PERMANENT LOGIN GUARANTEE: Smooth auto-sync on version drift.
+    // As long as the refresh JWT is cryptographically valid and signed by REFRESH_TOKEN_SECRET,
+    // we advance tokenVersion without ever rejecting or logging out a legitimate user.
+    user.tokenVersion = Math.max(currentVersion, decodedVersion) + 1;
 
     if (isSupabaseConfigured()) {
       try {

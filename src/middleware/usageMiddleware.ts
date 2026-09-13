@@ -33,19 +33,8 @@ export const usageMiddleware = (feature: 'search' | 'pnr' | 'live') => {
                 message: "Your account has been suspended."
             });
         }
-        
-        const tokenVersionHeader = req.headers['x-token-version'];
-        if (tokenVersionHeader && user) {
-            const currentVer = user.tokenVersion || 1;
-            const clientVer = parseInt(tokenVersionHeader as string, 10);
-            if (!isNaN(clientVer) && Math.abs(currentVer - clientVer) > 5) {
-                return res.status(401).json({
-                    success: false,
-                    error: "invalid_token_version",
-                    message: "Session expired. Please log in again."
-                });
-            }
-        }
+        // Cryptographic validity is already verified by jwt.verify in authMiddleware.
+        // We do not reject valid access tokens on usage based on rotation version drift.
     }
 
     const canUse = await authService.canUseFeature(userId, feature, betaCode, deviceId);
