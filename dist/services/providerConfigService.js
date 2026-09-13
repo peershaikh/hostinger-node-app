@@ -70,7 +70,7 @@ class ProviderConfigService {
         const nameUpper = providerName.toUpperCase();
         const now = Date.now();
         if (this.isCircuitBreakerBlocked(nameUpper)) {
-            if (nameUpper === 'IRCTC') {
+            if (nameUpper === 'IRCTC' || nameUpper === 'RAILKIT') {
                 return { enabled: true, reason: 'ENV_FALLBACK' };
             }
             return { enabled: false, reason: 'CIRCUIT_BREAKER_BLOCKED' };
@@ -331,8 +331,8 @@ class ProviderConfigService {
             keys.push(localKey.trim());
             return keys;
         }
-        if (nameUpper === 'IRCTC') {
-            const k = process.env.IRCTC_CONNECT_API_KEY || process.env.IRCTC_API_KEY || process.env.IRCTC_API_KEY_PRIMARY || '';
+        if (nameUpper === 'IRCTC' || nameUpper === 'RAILKIT') {
+            const k = process.env.RAILKIT_API_KEY || process.env.IRCTC_CONNECT_API_KEY || process.env.IRCTC_API_KEY || process.env.IRCTC_API_KEY_PRIMARY || '';
             if (k)
                 keys.push(k.trim());
         }

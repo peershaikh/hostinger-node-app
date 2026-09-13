@@ -134,6 +134,8 @@ export class IRCTCAdapter implements RailProvider {
   }
 
   async getLiveStatus(params: LiveStatusParams): Promise<any> {
+    const v2 = await irctcService.getLiveStatusV2(params.trainNo, params.date);
+    if (v2 && !(v2 as any).not_running) return v2;
     return irctcService.getLiveStatus(params.trainNo, params.date);
   }
 

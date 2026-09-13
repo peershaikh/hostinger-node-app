@@ -35,7 +35,7 @@ export class ProviderConfigService {
     const now = Date.now();
 
     if (this.isCircuitBreakerBlocked(nameUpper)) {
-      if (nameUpper === 'IRCTC') {
+      if (nameUpper === 'IRCTC' || nameUpper === 'RAILKIT') {
         return { enabled: true, reason: 'ENV_FALLBACK' };
       }
       return { enabled: false, reason: 'CIRCUIT_BREAKER_BLOCKED' };
@@ -330,8 +330,8 @@ export class ProviderConfigService {
       return keys;
     }
 
-    if (nameUpper === 'IRCTC') {
-      const k = process.env.IRCTC_CONNECT_API_KEY || process.env.IRCTC_API_KEY || process.env.IRCTC_API_KEY_PRIMARY || '';
+    if (nameUpper === 'IRCTC' || nameUpper === 'RAILKIT') {
+      const k = process.env.RAILKIT_API_KEY || process.env.IRCTC_CONNECT_API_KEY || process.env.IRCTC_API_KEY || process.env.IRCTC_API_KEY_PRIMARY || '';
       if (k) keys.push(k.trim());
     } else if (nameUpper === 'RAPIDAPI') {
       // RapidAPI is deprecated. Return empty key set to fail fast without external calls.

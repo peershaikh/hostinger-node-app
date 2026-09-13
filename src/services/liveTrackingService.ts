@@ -29,6 +29,8 @@ export interface LiveTrainStatus {
   journey_timeline: TimelineStop[];
   api_used: string;
   active_journey_date?: string;
+  coach_position?: string | any[] | null;
+  distance_to_next_km?: number | null;
 }
 
 export interface TimelineStop {
@@ -42,6 +44,9 @@ export interface TimelineStop {
   status?: string;
   station_type?: 'TERMINAL' | 'MAJOR_JUNCTION' | 'MINOR_STATION';
   platform?: string | null;
+  coordinates?: { lat: number; lon: number } | null;
+  distance?: number | null;
+  is_halt?: boolean;
 }
 
 // ── Known major railway junction codes (India) ───────────────────────────────
@@ -369,11 +374,17 @@ export class LiveTrackingService {
 
   private extractTimeString(timeVal: any): string {
     if (!timeVal) return '--:--';
-    if (typeof timeVal === 'string') return timeVal;
+    if (typeof timeVal === 'string') {
+      const match = timeVal.match(/(\d{1,2}:\d{2})/);
+      return match ? match[1] : timeVal;
+    }
     if (typeof timeVal === 'object') {
       const val = timeVal.scheduled || timeVal.time || timeVal.actual || timeVal.arrivalTime || timeVal.departureTime || timeVal.departure_time || timeVal.arrival_time;
       if (val) {
-        if (typeof val === 'string') return val;
+        if (typeof val === 'string') {
+          const match = val.match(/(\d{1,2}:\d{2})/);
+          return match ? match[1] : val;
+        }
         if (typeof val === 'object') return this.extractTimeString(val);
       }
     }
@@ -393,39 +404,57 @@ export class LiveTrackingService {
         name = resolved || code;
       }
 
+      const stUpper = (s.status || '').toString().toUpperCase();
+      const isCurrent = s.is_current === true || stUpper === 'CURRENT' || stUpper === 'AT-STATION';
+      const isDeparted = s.is_departed === true || s.has_departed === true || stUpper === 'DEPARTED' || stUpper === 'PASSED';
+
+      // Resolve delay: Priority 1: explicit numeric/string delay on stop, Priority 2: Timestamps diff, Priority 3: Top-level delay
+      let stopDelay: number | null = null;
+      if (typeof s.departure?.delay === 'number') {
+        stopDelay = s.departure.delay;
+      } else if (typeof s.arrival?.delay === 'number') {
+        stopDelay = s.arrival.delay;
+      } else if (typeof s.departure?.delay === 'string' && s.departure.delay) {
+        stopDelay = parseDelayString(s.departure.delay);
+      } else if (typeof s.arrival?.delay === 'string' && s.arrival.delay) {
+        stopDelay = parseDelayString(s.arrival.delay);
+      }
+
+      const resolvedDelay = stopDelay !== null ? stopDelay : (() => {
+        const sched = this.extractTimeString(s.arrival_time || s.arrivalTime || s.arrival?.scheduled || s.departure?.scheduled);
+        const act = this.extractTimeString(s.arrival?.actual || s.departure?.actual || s.actual_arrival || s.actual_departure);
+
+        if (sched && act && sched !== '--:--' && act !== '--:--' && sched !== 'SRC' && act !== 'DSTN') {
+          const parseHHMM = (t: string) => {
+            const match = t.match(/(\d{1,2}):(\d{2})/);
+            if (!match) return null;
+            return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+          };
+          const sM = parseHHMM(sched);
+          const aM = parseHHMM(act);
+          if (sM !== null && aM !== null) {
+            let diff = aM - sM;
+            if (diff < -720) diff += 1440;
+            return Math.max(0, diff);
+          }
+        }
+        return delayMins || 0;
+      })();
+
       return {
         station_name:   name || 'Station',
         station_code:   code || '--',
         arrival_time:   this.extractTimeString(s.arrival_time   || s.arrivalTime   || s.arrival   || s.Arrival_time),
         departure_time: this.extractTimeString(s.departure_time || s.departureTime || s.departure || s.Departure_Time),
-        // Resolve delay — Priority 1: Timestamps, Priority 2: Top-level GPS delay
-        delay_minutes: (() => {
-          const sched = this.extractTimeString(s.arrival_time || s.arrivalTime || s.arrival?.scheduled || s.departure?.scheduled);
-          const act = this.extractTimeString(s.arrival?.actual || s.departure?.actual || s.actual_arrival || s.actual_departure);
-
-          if (sched && act && sched !== '--:--' && act !== '--:--' && sched !== 'SRC' && act !== 'DSTN') {
-            const parseHHMM = (t: string) => {
-              const match = t.match(/(\d{1,2}):(\d{2})/);
-              if (!match) return null;
-              return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
-            };
-            const sM = parseHHMM(sched);
-            const aM = parseHHMM(act);
-            if (sM !== null && aM !== null) {
-              let diff = aM - sM;
-              if (diff < -720) diff += 1440;
-              return Math.max(0, diff);
-            }
-          }
-
-          // Priority 2: Fallback to real-time top-level GPS delay
-          return delayMins || 0;
-        })(),
-        is_current:  s.is_current === true || (s.status && s.status.toString().toUpperCase() === 'CURRENT') || false,
-        is_departed: s.is_departed === true || s.has_departed === true || (s.status && (s.status.toString().toUpperCase() === 'DEPARTED' || s.status.toString().toUpperCase() === 'PASSED')) || false,
-        status: s.status || (s.is_departed ? 'DEPARTED' : 'UPCOMING'),
-        station_type: classifyStation(code, name, idx, raw.length),
-        platform: s.platform || s.platform_number || s.platform_no || s.platformNumber || null
+        delay_minutes:  resolvedDelay,
+        is_current:     isCurrent,
+        is_departed:    isDeparted,
+        status:         s.status || (isDeparted ? 'DEPARTED' : isCurrent ? 'CURRENT' : 'UPCOMING'),
+        station_type:   classifyStation(code, name, idx, raw.length),
+        platform:       s.platform || s.platform_number || s.platform_no || s.platformNumber || null,
+        coordinates:    s.cord ? { lat: Number(s.cord.lat), lon: Number(s.cord.lon) } : (s.coordinates || null),
+        distance:       s.distance !== undefined ? Number(s.distance) : null,
+        is_halt:        s.isHalt !== undefined ? Boolean(s.isHalt) : true
       };
     }));
   }
@@ -538,6 +567,63 @@ export class LiveTrackingService {
       return futureStatus;
     }
 
+    // ── HISTORICAL DATE: Fetch verified journey history via RailKit getTrainHistory ──
+    if (isHistoricalRequest && requestedDateStr) {
+      winstonLogger.info(`[LIVE_HISTORICAL] ${trainNo} for past date ${requestedDateStr}: fetching verified run history`);
+      try {
+        const histData = await irctcService.getTrainHistory(trainNo, requestedDateStr);
+        if (histData && Array.isArray(histData.stations) && histData.stations.length > 0) {
+          const histTimeline: TimelineStop[] = histData.stations.map((s: any, idx: number) => {
+            const code = (s.stationCode || s.code || '--').toUpperCase().trim();
+            const name = s.stationName || s.name || code;
+            const schedArr = this.extractTimeString(s.arrival?.scheduled);
+            const actArr = this.extractTimeString(s.arrival?.actual);
+            const schedDep = this.extractTimeString(s.departure?.scheduled);
+            const actDep = this.extractTimeString(s.departure?.actual);
+            const stopDelay = parseDelayString(s.departure?.delay || s.arrival?.delay);
+
+            return {
+              station_name: name,
+              station_code: code,
+              arrival_time: actArr !== '--:--' ? actArr : schedArr,
+              departure_time: actDep !== '--:--' ? actDep : schedDep,
+              delay_minutes: stopDelay,
+              is_current: false,
+              is_departed: true,
+              status: 'COMPLETED',
+              station_type: classifyStation(code, name, idx, histData.stations.length),
+              platform: s.platform || null,
+              distance: s.distanceKm ? Number(s.distanceKm) : null,
+            };
+          });
+
+          const lastStop = histTimeline[histTimeline.length - 1];
+          const histStatus: LiveTrainStatus = {
+            train_number: trainNo,
+            train_name: histData.trainName || dbTrainName || `Train ${trainNo}`,
+            current_station: histData.destinationStationName || lastStop?.station_name || '',
+            next_station: 'Destination Reached',
+            current_station_index: histTimeline.length - 1,
+            delay_minutes: lastStop?.delay_minutes || parseDelayString(histData.totalDelay) || 0,
+            status_summary: 'Journey Completed (Historical Run)',
+            last_updated: histData.lastUpdate || new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }),
+            is_running: false,
+            is_cancelled: false,
+            journey_timeline: histTimeline,
+            api_used: 'RAILKIT_HISTORY',
+            active_journey_date: requestedDateStr,
+            coach_position: histData.coachPosition || null
+          };
+
+          cacheService.set(cacheKey, histStatus, 86400); // 24 hours
+          winstonLogger.info(`[LIVE_HISTORICAL_SUCCESS] ${trainNo} on ${requestedDateStr} via RAILKIT_HISTORY`);
+          return histStatus;
+        }
+      } catch (histErr: any) {
+        winstonLogger.warn(`[LIVE_HISTORICAL_FAIL] ${trainNo} on ${requestedDateStr}: ${histErr.message}`);
+      }
+    }
+
     let usedApi = 'DATABASE_SCHEDULE';
 
     try {
@@ -545,11 +631,16 @@ export class LiveTrackingService {
 
       const liveData = await fetchWithPriority<any>({
         irctc: async () => {
-          // getLiveStatus() uses trackTrain() — returns real-time delay data.
-          // getTrainInfo() returns only static schedule (no delay) — do NOT use for live.
+          // 1. Try RailKit V2 (WIMT) tracker first for real-time GPS coordinates, coach layout, and accurate delays
+          const v2Res = await irctcService.getLiveStatusV2(trainNo, requestedDateStr || undefined);
+          if (v2Res && !(v2Res as any).not_running && (v2Res.route || v2Res.currentLocation || v2Res.statusText)) {
+            usedApi = 'RAILKIT_V2';
+            return v2Res;
+          }
+          // 2. Fallback to V1 NTES tracker
           const res = await irctcService.getLiveStatus(trainNo, requestedDateStr || undefined);
           if (res && !(res as any).not_running) { usedApi = 'IRCTC'; return res; }
-          return res;
+          return res || v2Res;
         },
         railradar: async () => {
           const guard = await providerConfigService.isProviderEnabled('RAILRADAR');
@@ -726,16 +817,22 @@ export class LiveTrackingService {
       // --- station name ---
 
       let currentStation =
+        liveData.currentLocation?.stnName ||
         liveData.current_station_name ||
         liveData.current_station      ||
         liveData.station_name         ||
         liveData.currentStation       || '';
 
       if (!currentStation) {
-        const rawStations = liveData.stations || liveData.timeline || liveData.journey_timeline || liveData.route || [];
-        const currentStop = rawStations.find((s: any) => s.status?.toString().toLowerCase() === 'current' || s.is_current === true);
+        const rawStations = liveData.route || liveData.stations || liveData.timeline || liveData.journey_timeline || [];
+        const currentStop = rawStations.find((s: any) => s.status?.toString().toLowerCase() === 'current' || s.status === 'at-station' || s.is_current === true);
         if (currentStop) {
-          currentStation = currentStop.stationName || currentStop.station_name || currentStop.name || currentStop.stationCode || currentStop.station_code || '';
+          currentStation = currentStop.stationName || currentStop.station_name || currentStop.stnName || currentStop.name || currentStop.stationCode || currentStop.stnCode || currentStop.station_code || '';
+        } else if (liveData.statusText) {
+          const match = String(liveData.statusText).match(/(?:At|to|arriving at|departed from)\s+([^(]+)(?:\(([A-Z0-9]+)\))?/i);
+          if (match && match[1]) {
+            currentStation = match[1].trim();
+          }
         } else if (liveData.statusNote) {
           const match = String(liveData.statusNote).match(/(?:Departed from|Arrived at)\s+([^(]+)(?:\(([A-Z0-9]+)\))?/i);
           if (match && match[1]) {
@@ -748,6 +845,8 @@ export class LiveTrackingService {
       if (!currentStation) currentStation = dbSchedule[0]?.station_name || 'En Route';
 
       let nextStation =
+        liveData.nextHalt?.stnName ||
+        liveData.currentLocation?.nextStation?.stnName ||
         liveData.next_station_name ||
         liveData.next_station      || '';
       nextStation = await this.resolveStationName(nextStation);
@@ -756,6 +855,7 @@ export class LiveTrackingService {
       // Extract top-level delay (numeric field from various API shapes)
       // trackTrain() stores delay per-station as strings — handled in normalizeTimeline below.
       let delayMins: number =
+        liveData.delayMinutes  ??
         liveData.arrival_delay ??
         liveData.delay         ??
         liveData.departure_delay ??
@@ -767,7 +867,7 @@ export class LiveTrackingService {
       // (covers trackTrain() format where delay is embedded per-station)
       if (!delayMins) {
         const stationsArr: any[] =
-          liveData.stations || liveData.timeline || liveData.journey_timeline || liveData.route || [];
+          liveData.route || liveData.stations || liveData.timeline || liveData.journey_timeline || [];
         if (stationsArr.length > 0) {
           // Walk backwards to find the most recent station with a delay string
           for (let i = stationsArr.length - 1; i >= 0; i--) {
@@ -781,10 +881,10 @@ export class LiveTrackingService {
 
       // --- timeline: prefer live, fallback to DB ---
       const rawTimeline =
+        liveData.route ||
         liveData.stations ||
         liveData.timeline ||
         liveData.journey_timeline ||
-        liveData.route ||
         [];
       let liveTimeline = await this.normalizeTimeline(rawTimeline, delayMins);
 
@@ -845,11 +945,14 @@ export class LiveTrackingService {
             Station_Name:     liveName || dbName || code || '--',
             Arrival_time:     dbStop.arrival_time || dbStop.Arrival_time || '--:--',
             Departure_Time:   dbStop.departure_time || dbStop.Departure_Time || '--:--',
-            // Overlay live fields if IRCTC has a matching stop
+            // Overlay live fields if IRCTC / RailKit has a matching stop
             is_current:       live?.is_current  || false,
             is_departed:      live?.is_departed  || false,
             delay_minutes:    live?.delay_minutes ?? delayMins ?? 0,
             platform:         live?.platform     || null,
+            coordinates:      live?.coordinates  || null,
+            distance:         live?.distance !== undefined ? live.distance : null,
+            is_halt:          live?.is_halt !== undefined ? live.is_halt : true,
           };
         });
         winstonLogger.info(`[SCHEDULE_SOURCE] ${trainNo}: using DB schedule (${schedule.length} stops) over IRCTC (${liveTimeline.length} stops)`);
@@ -861,6 +964,9 @@ export class LiveTrackingService {
               Station_Name:   stop.stnName || stop.station_name || stop.name || '',
               Arrival_time:   stop.arrival || stop.arrival_time || '--:--',
               Departure_Time: stop.departure || stop.departure_time || '--:--',
+              coordinates:    stop.cord ? { lat: Number(stop.cord.lat), lon: Number(stop.cord.lon) } : null,
+              distance:       stop.distance !== undefined ? Number(stop.distance) : null,
+              is_halt:        stop.isHalt !== undefined ? Boolean(stop.isHalt) : true,
             }))
           : [];
 
@@ -872,6 +978,9 @@ export class LiveTrackingService {
                 Station_Name:   stop.station_name || stop.station_code || '--',
                 Arrival_time:   stop.arrival_time,
                 Departure_Time: stop.departure_time,
+                coordinates:    stop.coordinates || null,
+                distance:       stop.distance || null,
+                is_halt:        stop.is_halt !== undefined ? stop.is_halt : true,
               }))
             : [];
         winstonLogger.info(`[SCHEDULE_SOURCE] ${trainNo}: DB empty, using IRCTC timeline (${schedule.length} stops)`);
@@ -892,6 +1001,7 @@ export class LiveTrackingService {
       }));
 
       let currentCode = 
+        liveData.currentLocation?.stnCode ||
         liveData.current_station_code ||
         liveData.station_code ||
         liveData.currentStation ||
@@ -902,6 +1012,11 @@ export class LiveTrackingService {
         const liveCurrent = liveTimeline.find(s => s.is_current);
         if (liveCurrent?.station_code && liveCurrent.station_code !== '--') {
           currentCode = liveCurrent.station_code;
+        } else if (liveData.statusText) {
+          const match = String(liveData.statusText).match(/(?:At|to|arriving at|departed from)\s+([^(]+)\(([A-Z0-9]+)\)/i);
+          if (match && match[2]) {
+            currentCode = match[2].trim();
+          }
         } else if (liveData.statusNote) {
           const match = String(liveData.statusNote).match(/(?:Departed from|Arrived at)\s+([^(]+)\(([A-Z0-9]+)\)/i);
           if (match && match[2]) {
@@ -1103,7 +1218,10 @@ export class LiveTrackingService {
           is_departed:    isDeparted,
           status: isCurrent ? 'CURRENT' : isDeparted ? 'DEPARTED' : 'UPCOMING',
           station_type: classifyStation(stopCode, stopName, idx, fullSchedule.length),
-          platform: liveStop?.platform || null
+          platform: liveStop?.platform || null,
+          coordinates: liveStop?.coordinates || stop.coordinates || null,
+          distance: liveStop?.distance !== undefined ? liveStop.distance : (stop.distance !== undefined ? stop.distance : null),
+          is_halt: liveStop?.is_halt !== undefined ? liveStop.is_halt : (stop.is_halt !== undefined ? stop.is_halt : true),
         };
       });
 
@@ -1124,6 +1242,7 @@ export class LiveTrackingService {
 
 
       const candidateLiveName =
+        liveData.trainInfo?.[0]?.name ||
         liveData.trainInfo?.train_name ||
         liveData.trainInfo?.trainName ||
         liveData.trainInfo?.name ||
@@ -1148,11 +1267,12 @@ export class LiveTrackingService {
 
       // ── Detect if train is cancelled for this date ───────────────────────────────
 
-      // IRCTC may signal cancellation via various fields in the response.
+      // IRCTC / RailKit may signal cancellation via various fields in the response.
       const cancelCheckStr = [
         liveData.status_as_of,
         liveData.position,
         liveData.current_status,
+        liveData.statusText,
         liveData.statusNote,
         liveData.trainStatus,
         liveData.remark,
@@ -1169,29 +1289,54 @@ export class LiveTrackingService {
         winstonLogger.info(`[CANCELLED] Train ${trainNo} appears CANCELLED for ${date || 'today'}: "${cancelCheckStr.slice(0, 80)}"`);
       }
 
+      // Extract GPS coordinates from liveData or currentLocation cord or active stop cord
+      let currentLat = liveData.latitude || liveData.current_lat || liveData.lat;
+      let currentLon = liveData.longitude || liveData.current_lng || liveData.lng;
+      if ((!currentLat || !currentLon) && liveData.currentLocation?.cord) {
+        currentLat = liveData.currentLocation.cord.lat;
+        currentLon = liveData.currentLocation.cord.lon;
+      }
+      if ((!currentLat || !currentLon) && finalTimeline[actualCurrentIndex]?.coordinates) {
+        currentLat = finalTimeline[actualCurrentIndex].coordinates?.lat;
+        currentLon = finalTimeline[actualCurrentIndex].coordinates?.lon;
+      }
+
       const result: LiveTrainStatus = {
         train_number:    trainNo,
         train_name:      trainName,
         current_station: finalCurrentStation,
         next_station:    isJourneyCompleted ? 'Destination Reached' : finalNextStation,
         current_station_index: actualCurrentIndex,
-        latitude:  liveData.latitude || liveData.current_lat || liveData.lat,
-        longitude: liveData.longitude || liveData.current_lng || liveData.lng,
+        latitude:  currentLat ? Number(currentLat) : undefined,
+        longitude: currentLon ? Number(currentLon) : undefined,
         train_location:
-          liveData.latitude || liveData.current_lat || liveData.lat
+          currentLat && currentLon
             ? {
-                lat: Number(liveData.latitude || liveData.current_lat || liveData.lat),
-                lon: Number(liveData.longitude || liveData.current_lng || liveData.lng),
+                lat: Number(currentLat),
+                lon: Number(currentLon),
               }
             : null,
         delay_minutes:  delayMins,
-        status_summary: isCancelled ? 'Train Cancelled' : (isJourneyCompleted ? 'Train has reached destination' : (liveData.status_as_of || liveData.position || liveData.current_status || liveData.statusNote || 'Running')),
-        last_updated:   liveData.last_updated_time || liveData.updated_at || liveData.lastUpdate || new Date().toLocaleTimeString('en-IN'),
-        is_running:     isCancelled ? false : (isJourneyCompleted ? false : (liveData.is_running ?? true)),
+        status_summary: isCancelled
+          ? 'Train Cancelled'
+          : isJourneyCompleted
+          ? 'Train has reached destination'
+          : liveData.statusText || liveData.status_as_of || liveData.position || liveData.current_status || liveData.statusNote || 'Running',
+        last_updated:   liveData.lastUpdatedAt || liveData.last_updated_time || liveData.updated_at || liveData.lastUpdate || new Date().toLocaleTimeString('en-IN'),
+        is_running:     isCancelled ? false : (isJourneyCompleted ? false : (liveData.isLive ?? liveData.is_running ?? true)),
         is_cancelled:   isCancelled,
         journey_timeline: finalTimeline,
         api_used: usedApi,
-        active_journey_date: requestedDateStr || activeDate || todayIstStr
+        active_journey_date: requestedDateStr || activeDate || todayIstStr,
+        coach_position:
+          liveData.trainInfo?.[0]?.coachPosition ||
+          liveData.coachPosition ||
+          liveData.coach_position ||
+          null,
+        distance_to_next_km:
+          liveData.currentLocation?.distanceToNextStationKm ??
+          liveData.nextHalt?.distance ??
+          null,
       };
 
 

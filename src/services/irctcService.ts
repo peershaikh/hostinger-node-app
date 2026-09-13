@@ -55,34 +55,37 @@ export class IrctcService {
   // ── Async initializer ─────────────────────────────────────────────────────
   // Uses dynamic import() which works across the ESM / CJS boundary.
   // The server compiles to CommonJS (tsconfig: "module": "commonjs") but
-  // irctc-connect v3 ships as a pure ESM package ("type": "module").
+  // railkit v6 ships as a pure ESM package ("type": "module").
   // require() cannot load ESM; await import() can.
   private async _init(): Promise<void> {
     try {
-      const keys = await providerConfigService.getKeysFor('IRCTC');
-      if (keys.length > 0) {
+      let keys = await providerConfigService.getKeysFor('IRCTC');
+      if (!keys || keys.length === 0) {
+        keys = await providerConfigService.getKeysFor('RAILKIT');
+      }
+      if (keys && keys.length > 0) {
         this.apiKey = keys[0];
       }
     } catch (err: any) {
-      winstonLogger.error(`[IRCTC] Failed to load keys from provider config: ${err.message}`);
+      winstonLogger.error(`[RAILKIT] Failed to load keys from provider config: ${err.message}`);
     }
 
     if (!this.apiKey) {
       // PHASE_4C931 TASK 4: schedule retry instead of giving up permanently
-      winstonLogger.warn('[IRCTC_INIT_FAIL] No API key found — scheduling retry.');
+      winstonLogger.warn('[RAILKIT_INIT_FAIL] No API key found — scheduling retry.');
       this._scheduleInitRetry();
       return;
     }
 
     try {
       // Dynamic import — handles ESM packages from a CJS host.
-      const mod = await import('irctc-connect');
+      const mod = await import('railkit');
 
       // ESM default export may be wrapped: prefer .default, fall back to mod itself.
       const lib = (mod as any).default ?? mod;
 
       if (typeof lib.configure !== 'function') {
-        winstonLogger.error('[IRCTC_INIT_FAIL] irctc-connect loaded but configure() not found — package API may have changed.');
+        winstonLogger.error('[RAILKIT_INIT_FAIL] railkit loaded but configure() not found — package API may have changed.');
         this._scheduleInitRetry();
         return;
       }
@@ -91,9 +94,9 @@ export class IrctcService {
       irctc = lib;
       this.initialized = true;
       this._initRetryCount = 0; // reset on success
-      winstonLogger.info('[IRCTC_INIT_SUCCESS] irctc-connect initialized successfully. Availability and PNR features active.');
+      winstonLogger.info('[RAILKIT_INIT_SUCCESS] RailKit v6 SDK initialized successfully. Availability, PNR, and V2 tracking active.');
     } catch (e: any) {
-      winstonLogger.error(`[IRCTC_INIT_FAIL] Dynamic import of irctc-connect failed: ${e.message}`);
+      winstonLogger.error(`[RAILKIT_INIT_FAIL] Dynamic import of railkit failed: ${e.message}`);
       this._scheduleInitRetry();
     }
   }
@@ -316,6 +319,198 @@ export class IrctcService {
         winstonLogger.error(`[PROVIDER_INVALID_KEY] IRCTC: ${errStr}`);
       }
       winstonLogger.error(`[IRCTC_TRACK_FAILED] ${trainNo}: ${errStr}`);
+      return null;
+    }
+  }
+
+  /**
+   * Get real-time live running status using RailKit V2 (WIMT - Where Is My Train).
+   * Unlocks real-time GPS coordinates, speed, exact delay minutes, coach positions, and next halt distance.
+   */
+  async getLiveStatusV2(trainNo: string, date?: string) {
+    await this.ensureInit();
+    if (!this.isReady() || !trainNo) return null;
+
+    let dateStr = '';
+    if (date && typeof date === 'string' && date.includes('-')) {
+      dateStr = date.trim();
+    } else {
+      const now = new Date();
+      const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+      const istNow = new Date(utcMs + 5.5 * 3600000);
+      const dd   = String(istNow.getDate()).padStart(2, '0');
+      const mm   = String(istNow.getMonth() + 1).padStart(2, '0');
+      const yyyy = istNow.getFullYear();
+      dateStr = `${yyyy}-${mm}-${dd}`;
+    }
+
+    const cacheKey = `live_track_v2_${trainNo}_${dateStr}`;
+    const cached = cacheService.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+      winstonLogger.info(`[RAILKIT_TRACK_V2] Fetching WIMT live status for ${trainNo} on date ${dateStr}`);
+
+      if (typeof irctc.trackTrainV2 !== 'function') {
+        winstonLogger.warn('[RAILKIT_TRACK_V2] trackTrainV2 is not available in loaded SDK instance');
+        return null;
+      }
+
+      const data = await irctc.trackTrainV2(trainNo.trim(), dateStr);
+      const result = data?.data || data;
+
+      if (result) {
+        if (result.success === false || result.error) {
+          const errStr = String(result.error || 'API reported failure');
+          const isNotRunning =
+            errStr.toLowerCase().includes('not available for date') ||
+            errStr.toLowerCase().includes('not running') ||
+            errStr.toLowerCase().includes('does not run') ||
+            errStr.includes('LIVE_STATUS_FAILED');
+
+          if (isNotRunning) {
+            winstonLogger.info(`[RAILKIT_V2_NOT_RUNNING] ${trainNo}: ${errStr}`);
+            return { not_running: true, error: errStr } as any;
+          }
+
+          if (errStr.toLowerCase().includes('api key') || errStr.toLowerCase().includes('invalid key')) {
+            winstonLogger.error(`[PROVIDER_INVALID_KEY] RAILKIT: ${errStr}`);
+          }
+          winstonLogger.warn(`[RAILKIT_V2_TRACK_FAILED] ${trainNo}: ${errStr}`);
+          return null;
+        }
+
+        cacheService.set(cacheKey, result, 60); // 60s live TTL
+        winstonLogger.info(`[RAILKIT_V2_TRACK_SUCCESS] ${trainNo}`);
+        return result;
+      }
+      return null;
+    } catch (e: any) {
+      const errStr = String(e.message || '');
+      const isNotRunning =
+        errStr.toLowerCase().includes('not available for date') ||
+        errStr.toLowerCase().includes('not running') ||
+        errStr.toLowerCase().includes('does not run') ||
+        errStr.includes('LIVE_STATUS_FAILED');
+
+      if (isNotRunning) {
+        winstonLogger.info(`[RAILKIT_V2_NOT_RUNNING] ${trainNo}: ${errStr}`);
+        return { not_running: true, error: errStr } as any;
+      }
+
+      if (errStr.toLowerCase().includes('api key') || errStr.toLowerCase().includes('invalid key')) {
+        winstonLogger.error(`[PROVIDER_INVALID_KEY] RAILKIT: ${errStr}`);
+      }
+      winstonLogger.warn(`[RAILKIT_V2_TRACK_FAILED] ${trainNo}: ${errStr}`);
+      return null;
+    }
+  }
+
+  /**
+   * Get completed journey history of a train for a specific past journey date.
+   * Returns actual station-by-station timeline, per-stop delays, and final coach position.
+   */
+  async getTrainHistory(trainNo: string, journeyDate: string) {
+    await this.ensureInit();
+    if (!this.isReady() || !trainNo || !journeyDate) return null;
+
+    let formattedDate = journeyDate.trim();
+    if (formattedDate.includes('-') && formattedDate.split('-')[0].length === 4) {
+      const [y, m, d] = formattedDate.split('-');
+      formattedDate = `${d}-${m}-${y}`;
+    }
+
+    const cacheKey = `train_history_${trainNo}_${formattedDate}`;
+    const cached = cacheService.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+      winstonLogger.info(`[RAILKIT_HISTORY] Fetching journey history for ${trainNo} on date ${formattedDate}`);
+
+      if (typeof irctc.getTrainHistory !== 'function') {
+        winstonLogger.warn('[RAILKIT_HISTORY] getTrainHistory is not available in loaded SDK instance');
+        return null;
+      }
+
+      const data = await irctc.getTrainHistory(trainNo.trim(), formattedDate);
+      const result = data?.data || data;
+
+      if (result && result.success !== false && !result.error) {
+        cacheService.set(cacheKey, result, 86400); // 24 hours — historical runs are immutable
+        winstonLogger.info(`[RAILKIT_HISTORY_SUCCESS] ${trainNo} on ${formattedDate}`);
+        return result;
+      }
+      return null;
+    } catch (e: any) {
+      winstonLogger.warn(`[RAILKIT_HISTORY_FAILED] ${trainNo}: ${e.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Get the complete scheduled timetable for trains crossing a station.
+   */
+  async getStationTimetable(stationCode: string, date?: string) {
+    await this.ensureInit();
+    if (!this.isReady() || !stationCode) return null;
+
+    const normCode = stationCode.toUpperCase().trim();
+    let formattedDate: string | undefined = undefined;
+    if (date && date.includes('-')) {
+      const parts = date.trim().split('-');
+      if (parts[0].length === 4) {
+        formattedDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+      } else {
+        formattedDate = date.trim();
+      }
+    }
+
+    const cacheKey = `stn_sched_${normCode}_${formattedDate || 'all'}`;
+    const cached = cacheService.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+      if (typeof irctc.trainTimetableAtStation !== 'function') {
+        return null;
+      }
+      const data = await irctc.trainTimetableAtStation(normCode, formattedDate);
+      const result = data?.data || data;
+      if (result && result.success !== false && !result.error) {
+        cacheService.set(cacheKey, result, 3600); // 1 hr
+        return result;
+      }
+      return null;
+    } catch (e: any) {
+      winstonLogger.warn(`[RAILKIT_STN_TIMETABLE_FAILED] ${normCode}: ${e.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Get upcoming live trains at a station (Station Board).
+   */
+  async getLiveAtStation(stationCode: string, hours: 2 | 4 | 8 = 2) {
+    await this.ensureInit();
+    if (!this.isReady() || !stationCode) return null;
+
+    const normCode = stationCode.toUpperCase().trim();
+    const cacheKey = `stn_live_${normCode}_${hours}h`;
+    const cached = cacheService.get(cacheKey);
+    if (cached) return cached;
+
+    try {
+      if (typeof irctc.liveAtStation !== 'function') {
+        return null;
+      }
+      const data = await irctc.liveAtStation(normCode, hours);
+      const result = data?.data || data;
+      if (result && result.success !== false && !result.error) {
+        cacheService.set(cacheKey, result, 120); // 2 min
+        return result;
+      }
+      return null;
+    } catch (e: any) {
+      winstonLogger.warn(`[RAILKIT_LIVE_AT_STATION_FAILED] ${normCode}: ${e.message}`);
       return null;
     }
   }
