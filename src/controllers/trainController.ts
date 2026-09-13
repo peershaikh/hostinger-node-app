@@ -1119,8 +1119,15 @@ export class TrainController {
         return res.json({ success: true, data: cached });
       }
 
-      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-      const live = await liveTrackingService.getTrainRunningStatus(trainNo, today).catch(() => null);
+      // Try active journey first (handles overnight trains), then today
+      let live: any = await liveTrackingService.getTrainRunningStatus(trainNo).catch(() => null);
+      if (!live || !live.coaches || live.coaches.length === 0) {
+        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+        const todayLive: any = await liveTrackingService.getTrainRunningStatus(trainNo, today).catch(() => null);
+        if (todayLive && todayLive.coaches && todayLive.coaches.length > 0) {
+          live = todayLive;
+        }
+      }
 
       if (live) {
         const norm = normalizeLiveTrainData(live);
