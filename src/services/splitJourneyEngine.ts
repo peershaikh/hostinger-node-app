@@ -942,6 +942,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "ahmedabad-mumbai": ["ADI", "ST", "BRC"],
   "mumbai-surat": ["ST", "BRC"],
   "mumbai-nagpur": ["BSL", "NGP"],
+  // Mumbai - Bhopal corridor: prioritize ET/BSL/KNW/UJN/RTM (BPL self-hub removed)
   "mumbai-bhopal":   ["ET", "BSL", "KNW", "UJN", "RTM", "MMR", "BRC", "ST", "NAD", "JL"],
   "bhopal-mumbai":   ["ET", "BSL", "KNW", "UJN", "RTM", "MMR", "BRC", "ST", "NAD", "JL"],
   "mumbai-bpl":      ["ET", "BSL", "KNW", "UJN", "RTM", "MMR", "BRC", "ST", "NAD", "JL"],
