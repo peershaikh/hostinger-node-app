@@ -868,7 +868,20 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
 
   // —— Mumbai extended ——
   "mumbai-varanasi": ["JBP", "STA", "ET", "PCOI", "PRYJ", "MKP", "BSL", "KTE", "CNB", "DDU"],
-  "mumbai-patna": ["NGP", "ET", "PRYJ", "DDU", "PNBE"],
+  "mumbai-patna":   ["DDU", "JBP", "ET", "BSL", "STA", "PCOI", "PRYJ", "KTE", "CNB", "BXR", "ARA", "MMR"],
+  "patna-mumbai":   ["DDU", "JBP", "ET", "BSL", "STA", "PCOI", "PRYJ", "KTE", "CNB", "BXR", "ARA", "MMR"],
+  "mumbai-pnbe":    ["DDU", "JBP", "ET", "BSL", "STA", "PCOI", "PRYJ", "KTE", "CNB", "BXR", "ARA", "MMR"],
+  "pnbe-mumbai":    ["DDU", "JBP", "ET", "BSL", "STA", "PCOI", "PRYJ", "KTE", "CNB", "BXR", "ARA", "MMR"],
+  "mumbai-rjpb":    ["DDU", "JBP", "ET", "BSL", "STA", "PCOI", "PRYJ", "KTE", "CNB", "BXR", "ARA", "MMR"],
+  "rjpb-mumbai":    ["DDU", "JBP", "ET", "BSL", "STA", "PCOI", "PRYJ", "KTE", "CNB", "BXR", "ARA", "MMR"],
+  "mumbai-dnr":     ["DDU", "JBP", "ET", "BSL", "STA", "PCOI", "PRYJ", "KTE", "CNB", "BXR", "ARA", "MMR"],
+  "dnr-mumbai":     ["DDU", "JBP", "ET", "BSL", "STA", "PCOI", "PRYJ", "KTE", "CNB", "BXR", "ARA", "MMR"],
+  "mumbai-ppta":    ["DDU", "JBP", "ET", "BSL", "STA", "PCOI", "PRYJ", "KTE", "CNB", "BXR", "ARA", "MMR"],
+  "ppta-mumbai":    ["DDU", "JBP", "ET", "BSL", "STA", "PCOI", "PRYJ", "KTE", "CNB", "BXR", "ARA", "MMR"],
+  "panvel-patna":   ["DDU", "JBP", "ET", "BSL", "STA", "PCOI", "PRYJ", "KTE", "CNB", "BXR", "ARA", "MMR"],
+  "patna-panvel":   ["DDU", "JBP", "ET", "BSL", "STA", "PCOI", "PRYJ", "KTE", "CNB", "BXR", "ARA", "MMR"],
+  "panvel-pnbe":    ["DDU", "JBP", "ET", "BSL", "STA", "PCOI", "PRYJ", "KTE", "CNB", "BXR", "ARA", "MMR"],
+  "pnbe-panvel":    ["DDU", "JBP", "ET", "BSL", "STA", "PCOI", "PRYJ", "KTE", "CNB", "BXR", "ARA", "MMR"],
   "mumbai-lucknow": ["CNB", "VGLJ", "BPL", "ET", "BSL", "JHS", "BINA", "ORAI", "ST", "KOTA"],
   "mumbai-delhi": ["ST", "BRC", "RTM", "KOTA", "MTJ", "BSL", "ET", "BPL", "VGLJ", "GWL", "AGC", "ADI", "AII", "JP", "RE"],
   "mumbai-jaipur": ["KOTA", "SWM", "RTM", "BRC", "ST", "AII", "ABR", "NAD", "FL", "ADI"],
@@ -1065,7 +1078,6 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "ahmedabad-lucknow": ["RTM", "BPL", "ET", "CNB", "LKO"],
 
   // —— Patna/Bihar corridors ——
-  "patna-mumbai": ["DDU", "ET", "BSL", "NGP", "PUNE"],
   "patna-chennai": ["HWH", "BBS", "VSKP", "BZA", "MAS"],
   "patna-bangalore": ["HWH", "BBS", "BZA", "SC", "SBC"],
   "patna-hyderabad": ["HWH", "BZA", "SC"],
