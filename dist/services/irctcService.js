@@ -420,6 +420,38 @@ class IrctcService {
         }
     }
     /**
+     * Get pan-India daily cancelled & diverted trains list (cancelList).
+     * Caches for 2 hours (7200 seconds) to conserve provider quota.
+     */
+    async getCancelList() {
+        await this.ensureInit();
+        if (!this.isReady())
+            return null;
+        const todayIst = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+        const cacheKey = `daily_cancel_list_${todayIst}`;
+        const cached = cacheService_1.cacheService.get(cacheKey);
+        if (cached)
+            return cached;
+        try {
+            if (typeof irctc.cancelList !== 'function') {
+                logger_1.winstonLogger.warn('[RAILKIT_CANCEL_LIST] cancelList is not available in loaded SDK instance');
+                return null;
+            }
+            const data = await irctc.cancelList();
+            const result = data?.data || data;
+            if (result && result.success !== false && !result.error) {
+                cacheService_1.cacheService.set(cacheKey, result, 7200); // 2 hours
+                logger_1.winstonLogger.info(`[RAILKIT_CANCEL_LIST_SUCCESS] loaded for ${todayIst}`);
+                return result;
+            }
+            return null;
+        }
+        catch (e) {
+            logger_1.winstonLogger.warn(`[RAILKIT_CANCEL_LIST_FAILED] ${e.message}`);
+            return null;
+        }
+    }
+    /**
      * Get the complete scheduled timetable for trains crossing a station.
      */
     async getStationTimetable(stationCode, date) {
@@ -448,7 +480,7 @@ class IrctcService {
             const data = await irctc.trainTimetableAtStation(normCode, formattedDate);
             const result = data?.data || data;
             if (result && result.success !== false && !result.error) {
-                cacheService_1.cacheService.set(cacheKey, result, 3600); // 1 hr
+                cacheService_1.cacheService.set(cacheKey, result, 7200); // 2 hours
                 return result;
             }
             return null;

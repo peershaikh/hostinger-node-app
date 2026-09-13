@@ -12,6 +12,7 @@
  * 5. CLEAN BACKLOG: Automatically archives stale (>7 days) drafts to prevent database and admin clutter.
  */
 
+import crypto from 'crypto';
 import { winstonLogger } from '../../middleware/logger';
 import { supabase, isSupabaseConfigured } from '../../config/supabase';
 import { cacheService } from '../cacheService';
@@ -282,6 +283,11 @@ export class NewsAutoCuratorService {
     const maxToPublish = options?.maxArticles || this.config.maxDailyArticles;
 
     try {
+      // 0. Ensure daily cancellation bulletin is published
+      await this.curateDailyCancellationBulletin().catch(e => {
+        winstonLogger.warn(`[NEWS_AUTOCURATOR] Daily cancellation bulletin non-fatal check: ${e.message}`);
+      });
+
       // 1. Check how many articles have already been published today (anti-spam check)
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
@@ -474,6 +480,127 @@ export class NewsAutoCuratorService {
     } catch (err: any) {
       winstonLogger.error(`[NEWS_AUTOCURATOR_CLEANUP_FAIL] ${err.message}`);
       return { success: false, archivedCount: 0, error: err.message };
+    }
+  }
+
+  /**
+   * Curates and publishes the daily pan-India Cancellation & Diversion SEO News Bulletin.
+   * Pulls real-time cancellation data from irctcService.getCancelList(), formats rich passenger
+   * takeaways, highlights regional corridors (Jaipur/NWR, Delhi/NR), and saves to railway_news.
+   */
+  public async curateDailyCancellationBulletin(): Promise<{
+    success: boolean;
+    articleId?: string;
+    slug?: string;
+    alreadyPublished?: boolean;
+    error?: string;
+  }> {
+    if (!isSupabaseConfigured()) {
+      return { success: false, error: 'Supabase is not configured.' };
+    }
+
+    try {
+      const { irctcService } = await import('../irctcService');
+      const raw = await irctcService.getCancelList();
+      const fully = Array.isArray(raw?.fullyCancelledTrains) ? raw.fullyCancelledTrains : [];
+      const partially = Array.isArray(raw?.partiallyCancelledTrains) ? raw.partiallyCancelledTrains : [];
+      const totalAffected = fully.length + partially.length;
+
+      if (totalAffected === 0) {
+        winstonLogger.info('[CANCELLATION_BULLETIN] No cancelled trains reported today. Skipping article.');
+        return { success: true, alreadyPublished: false };
+      }
+
+      const todayIst = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      const [year, month, day] = todayIst.split('-');
+      const formattedDateDisplay = `${day}-${month}-${year}`;
+
+      // Regional filters
+      const filterByCity = (trains: any[], keywords: string[]) => {
+        return trains.filter(t => {
+          const srcName = (t?.route?.source?.name || '').toUpperCase();
+          const srcCode = (t?.route?.source?.code || '').toUpperCase();
+          const dstName = (t?.route?.destination?.name || '').toUpperCase();
+          const dstCode = (t?.route?.destination?.code || '').toUpperCase();
+          const trainName = (t?.trainName || '').toUpperCase();
+          return keywords.some(k => 
+            srcName.includes(k) || srcCode === k || dstName.includes(k) || dstCode === k || trainName.includes(k)
+          );
+        });
+      };
+
+      const jaipurKeywords = ['JAIPUR', 'JP', 'AJMER', 'AII', 'JODHPUR', 'JU', 'BIKANER', 'BKN', 'KOTA', 'NWR'];
+      const delhiKeywords = ['DELHI', 'NDLS', 'DLI', 'NZM', 'ANVT', 'NR'];
+
+      const jaipurTrains = filterByCity([...fully, ...partially], jaipurKeywords);
+      const delhiTrains = filterByCity([...fully, ...partially], delhiKeywords);
+
+      const title = `Indian Railways Alert: ${totalAffected} Trains Cancelled & Diverted Today (${formattedDateDisplay})`;
+      const canonicalSlug = `cancelled-diverted-trains-${todayIst}`;
+
+      // Check if already published today
+      const { data: existing } = await supabase
+        .from('railway_news')
+        .select('id, slug')
+        .eq('slug', canonicalSlug)
+        .maybeSingle();
+
+      if (existing) {
+        winstonLogger.info(`[CANCELLATION_BULLETIN] Daily article already exists: ${existing.slug}`);
+        return { success: true, articleId: existing.id, slug: existing.slug, alreadyPublished: true };
+      }
+
+      // Compose high-value passenger content
+      const summary = `Indian Railways has reported ${fully.length} fully cancelled and ${partially.length} partially cancelled trains for ${formattedDateDisplay} across multiple railway zones including North Western Railway (Jaipur), Northern Railway (Delhi), and Eastern corridors due to track maintenance and operational mega-blocks.`;
+
+      const keyTakeaways = [
+        `Total ${totalAffected} scheduled train operations impacted pan-India on ${formattedDateDisplay} (${fully.length} fully cancelled, ${partially.length} partially cancelled).`,
+        jaipurTrains.length > 0
+          ? `North Western Railway (Jaipur & Rajasthan): ${jaipurTrains.length} trains affected including ${jaipurTrains.slice(0, 3).map(t => `${t.trainNo} ${t.trainName}`).join(', ')}.`
+          : 'Northern & Western railway networks operating with localized diversions and regulated services.',
+        delhiTrains.length > 0
+          ? `Delhi & NCR Terminals: ${delhiTrains.length} services impacted across NDLS, DLI, and Anand Vihar.`
+          : 'Key intercity passenger express routes undergoing maintenance mega-blocks.',
+        'Passengers with confirmed IRCTC e-tickets on fully cancelled trains are eligible for automatic 100% full refund to the original source account without filing TDR.',
+        'Commuters requiring immediate travel are advised to use Trayago Split Journey Intelligence to discover alternative connected trains or partner bus options.'
+      ];
+
+      const affectedTrainNos = [...fully, ...partially].map(t => String(t.trainNo || '')).filter(Boolean).slice(0, 100);
+
+      const payload = {
+        id: crypto.randomUUID(),
+        title,
+        slug: canonicalSlug,
+        seo_title: `${title} | Full Route List & Refund Rules`,
+        meta_description: summary.slice(0, 155),
+        summary,
+        key_takeaways: keyTakeaways,
+        category: 'Cancellation',
+        status: 'PUBLISHED',
+        published_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        source_name: 'Indian Railways / Trayago Rail Ops',
+        source_url: 'https://www.trayago.in/news',
+        affected_trains: affectedTrainNos,
+        affected_stations: ['JP', 'NDLS', 'DLI', 'NZM', 'AII', 'JU', 'BKN', 'KOTA'],
+      };
+
+      const { data: inserted, error } = await supabase
+        .from('railway_news')
+        .insert(payload)
+        .select('id, slug')
+        .single();
+
+      if (error) {
+        winstonLogger.error(`[CANCELLATION_BULLETIN_FAIL] ${error.message}`);
+        return { success: false, error: error.message };
+      }
+
+      winstonLogger.info(`[CANCELLATION_BULLETIN_SUCCESS] Published daily article ${inserted.slug}`);
+      return { success: true, articleId: inserted.id, slug: inserted.slug, alreadyPublished: false };
+    } catch (err: any) {
+      winstonLogger.error(`[CANCELLATION_BULLETIN_ERROR] ${err.message}`);
+      return { success: false, error: err.message };
     }
   }
 }

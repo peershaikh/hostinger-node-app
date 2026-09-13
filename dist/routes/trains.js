@@ -39,4 +39,10 @@ router.get('/coaches/:trainNo', trainController_1.trainController.getTrainCoache
 // @route   GET /api/trains/delay-history/:trainNo
 // @desc    Return historical delay patterns for a train number
 router.get('/delay-history/:trainNo', trainController_1.trainController.getTrainDelayHistory);
+// @route   GET /api/trains/cancellations/today
+// @desc    Return today's pan-India fully & partially cancelled trains with regional highlights
+router.get('/cancellations/today', trainController_1.trainController.getDailyCancellations);
+// @route   GET /api/trains/station-timetable/:stationCode
+// @desc    Return full scheduled timetable of trains crossing a station
+router.get('/station-timetable/:stationCode', trainController_1.trainController.getStationTimetable);
 exports.default = router;

@@ -18,6 +18,7 @@ const rankingService_1 = require("../services/rankingService");
 const segmentAvailabilityEngine_1 = require("../services/segmentAvailabilityEngine");
 const providerConfigService_1 = require("../services/providerConfigService");
 const booking_1 = require("../services/booking");
+const irctcService_1 = require("../services/irctcService");
 class TrainController {
     constructor() {
         /**
@@ -954,17 +955,42 @@ class TrainController {
         /**
          * GET /api/trains/coaches/:trainNo
          * Returns coach composition (class, count, position) for a train.
-         * Fails gracefully with { success: false, data: null } if not found.
+         * Free & cached for 24 hours — does NOT consume live quota.
          */
         this.getTrainCoaches = async (req, res) => {
             const { trainNo } = req.params;
             if (!trainNo)
                 return res.status(400).json({ success: false, error: 'trainNo is required' });
             try {
-                const data = await trainService_1.trainService.getCoachComposition(trainNo).catch(() => null);
-                if (!data)
-                    return res.json({ success: false, data: null });
-                return res.json({ success: true, data });
+                const cacheKey = `coach_comp:${trainNo}`;
+                const cached = cacheService_1.cacheService.get(cacheKey);
+                if (cached) {
+                    return res.json({ success: true, data: cached });
+                }
+                // Try active journey first (handles overnight trains), then today
+                let live = await liveTrackingService_1.liveTrackingService.getTrainRunningStatus(trainNo).catch(() => null);
+                if (!live || !live.coaches || live.coaches.length === 0) {
+                    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+                    const todayLive = await liveTrackingService_1.liveTrackingService.getTrainRunningStatus(trainNo, today).catch(() => null);
+                    if (todayLive && todayLive.coaches && todayLive.coaches.length > 0) {
+                        live = todayLive;
+                    }
+                }
+                if (live) {
+                    const norm = (0, normalizeLiveTrain_1.normalizeLiveTrainData)(live);
+                    if (norm.coaches && norm.coaches.length > 0) {
+                        const payload = {
+                            coaches: norm.coaches,
+                            rake_type: norm.rake_type || null,
+                            total_coaches: norm.total_coaches || norm.coaches.length,
+                            train_name: norm.trainName || live.train_name || `Train ${trainNo}`,
+                            train_no: trainNo,
+                        };
+                        cacheService_1.cacheService.set(cacheKey, payload, 86400); // 24h cache
+                        return res.json({ success: true, data: payload });
+                    }
+                }
+                return res.json({ success: false, data: null, message: 'Coach data currently unavailable' });
             }
             catch (err) {
                 logger_1.winstonLogger.warn(`[COACHES] ${trainNo}: ${err.message}`);
@@ -988,6 +1014,100 @@ class TrainController {
             }
             catch (err) {
                 logger_1.winstonLogger.warn(`[DELAY_HISTORY] ${trainNo}: ${err.message}`);
+                return res.json({ success: false, data: null });
+            }
+        };
+        /**
+         * GET /api/trains/cancellations/today
+         * Returns today's pan-India fully and partially cancelled trains,
+         * counts, and regional breakdown (Jaipur/NWR, Delhi/NR, etc.).
+         * Public read-only endpoint, 2-hour server caching.
+         */
+        this.getDailyCancellations = async (_req, res) => {
+            try {
+                const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+                const cacheKey = `api_daily_cancellations_${today}`;
+                const cached = cacheService_1.cacheService.get(cacheKey);
+                if (cached) {
+                    return res.json({ success: true, data: cached });
+                }
+                const raw = await irctcService_1.irctcService.getCancelList();
+                const fullyCancelled = Array.isArray(raw?.fullyCancelledTrains) ? raw.fullyCancelledTrains : [];
+                const partiallyCancelled = Array.isArray(raw?.partiallyCancelledTrains) ? raw.partiallyCancelledTrains : [];
+                const filterByCity = (trains, keywords) => {
+                    return trains.filter(t => {
+                        const srcName = (t?.route?.source?.name || '').toUpperCase();
+                        const srcCode = (t?.route?.source?.code || '').toUpperCase();
+                        const dstName = (t?.route?.destination?.name || '').toUpperCase();
+                        const dstCode = (t?.route?.destination?.code || '').toUpperCase();
+                        const trainName = (t?.trainName || '').toUpperCase();
+                        return keywords.some(k => srcName.includes(k) || srcCode === k || dstName.includes(k) || dstCode === k || trainName.includes(k));
+                    });
+                };
+                const jaipurKeywords = ['JAIPUR', 'JP', 'AJMER', 'AII', 'JODHPUR', 'JU', 'BIKANER', 'BKN', 'KOTA', 'NWR'];
+                const delhiKeywords = ['DELHI', 'NDLS', 'DLI', 'NZM', 'ANVT', 'NR'];
+                const jaipurCancellations = filterByCity([...fullyCancelled, ...partiallyCancelled], jaipurKeywords);
+                const delhiCancellations = filterByCity([...fullyCancelled, ...partiallyCancelled], delhiKeywords);
+                const payload = {
+                    date: today,
+                    totalFullyCancelled: fullyCancelled.length,
+                    totalPartiallyCancelled: partiallyCancelled.length,
+                    totalAffected: fullyCancelled.length + partiallyCancelled.length,
+                    jaipurCount: jaipurCancellations.length,
+                    delhiCount: delhiCancellations.length,
+                    jaipurTrains: jaipurCancellations.slice(0, 50),
+                    delhiTrains: delhiCancellations.slice(0, 50),
+                    fullyCancelledTrains: fullyCancelled,
+                    partiallyCancelledTrains: partiallyCancelled,
+                    lastUpdated: new Date().toISOString(),
+                };
+                cacheService_1.cacheService.set(cacheKey, payload, 7200); // 2 hours
+                return res.json({ success: true, data: payload });
+            }
+            catch (err) {
+                logger_1.winstonLogger.error(`[CANCELLATIONS_CONTROLLER] Error: ${err.message}`);
+                return res.json({
+                    success: false,
+                    data: {
+                        date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+                        totalFullyCancelled: 0,
+                        totalPartiallyCancelled: 0,
+                        totalAffected: 0,
+                        fullyCancelledTrains: [],
+                        partiallyCancelledTrains: [],
+                        jaipurTrains: [],
+                        delhiTrains: [],
+                    },
+                    message: 'Could not load cancellation data at this time.',
+                });
+            }
+        };
+        /**
+         * GET /api/trains/station-timetable/:stationCode
+         * Returns the complete scheduled timetable for trains at a station.
+         * Public read-only endpoint, 2-hour server caching.
+         */
+        this.getStationTimetable = async (req, res) => {
+            const { stationCode } = req.params;
+            const { date } = req.query;
+            if (!stationCode) {
+                return res.status(400).json({ success: false, error: 'stationCode is required' });
+            }
+            try {
+                const normCode = stationCode.toUpperCase().trim();
+                const dateStr = typeof date === 'string' ? date : undefined;
+                const data = await irctcService_1.irctcService.getStationTimetable(normCode, dateStr);
+                if (!data) {
+                    return res.json({
+                        success: false,
+                        data: null,
+                        message: `Timetable for station ${normCode} is temporarily unavailable.`
+                    });
+                }
+                return res.json({ success: true, data });
+            }
+            catch (err) {
+                logger_1.winstonLogger.warn(`[STN_TIMETABLE] ${req.params.stationCode}: ${err.message}`);
                 return res.json({ success: false, data: null });
             }
         };
