@@ -89,7 +89,7 @@ export function classifyAvailabilityStatus(result: {
   const text = extractStatusText(result.data);
   if (!text) return 'UNKNOWN';
   if (/\b(REGRET|NOT\s*AVAILABLE|NO\s*SEATS)\b/i.test(text)) return 'REGRET';
-  if (/\b(CNF|CONFIRMED|AVAILABLE|AVL)\b/i.test(text)) return 'CNF';
+  if (/\b(CNF|CONFIRMED|AVAILABLE|AVL)\b/i.test(text) || /\bCURR(?:ENT)?/i.test(text)) return 'CNF';
   if (/\bRAC\b/i.test(text)) return 'RAC';
   if (/\b(WL|GNWL|RLWL|PQWL|TQWL|WL\d+)\b/i.test(text)) return 'WL';
   return 'UNKNOWN';

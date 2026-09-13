@@ -989,20 +989,35 @@ export class TrainController {
         return s || null;
       };
 
-      const buildEntry = (raw: any): { status: string; chance: number; available: boolean; probability: number | null } | null => {
+      const buildEntry = (raw: any): {
+        status: string;
+        chance: number;
+        available: boolean;
+        probability: number | null;
+        isCurrentBooking?: boolean;
+        currentBookingSeats?: number | null;
+      } | null => {
         const st = normalizeStatus(
           raw?.availabilityText || raw?.status || raw?.current_status || raw?.availability ||
           raw?.booking_status || raw?.avl_status
         );
         if (!st) return null;
         const prob = raw?.probability ?? raw?.chance ?? raw?.booking_probability ?? raw?.predictionPercentage ?? null;
-        const isCnf = st.includes('CNF') || st.includes('AVL') || st.includes('AVAILABLE');
-        const isRac = st.includes('RAC');
-        const isWl  = st.includes('WL');
+
+        // PHASE 1: Detect Current Booking (e.g. CURR_AVBL 12, CURR_AVBL, CURRENT_AVAILABLE, CURR AVBL)
+        const currMatch = st.match(/CURR(?:ENT)?[\s_-]*AV(?:B|AI)?L(?:ABLE)?[\s_-]*(\d+)?/i);
+        const isCurrAvbl = Boolean(currMatch);
+        const currSeats = currMatch && currMatch[1] ? parseInt(currMatch[1], 10) : null;
+
+        const isCnf = isCurrAvbl || st.includes('CNF') || st.includes('AVL') || st.includes('AVAILABLE');
+        const isRac = !isCurrAvbl && st.includes('RAC');
+        const isWl  = !isCurrAvbl && st.includes('WL');
         const isRegret = st.includes('REGRET') || st.includes('NOT AVAILABLE') || st.includes('NO ROOM') || st.includes('BLOCKED');
 
         let chance: number;
-        if (isCnf) {
+        if (isCurrAvbl) {
+          chance = 95;
+        } else if (isCnf) {
           chance = 90;
         } else if (isRac) {
           chance = 60;
@@ -1030,7 +1045,13 @@ export class TrainController {
         } else {
           chance = 50;
         }
-        return { status: st, available: isCnf, probability: prob, chance };
+        return {
+          status: st,
+          available: isCnf,
+          probability: prob,
+          chance,
+          ...(isCurrAvbl ? { isCurrentBooking: true, currentBookingSeats: currSeats } : {})
+        };
       };
 
       let actualData = rawData;

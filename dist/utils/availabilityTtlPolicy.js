@@ -86,7 +86,7 @@ function classifyAvailabilityStatus(result) {
         return 'UNKNOWN';
     if (/\b(REGRET|NOT\s*AVAILABLE|NO\s*SEATS)\b/i.test(text))
         return 'REGRET';
-    if (/\b(CNF|CONFIRMED|AVAILABLE|AVL)\b/i.test(text))
+    if (/\b(CNF|CONFIRMED|AVAILABLE|AVL)\b/i.test(text) || /\bCURR(?:ENT)?/i.test(text))
         return 'CNF';
     if (/\bRAC\b/i.test(text))
         return 'RAC';
