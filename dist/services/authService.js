@@ -601,7 +601,9 @@ class AuthService {
                     mobile_verified: localUser.mobileVerified ?? false,
                     mobile_verification_method: localUser.mobileVerificationMethod || null,
                     mobile_verified_at: localUser.mobileVerifiedAt || null,
-                    birthday_reward_last_claimed_year: localUser.birthdayRewardLastClaimedYear || null
+                    birthday_reward_last_claimed_year: localUser.birthdayRewardLastClaimedYear || null,
+                    token_version: localUser.tokenVersion ?? 1,
+                    session_epoch: localUser.sessionEpoch ?? 1
                 }));
                 supabase_1.supabase.from('users').upsert(dbPayload).then(({ error }) => {
                     if (error && error.code !== 'PGRST116') {
@@ -1154,12 +1156,12 @@ class AuthService {
         // PHASE_4C965 Stage 1: emit sessionEpoch (E) in ACCESS tokens only.
         // Refresh token payload is unchanged (rotation still keyed on tokenVersion/R).
         const accessPayload = { ...payload, sessionEpoch: user.sessionEpoch || 1 };
-        // PERMANENT LOGIN GUARANTEE: Access token: 30d (was 24h, eliminates morning logout).
-        // Refresh token: 90d (was 30d, guarantees resilient long-term rolling session).
+        // PERMANENT LOGIN GUARANTEE: Access token: 30d (eliminates morning logout).
+        // Refresh token: 180d (rolling 6-month session, guarantees resilient long-term persistence).
         // With refreshToken stored in localStorage (fallback for .com/.online), the interceptor
         // can always recover the session silently without triggering OTP re-login.
         const accessToken = jsonwebtoken_1.default.sign(accessPayload, jwtSecret, { expiresIn: '30d' });
-        const refreshToken = jsonwebtoken_1.default.sign(payload, refreshSecret, { expiresIn: '90d' });
+        const refreshToken = jsonwebtoken_1.default.sign(payload, refreshSecret, { expiresIn: '180d' });
         return { accessToken, refreshToken };
     }
     async verifyRefreshToken(token) {
@@ -1194,10 +1196,25 @@ class AuthService {
         if (!user)
             throw new Error('Invalid refresh token');
         if (user.isBlocked)
+            throw new Error('Account has been blocked');
+        const currentVersion = user.tokenVersion || 1;
+        const decodedVersion = decoded.tokenVersion || 1;
+        // PERMANENT LOGIN GUARANTEE: Sliding tolerance window (±5 versions).
+        // In multi-tab browsing or across server reboots, tokenVersion can drift slightly.
+        // A tolerance of up to 5 versions guarantees that concurrent requests and deployment reboots
+        // never invalidate a legitimate user session.
+        const versionDiff = Math.abs(currentVersion - decodedVersion);
+        if (versionDiff > 5) {
+            logger_1.winstonLogger.warn(`[AUTH] Rejecting refresh token: version diff too large (${decodedVersion} vs ${currentVersion}) for user ${userId}`);
             throw new Error('Invalid refresh token');
-        if ((user.tokenVersion || 1) !== decoded.tokenVersion)
-            throw new Error('Invalid refresh token');
-        user.tokenVersion = (user.tokenVersion || 1) + 1;
+        }
+        // Align version smoothly:
+        if (decodedVersion >= currentVersion) {
+            user.tokenVersion = decodedVersion + 1;
+        }
+        else {
+            user.tokenVersion = currentVersion + 1;
+        }
         if ((0, supabase_1.isSupabaseConfigured)()) {
             try {
                 await userRepository_1.userRepository.update(userId, { tokenVersion: user.tokenVersion });

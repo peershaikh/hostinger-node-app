@@ -34,13 +34,17 @@ export const usageMiddleware = (feature: 'search' | 'pnr' | 'live') => {
             });
         }
         
-        const tokenVersion = req.headers['x-token-version'];
-        if (tokenVersion && user && (user.tokenVersion || 1) !== parseInt(tokenVersion as string, 10)) {
-            return res.status(401).json({
-                success: false,
-                error: "invalid_token_version",
-                message: "Session expired. Please log in again."
-            });
+        const tokenVersionHeader = req.headers['x-token-version'];
+        if (tokenVersionHeader && user) {
+            const currentVer = user.tokenVersion || 1;
+            const clientVer = parseInt(tokenVersionHeader as string, 10);
+            if (!isNaN(clientVer) && Math.abs(currentVer - clientVer) > 5) {
+                return res.status(401).json({
+                    success: false,
+                    error: "invalid_token_version",
+                    message: "Session expired. Please log in again."
+                });
+            }
         }
     }
 

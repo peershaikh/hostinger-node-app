@@ -29,7 +29,7 @@ const REFRESH_COOKIE_OPTIONS = {
   httpOnly: true,
   secure: isProd,
   sameSite: (isProd ? 'none' : 'lax') as 'none' | 'lax',
-  maxAge: 90 * 24 * 60 * 60 * 1000, // 90 days (matches 90d refreshToken)
+  maxAge: 180 * 24 * 60 * 60 * 1000, // 180 days (matches 180d refreshToken)
   ...(cookieDomain ? { domain: cookieDomain } : {})
 };
 
@@ -456,11 +456,11 @@ export class AuthController {
         refreshToken: tokens.refreshToken,
       });
     } catch (err: any) {
-      res.clearCookie('refreshToken');
+      winstonLogger.warn(`[AUTH] refresh failed: ${err.message}`);
       return res.status(401).json({
         success: false,
-        error: 'Refresh token invalid or revoked',
-        code: 'SESSION_EXPIRED',
+        error: err.message || 'Refresh token invalid',
+        code: 'REFRESH_FAILED',
       });
     }
   };
