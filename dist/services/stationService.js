@@ -12,6 +12,7 @@ const stationMapper_1 = require("../utils/stationMapper");
 const cacheService_1 = require("./cacheService");
 const featureFlags_1 = require("../config/featureFlags");
 const OfflineStationProvider_1 = require("./OfflineStationProvider");
+const stationAliases_1 = require("./stationAliases");
 // Global city mapping (loaded once as fallback)
 let CITY_MAP = {};
 let REVERSE_CITY_MAP = {};
@@ -187,23 +188,51 @@ class StationService {
             const expandToClusters = async (codes) => {
                 if (!codes || codes.length === 0)
                     return codes;
-                const { data: registryRows } = await supabase_1.supabase
-                    .from('station_registry')
-                    .select('Station_Code, city_name')
-                    .in('Station_Code', codes);
-                if (!registryRows)
-                    return codes;
-                const cities = [...new Set(registryRows.map((r) => r.city_name).filter(Boolean))];
-                if (cities.length === 0)
-                    return codes;
-                const { data: clusterRows } = await supabase_1.supabase
-                    .from('station_registry')
-                    .select('Station_Code')
-                    .in('city_name', cities);
-                if (!clusterRows || clusterRows.length === 0)
-                    return codes;
-                const result = new Set([...codes, ...clusterRows.map((r) => r.Station_Code.toUpperCase())]);
-                return [...result];
+                const clusterExpanded = new Set(codes.map(c => c.toUpperCase().trim()));
+                // 1. Expand via curated TERMINAL_ALIASES (PAN_INDIA_CLUSTERS)
+                for (const code of codes) {
+                    const c = code.toUpperCase().trim();
+                    const aliases = stationAliases_1.TERMINAL_ALIASES[c] || [];
+                    for (const a of aliases) {
+                        clusterExpanded.add(a.toUpperCase().trim());
+                    }
+                }
+                // 2. Expand via CITY_MAP if code matches a city key
+                for (const code of codes) {
+                    const c = code.toUpperCase().trim();
+                    if (CITY_MAP[c]) {
+                        for (const stn of CITY_MAP[c]) {
+                            clusterExpanded.add(stn.toUpperCase().trim());
+                        }
+                    }
+                }
+                // 3. Expand via station_registry table using lowercase column names
+                try {
+                    const { data: registryRows } = await supabase_1.supabase
+                        .from('station_registry')
+                        .select('station_code, city_name')
+                        .in('station_code', [...clusterExpanded]);
+                    if (registryRows && registryRows.length > 0) {
+                        const cities = [...new Set(registryRows.map((r) => r.city_name).filter(Boolean))];
+                        if (cities.length > 0) {
+                            const { data: clusterRows } = await supabase_1.supabase
+                                .from('station_registry')
+                                .select('station_code')
+                                .in('city_name', cities);
+                            if (clusterRows && clusterRows.length > 0) {
+                                for (const r of clusterRows) {
+                                    const sc = (r.station_code || r.Station_Code || '').toUpperCase().trim();
+                                    if (sc)
+                                        clusterExpanded.add(sc);
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (dbErr) {
+                    // Fallback gracefully to clusterExpanded
+                }
+                return [...clusterExpanded];
             };
             // 1. Exact Station Code Match (Bypassed if registered as an alias to avoid collisions)
             if (this.isCode(cleanCity)) {
@@ -215,8 +244,8 @@ class StationService {
                 if (!isAlias || isAlias.length === 0) {
                     const { data: exactCodeRow } = await supabase_1.supabase
                         .from('station_registry')
-                        .select('Station_Code, city_name')
-                        .eq('Station_Code', cleanCity)
+                        .select('station_code, city_name')
+                        .eq('station_code', cleanCity)
                         .maybeSingle();
                     if (exactCodeRow) {
                         logger_1.winstonLogger.info(`[STATION_RESOLVE] Step 1 (Exact Station Code) hit for "${cleanCity}"`);
@@ -234,14 +263,14 @@ class StationService {
                 .eq('alias_name', cleanCity);
             const { data: cityRows } = await supabase_1.supabase
                 .from('station_registry')
-                .select('Station_Code')
+                .select('station_code')
                 .eq('city_name', cleanCity);
             let dbCodes = [];
             if (aliasRows && aliasRows.length > 0) {
                 dbCodes.push(...aliasRows.map((r) => r.station_code.toUpperCase()));
             }
             if (cityRows && cityRows.length > 0) {
-                dbCodes.push(...cityRows.map((r) => r.Station_Code.toUpperCase()));
+                dbCodes.push(...cityRows.map((r) => (r.station_code || r.Station_Code).toUpperCase()));
             }
             if (dbCodes.length > 0) {
                 logger_1.winstonLogger.info(`[STATION_RESOLVE] DB Alias/City hit for "${cleanCity}"`);
@@ -268,10 +297,10 @@ class StationService {
             // 5. Exact Station Name Match
             const { data: nameRows } = await supabase_1.supabase
                 .from('station_registry')
-                .select('Station_Code')
-                .eq('Station_Name', cleanCity);
+                .select('station_code')
+                .eq('station_name', cleanCity);
             if (nameRows && nameRows.length > 0) {
-                const codes = [...new Set(nameRows.map((r) => r.Station_Code.toUpperCase()))];
+                const codes = [...new Set(nameRows.map((r) => (r.station_code || r.Station_Code).toUpperCase()))];
                 logger_1.winstonLogger.info(`[STATION_RESOLVE] Step 5 (Exact Station Name Match) hit for "${cleanCity}" → [${codes.join(', ')}]`);
                 cacheService_1.cacheService.set(cacheKey, codes, 3600);
                 return codes;
@@ -279,11 +308,11 @@ class StationService {
             // 6. Prefix Match
             const { data: prefixRows } = await supabase_1.supabase
                 .from('station_registry')
-                .select('Station_Code')
-                .like('Station_Name', `${cleanCity}%`)
+                .select('station_code')
+                .like('station_name', `${cleanCity}%`)
                 .limit(30);
             if (prefixRows && prefixRows.length > 0) {
-                const codes = [...new Set(prefixRows.map((r) => r.Station_Code.toUpperCase()))];
+                const codes = [...new Set(prefixRows.map((r) => (r.station_code || r.Station_Code).toUpperCase()))];
                 logger_1.winstonLogger.info(`[STATION_RESOLVE] Step 6 (Prefix Match) hit for "${cleanCity}" → [${codes.join(', ')}]`);
                 cacheService_1.cacheService.set(cacheKey, codes, 3600);
                 return codes;
@@ -291,11 +320,11 @@ class StationService {
             // 7. Fuzzy Match
             const { data: fuzzyRows } = await supabase_1.supabase
                 .from('station_registry')
-                .select('Station_Code')
-                .ilike('Station_Name', `%${cleanCity}%`)
+                .select('station_code')
+                .ilike('station_name', `%${cleanCity}%`)
                 .limit(30);
             if (fuzzyRows && fuzzyRows.length > 0) {
-                const codes = [...new Set(fuzzyRows.map((r) => r.Station_Code.toUpperCase()))];
+                const codes = [...new Set(fuzzyRows.map((r) => (r.station_code || r.Station_Code).toUpperCase()))];
                 logger_1.winstonLogger.info(`[STATION_RESOLVE] Step 7 (Fuzzy Match) hit for "${cleanCity}" → [${codes.join(', ')}]`);
                 cacheService_1.cacheService.set(cacheKey, codes, 3600);
                 return codes;
@@ -339,7 +368,7 @@ class StationService {
             const { data, error } = await supabase_1.supabase
                 .from('station_registry')
                 .select('*')
-                .eq('Station_Code', cleanCode)
+                .eq('station_code', cleanCode)
                 .maybeSingle();
             if (!error && data) {
                 const normalized = {
@@ -445,7 +474,7 @@ class StationService {
                 const { data, error } = await supabase_1.supabase
                     .from('station_registry')
                     .select('*')
-                    .neq('Station_Code', cleanCode)
+                    .neq('station_code', cleanCode)
                     .gte('latitude', coords.lat - degreeDelta)
                     .lte('latitude', coords.lat + degreeDelta)
                     .gte('longitude', coords.lon - degreeDelta)

@@ -11,21 +11,27 @@ exports.normalizeForAPILegacy = normalizeForAPILegacy;
 exports.PAN_INDIA_CLUSTERS = [
     ['CSMT', 'CSTM', 'DR', 'DDR', 'BDTS', 'MMCT', 'BCT', 'LTT', 'BVI', 'PNVL', 'KYN', 'TNA'],
     ['NDLS', 'DLI', 'NZM', 'ANVT', 'DEC', 'GZB', 'DEE'],
-    ['HWH', 'SDAH', 'KOAA', 'SHM'],
+    ['HWH', 'SDAH', 'KOAA', 'SHM', 'SRC'],
     ['MAS', 'MS', 'PER', 'TBM', 'MMC'],
-    ['SBC', 'YPR', 'SMVB', 'BNC', 'KSR'],
-    ['SC', 'HYB', 'KCG'],
+    ['SBC', 'YPR', 'SMVB', 'BNC', 'KSR', 'KJM'],
+    ['SC', 'HYB', 'KCG', 'LPI'],
     ['PUNE', 'CCH', 'LNL', 'SVJR', 'KK', 'HDP'],
     ['ADI', 'SBT', 'SBIB', 'GNC'],
     ['BSB', 'BSBS', 'DDU', 'MUV', 'MGS'],
     ['PRYJ', 'PRRB', 'NYN', 'ALD', 'PCOI', 'SFG', 'COI'],
     ['PNBE', 'PPTA', 'RJPB', 'DNR'],
-    ['LKO', 'LJN', 'ASH'],
+    ['LKO', 'LJN', 'ASH', 'BNZ', 'GTNR'],
+    ['JP', 'GADJ', 'DPA', 'GTJT'],
+    ['ERS', 'ERN', 'AWY'],
+    ['TVC', 'KCVL'],
     ['GHY', 'KYQ'],
     ['ST', 'UDN'],
     ['BPL', 'RKMP', 'HBJ'],
     ['VGLJ', 'JHS'],
-    ['AY', 'AYC', 'FD']
+    ['AY', 'AYC', 'FD'],
+    ['NGP', 'AJNI'],
+    ['JBP', 'MML'],
+    ['JUC', 'JRC']
 ];
 exports.TERMINAL_ALIASES = {};
 for (const cluster of exports.PAN_INDIA_CLUSTERS) {

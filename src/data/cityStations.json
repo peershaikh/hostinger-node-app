@@ -2,12 +2,13 @@
   "AGRA": [
     "AGC",
     "AF",
-    "AGA"
+    "RKM"
   ],
   "AHMEDABAD": [
     "ADI",
     "SBT",
-    "HAPA"
+    "SBIB",
+    "GNC"
   ],
   "AJMER": [
     "AII"
@@ -95,7 +96,9 @@
     "RKMP"
   ],
   "BHUBANESWAR": [
-    "BBS"
+    "BBS",
+    "BBSN",
+    "KUR"
   ],
   "BHUJ": [
     "BHUJ"
@@ -161,7 +164,8 @@
     "NZM",
     "ANVT",
     "DEC",
-    "GZB"
+    "GZB",
+    "DEE"
   ],
   "DEORIA": [
     "DEOS"
@@ -183,9 +187,9 @@
     "ED"
   ],
   "FAIZABAD": [
-    "AY",
     "AYC",
-    "FD"
+    "FD",
+    "AY"
   ],
   "GADAG": [
     "GDG"
@@ -231,8 +235,8 @@
     "UBL"
   ],
   "HYDERABAD": [
-    "SC",
     "HYB",
+    "SC",
     "KCG",
     "LPI"
   ],
@@ -244,10 +248,12 @@
     "ET"
   ],
   "JABALPUR": [
-    "JBP"
+    "JBP",
+    "MML"
   ],
   "JAIPUR": [
     "JP",
+    "GADJ",
     "DPA",
     "GTJT"
   ],
@@ -333,7 +339,8 @@
     "LKO",
     "LJN",
     "ASH",
-    "BNZ"
+    "BNZ",
+    "GTNR"
   ],
   "LUDHIANA": [
     "LDH"
@@ -372,7 +379,11 @@
     "LTT",
     "BDTS",
     "DR",
-    "DDR"
+    "DDR",
+    "BVI",
+    "PNVL",
+    "KYN",
+    "TNA"
   ],
   "MUZAFFARPUR": [
     "MFP"
@@ -412,23 +423,24 @@
   "PATNA": [
     "PNBE",
     "PPTA",
-    "DNR",
-    "RJPB"
+    "RJPB",
+    "DNR"
   ],
   "PRAYAGRAJ": [
     "PRYJ",
     "SFG",
-    "NYN",
-    "PYGS",
     "PCOI",
+    "NYN",
     "PRRB",
     "ALD"
   ],
   "PUNE": [
     "PUNE",
-    "SHIV",
+    "SVJR",
     "KK",
-    "HDP"
+    "HDP",
+    "CCH",
+    "LNL"
   ],
   "PURI": [
     "PURI"
@@ -523,7 +535,8 @@
     "TPJ"
   ],
   "TRIVANDRUM": [
-    "TVC"
+    "TVC",
+    "KCVL"
   ],
   "UDAIPUR": [
     "UDZ"
@@ -547,7 +560,9 @@
   "VARANASI": [
     "BSB",
     "BSBS",
-    "DDU"
+    "DDU",
+    "MUV",
+    "MGS"
   ],
   "VASAI": [
     "BSR"
@@ -567,5 +582,50 @@
   ],
   "WARANGAL": [
     "WL"
+  ],
+  "BOMBAY": [
+    "CSMT",
+    "MMCT",
+    "LTT",
+    "BDTS",
+    "DR",
+    "DDR",
+    "BVI",
+    "PNVL",
+    "KYN",
+    "TNA"
+  ],
+  "NEW DELHI": [
+    "NDLS",
+    "DLI",
+    "NZM",
+    "ANVT",
+    "DEC",
+    "GZB",
+    "DEE"
+  ],
+  "ALLAHABAD": [
+    "PRYJ",
+    "SFG",
+    "PCOI",
+    "NYN",
+    "PRRB",
+    "ALD"
+  ],
+  "BANARAS": [
+    "BSBS",
+    "BSB",
+    "DDU",
+    "MUV",
+    "MGS"
+  ],
+  "ERNAKULAM": [
+    "ERS",
+    "ERN",
+    "AWY"
+  ],
+  "THIRUVANANTHAPURAM": [
+    "TVC",
+    "KCVL"
   ]
 }

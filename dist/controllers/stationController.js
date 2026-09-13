@@ -29,46 +29,105 @@ class StationController {
                     { Station_Code: 'LTT', Station_Name: 'Lokmanya Tilak Terminus' },
                     { Station_Code: 'BDTS', Station_Name: 'Bandra Terminus' },
                     { Station_Code: 'MMCT', Station_Name: 'Mumbai Central' },
-                    { Station_Code: 'DR', Station_Name: 'Dadar' }
+                    { Station_Code: 'DR', Station_Name: 'Dadar' },
+                    { Station_Code: 'BVI', Station_Name: 'Borivali' },
+                    { Station_Code: 'PNVL', Station_Name: 'Panvel' },
+                    { Station_Code: 'KYN', Station_Name: 'Kalyan' },
+                    { Station_Code: 'TNA', Station_Name: 'Thane' }
                 ],
                 'BOMBAY': [
                     { Station_Code: 'CSMT', Station_Name: 'Mumbai CSMT' },
                     { Station_Code: 'LTT', Station_Name: 'Lokmanya Tilak Terminus' },
                     { Station_Code: 'BDTS', Station_Name: 'Bandra Terminus' },
                     { Station_Code: 'MMCT', Station_Name: 'Mumbai Central' },
-                    { Station_Code: 'DR', Station_Name: 'Dadar' }
+                    { Station_Code: 'DR', Station_Name: 'Dadar' },
+                    { Station_Code: 'BVI', Station_Name: 'Borivali' },
+                    { Station_Code: 'PNVL', Station_Name: 'Panvel' },
+                    { Station_Code: 'KYN', Station_Name: 'Kalyan' },
+                    { Station_Code: 'TNA', Station_Name: 'Thane' }
                 ],
                 'DELHI': [
                     { Station_Code: 'NDLS', Station_Name: 'New Delhi' },
                     { Station_Code: 'DLI', Station_Name: 'Old Delhi' },
                     { Station_Code: 'NZM', Station_Name: 'Hazrat Nizamuddin' },
-                    { Station_Code: 'ANVT', Station_Name: 'Anand Vihar' }
+                    { Station_Code: 'ANVT', Station_Name: 'Anand Vihar' },
+                    { Station_Code: 'DEE', Station_Name: 'Delhi Sarai Rohilla' },
+                    { Station_Code: 'DEC', Station_Name: 'Delhi Cantt' }
+                ],
+                'NEW DELHI': [
+                    { Station_Code: 'NDLS', Station_Name: 'New Delhi' },
+                    { Station_Code: 'DLI', Station_Name: 'Old Delhi' },
+                    { Station_Code: 'NZM', Station_Name: 'Hazrat Nizamuddin' },
+                    { Station_Code: 'ANVT', Station_Name: 'Anand Vihar' },
+                    { Station_Code: 'DEE', Station_Name: 'Delhi Sarai Rohilla' },
+                    { Station_Code: 'DEC', Station_Name: 'Delhi Cantt' }
                 ],
                 'BANGALORE': [
                     { Station_Code: 'SBC', Station_Name: 'KSR Bengaluru' },
                     { Station_Code: 'YPR', Station_Name: 'Yesvantpur' },
-                    { Station_Code: 'SMVB', Station_Name: 'SMVT Bengaluru' }
+                    { Station_Code: 'SMVB', Station_Name: 'SMVT Bengaluru' },
+                    { Station_Code: 'KJM', Station_Name: 'Krishnarajapuram' }
                 ],
                 'BENGALURU': [
                     { Station_Code: 'SBC', Station_Name: 'KSR Bengaluru' },
                     { Station_Code: 'YPR', Station_Name: 'Yesvantpur' },
-                    { Station_Code: 'SMVB', Station_Name: 'SMVT Bengaluru' }
+                    { Station_Code: 'SMVB', Station_Name: 'SMVT Bengaluru' },
+                    { Station_Code: 'KJM', Station_Name: 'Krishnarajapuram' }
                 ],
                 'CHENNAI': [
                     { Station_Code: 'MAS', Station_Name: 'Chennai Central' },
                     { Station_Code: 'MS', Station_Name: 'Chennai Egmore' },
-                    { Station_Code: 'PER', Station_Name: 'Perambur' }
+                    { Station_Code: 'PER', Station_Name: 'Perambur' },
+                    { Station_Code: 'TBM', Station_Name: 'Tambaram' }
                 ],
                 'KOLKATA': [
                     { Station_Code: 'HWH', Station_Name: 'Howrah' },
                     { Station_Code: 'SDAH', Station_Name: 'Sealdah' },
                     { Station_Code: 'KOAA', Station_Name: 'Kolkata' },
-                    { Station_Code: 'SHM', Station_Name: 'Shalimar' }
+                    { Station_Code: 'SHM', Station_Name: 'Shalimar' },
+                    { Station_Code: 'SRC', Station_Name: 'Santragachi Jn' }
                 ],
                 'HYDERABAD': [
                     { Station_Code: 'SC', Station_Name: 'Secunderabad' },
                     { Station_Code: 'HYB', Station_Name: 'Hyderabad Deccan' },
-                    { Station_Code: 'KCG', Station_Name: 'Kacheguda' }
+                    { Station_Code: 'KCG', Station_Name: 'Kacheguda' },
+                    { Station_Code: 'LPI', Station_Name: 'Lingampalli' }
+                ],
+                'SECUNDERABAD': [
+                    { Station_Code: 'SC', Station_Name: 'Secunderabad' },
+                    { Station_Code: 'HYB', Station_Name: 'Hyderabad Deccan' },
+                    { Station_Code: 'KCG', Station_Name: 'Kacheguda' },
+                    { Station_Code: 'LPI', Station_Name: 'Lingampalli' }
+                ],
+                'LUCKNOW': [
+                    { Station_Code: 'LKO', Station_Name: 'Lucknow Charbagh (NR)' },
+                    { Station_Code: 'LJN', Station_Name: 'Lucknow Junction (NER)' },
+                    { Station_Code: 'ASH', Station_Name: 'Aishbagh Junction' },
+                    { Station_Code: 'BNZ', Station_Name: 'Badshahnagar' },
+                    { Station_Code: 'GTNR', Station_Name: 'Gomti Nagar' }
+                ],
+                'PATNA': [
+                    { Station_Code: 'PNBE', Station_Name: 'Patna Junction' },
+                    { Station_Code: 'PPTA', Station_Name: 'Patliputra Junction' },
+                    { Station_Code: 'RJPB', Station_Name: 'Rajendra Nagar Terminal' },
+                    { Station_Code: 'DNR', Station_Name: 'Danapur' }
+                ],
+                'JAIPUR': [
+                    { Station_Code: 'JP', Station_Name: 'Jaipur Junction' },
+                    { Station_Code: 'GADJ', Station_Name: 'Gandhinagar Jaipur' },
+                    { Station_Code: 'DPA', Station_Name: 'Durgapura' }
+                ],
+                'AHMEDABAD': [
+                    { Station_Code: 'ADI', Station_Name: 'Ahmedabad Junction' },
+                    { Station_Code: 'SBT', Station_Name: 'Sabarmati Jn' },
+                    { Station_Code: 'SBIB', Station_Name: 'Sabarmati BG' },
+                    { Station_Code: 'GNC', Station_Name: 'Gandhinagar Capital' }
+                ],
+                'PUNE': [
+                    { Station_Code: 'PUNE', Station_Name: 'Pune Junction' },
+                    { Station_Code: 'SVJR', Station_Name: 'Shivajinagar' },
+                    { Station_Code: 'HDP', Station_Name: 'Hadapsar' },
+                    { Station_Code: 'CCH', Station_Name: 'Chinchwad' }
                 ],
                 'PRAYAGRAJ': [
                     { Station_Code: 'PRYJ', Station_Name: 'Prayagraj Junction' },
