@@ -13,11 +13,15 @@ exports.router = (0, express_1.Router)();
 exports.router.get('/banner', contentController_1.contentController.getActiveBanners);
 exports.router.get('/campaigns', contentController_1.contentController.getActiveCampaigns);
 exports.router.get('/referral-offers', contentController_1.contentController.getActiveReferralOffers);
+exports.router.get('/popup-offer', contentController_1.contentController.getPopupOffer);
 // ==========================================
 // ADMIN ENDPOINTS
 // Require JWT + verified admin role (PHASE_4C837 P0-003)
 // ==========================================
 exports.router.use('/admin', authMiddleware_1.requireAuth, adminAuth_1.requireAdmin);
+// Popup Offer & In-App Promotional Engine (Phase 2)
+exports.router.get('/admin/popup-offer', contentController_1.contentController.getPopupOffer);
+exports.router.post('/admin/popup-offer', contentController_1.contentController.updatePopupOffer);
 // Banners
 exports.router.get('/admin/banners', contentController_1.contentController.getBanners);
 exports.router.post('/admin/banners', contentController_1.contentController.createBanner);

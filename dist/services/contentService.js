@@ -1,8 +1,15 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.contentService = exports.ContentService = void 0;
 const supabase_js_1 = require("@supabase/supabase-js");
 const supabase_1 = require("../config/supabase");
+const fs_1 = __importDefault(require("fs"));
+const path_1 = __importDefault(require("path"));
+const betaService_1 = require("./betaService");
+const logger_1 = require("../middleware/logger");
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
 let supabase = null;
@@ -359,6 +366,75 @@ class ContentService {
         if (error)
             throw new Error(error.message);
         return true;
+    }
+    // -------------------------------------------------------------
+    // Promotional In-App Popup & Campaign Engine (Phase 2)
+    // -------------------------------------------------------------
+    async getPopupOffer() {
+        const defaultOffer = {
+            isActive: true,
+            title: "Festive Travel Freedom Offer",
+            subtitle: "Get 30 Days of Safar Pro Monthly for just ₹19! Unlimited AI split routes, zero-waitlist discoveries & live tracking.",
+            badgeText: "SPECIAL PROMO",
+            offerPrice: "₹19",
+            originalPrice: "₹49",
+            couponCode: "OFFER19",
+            planType: "safar_pro_30d",
+            durationDays: 30,
+            ctaText: "Claim 1 Month Pro for ₹19",
+            features: [
+                "Unlimited AI Hidden Split Journeys",
+                "Live Train GPS & Delay Alerts",
+                "Instant PNR Confirmation Probabilities",
+                "High Priority Support & Auto-Refresh"
+            ]
+        };
+        const filePath = path_1.default.join(__dirname, '../../data/popup_offer.json');
+        if (fs_1.default.existsSync(filePath)) {
+            try {
+                const raw = fs_1.default.readFileSync(filePath, 'utf8');
+                return { ...defaultOffer, ...JSON.parse(raw) };
+            }
+            catch (err) {
+                logger_1.winstonLogger.warn(`[POPUP_OFFER] Failed to parse local offer file: ${err}`);
+            }
+        }
+        return defaultOffer;
+    }
+    async updatePopupOffer(payload) {
+        const filePath = path_1.default.join(__dirname, '../../data/popup_offer.json');
+        const current = await this.getPopupOffer();
+        const updated = {
+            ...current,
+            ...payload,
+            updatedAt: new Date().toISOString()
+        };
+        try {
+            const dataDir = path_1.default.dirname(filePath);
+            if (!fs_1.default.existsSync(dataDir)) {
+                fs_1.default.mkdirSync(dataDir, { recursive: true });
+            }
+            fs_1.default.writeFileSync(filePath, JSON.stringify(updated, null, 2), 'utf8');
+        }
+        catch (err) {
+            logger_1.winstonLogger.warn(`[POPUP_OFFER] Error saving local offer file: ${err.message}`);
+        }
+        // Auto-register/sync coupon code with betaService
+        if (updated.couponCode) {
+            try {
+                await betaService_1.betaService.upsertPromoCode({
+                    code: updated.couponCode,
+                    description: `Popup Offer: ${updated.title || 'Special Promotion'}`,
+                    targetPlan: updated.planType || 'safar_pro_30d',
+                    durationDays: Number(updated.durationDays) || 30,
+                    isActive: !!updated.isActive
+                });
+            }
+            catch (betaErr) {
+                logger_1.winstonLogger.warn(`[POPUP_OFFER_COUPON_SYNC_FAIL] ${betaErr.message}`);
+            }
+        }
+        return updated;
     }
 }
 exports.ContentService = ContentService;

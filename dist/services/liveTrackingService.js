@@ -534,7 +534,8 @@ class LiveTrackingService {
                         journey_timeline: histTimeline,
                         api_used: 'RAILKIT_HISTORY',
                         active_journey_date: requestedDateStr,
-                        coach_position: histData.coachPosition || null
+                        coach_position: histData.coachPosition || null,
+                        rake_type: histData.rakeType || null
                     };
                     cacheService_1.cacheService.set(cacheKey, histStatus, 86400); // 24 hours
                     logger_1.winstonLogger.info(`[LIVE_HISTORICAL_SUCCESS] ${trainNo} on ${requestedDateStr} via RAILKIT_HISTORY`);
@@ -1182,6 +1183,10 @@ class LiveTrackingService {
                 coach_position: liveData.trainInfo?.[0]?.coachPosition ||
                     liveData.coachPosition ||
                     liveData.coach_position ||
+                    null,
+                rake_type: liveData.trainInfo?.[0]?.rakeType ||
+                    liveData.rakeType ||
+                    liveData.rake_type ||
                     null,
                 distance_to_next_km: liveData.currentLocation?.distanceToNextStationKm ??
                     liveData.nextHalt?.distance ??

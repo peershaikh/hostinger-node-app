@@ -11,6 +11,109 @@ function extractTimeString(timeVal: any): string {
   return '--:--';
 }
 
+export interface FormattedCoach {
+  code: string;
+  name: string;
+  category: string;
+  type: string;
+  color: string;
+  position: number;
+}
+
+export function parseCoachPosition(coachData: any): FormattedCoach[] {
+  if (!coachData) return [];
+
+  // 1. Array of coach objects (e.g. from getTrainHistory)
+  if (Array.isArray(coachData)) {
+    return coachData.map((item: any, idx: number) => {
+      const code = (item.number || item.code || item.coach || item.type || `C${idx + 1}`).toString().trim().toUpperCase();
+      const meta = getCoachMetadata(code);
+      return {
+        code,
+        name: item.name || meta.name,
+        category: meta.category,
+        type: meta.type,
+        color: meta.color,
+        position: item.position !== undefined ? Number(item.position) : idx + 1,
+      };
+    });
+  }
+
+  // 2. Comma or space-separated string (e.g. from WIMT trackTrainV2: "L,EOG,GS,GS,A2,A1,B4...")
+  if (typeof coachData === 'string') {
+    const rawTokens = coachData
+      .split(/[,|\s]+/)
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+
+    return rawTokens.map((code, idx) => {
+      const meta = getCoachMetadata(code);
+      return {
+        code,
+        name: meta.name,
+        category: meta.category,
+        type: meta.type,
+        color: meta.color,
+        position: idx + 1,
+      };
+    });
+  }
+
+  return [];
+}
+
+function getCoachMetadata(rawCode: string): { name: string; category: string; type: string; color: string } {
+  const code = rawCode.toUpperCase();
+
+  if (code === 'L' || code === 'ENG' || code === 'LOCO' || code === 'ENGINE') {
+    return { name: 'Locomotive Engine', category: 'ENG', type: 'engine', color: 'zinc' };
+  }
+  if (code === 'EOG' || code === 'LPR' || code === 'PWR') {
+    return { name: 'Power Car / End-On Generation', category: 'EOG', type: 'generator', color: 'slate' };
+  }
+  if (code === 'SLR' || code === 'SLRD' || code === 'VP' || code === 'HCP' || code === 'VPU') {
+    return { name: 'Seating cum Luggage Rake / Parcel', category: 'SLR', type: 'luggage', color: 'slate' };
+  }
+  if (code === 'GS' || code === 'GEN' || code === 'UR') {
+    return { name: 'General Unreserved (Second Class)', category: 'GS', type: 'general', color: 'amber' };
+  }
+  if (code.startsWith('H') && !code.startsWith('HA') && !code.startsWith('HCP')) {
+    return { name: `AC First Class (1A) - ${code}`, category: '1A', type: 'ac1', color: 'rose' };
+  }
+  if (code.startsWith('HA')) {
+    return { name: `AC First + AC 2-Tier Composite - ${code}`, category: 'HA', type: 'composite', color: 'indigo' };
+  }
+  if (code.startsWith('A') && !code.startsWith('AE')) {
+    return { name: `AC 2-Tier (2A) - ${code}`, category: '2A', type: 'ac2', color: 'blue' };
+  }
+  if (code.startsWith('AE')) {
+    return { name: `AC 2-Tier Economy / Special - ${code}`, category: '2A', type: 'ac2', color: 'blue' };
+  }
+  if (code.startsWith('B')) {
+    return { name: `AC 3-Tier (3A) - ${code}`, category: '3A', type: 'ac3', color: 'teal' };
+  }
+  if (code.startsWith('M')) {
+    return { name: `AC 3 Economy (3E) - ${code}`, category: '3E', type: 'ac3e', color: 'cyan' };
+  }
+  if (code.startsWith('C')) {
+    return { name: `AC Chair Car (CC) - ${code}`, category: 'CC', type: 'chair', color: 'sky' };
+  }
+  if (code.startsWith('E') && code !== 'EOG') {
+    return { name: `Executive AC Chair Car (EC) - ${code}`, category: 'EC', type: 'exec_chair', color: 'violet' };
+  }
+  if (code.startsWith('S') && !code.startsWith('SLR') && !code.startsWith('SLRD')) {
+    return { name: `Sleeper Class (SL) - ${code}`, category: 'SL', type: 'sleeper', color: 'emerald' };
+  }
+  if (code.startsWith('D')) {
+    return { name: `Second Sitting (2S) - ${code}`, category: '2S', type: 'sitting', color: 'orange' };
+  }
+  if (code === 'PC' || code === 'PANTRY') {
+    return { name: 'Pantry Car (Catering)', category: 'PC', type: 'pantry', color: 'purple' };
+  }
+
+  return { name: `Coach ${code}`, category: 'OTHER', type: 'other', color: 'slate' };
+}
+
 export function normalizeLiveTrainData(rawData: any) {
   
   // Try to find the current station from timeline if it exists
@@ -35,6 +138,26 @@ export function normalizeLiveTrainData(rawData: any) {
     rawData.data?.train_name ||
     "";
   let activeJourneyDate = rawData.active_journey_date || rawData.activeJourneyDate || null;
+
+  // Extract coach information from various provider patterns
+  const rawCoachPosition =
+    rawData.coach_position ||
+    rawData.coachPosition ||
+    rawData.trainInfo?.[0]?.coachPosition ||
+    rawData.trainInfo?.coachPosition ||
+    rawData.data?.trainInfo?.[0]?.coachPosition ||
+    null;
+
+  const rawRakeType =
+    rawData.rake_type ||
+    rawData.rakeType ||
+    rawData.trainInfo?.[0]?.rakeType ||
+    rawData.trainInfo?.rakeType ||
+    rawData.data?.trainInfo?.[0]?.rakeType ||
+    null;
+
+  const coaches = parseCoachPosition(rawCoachPosition);
+  const totalCoaches = coaches.length;
 
   // Compute from timeline if current index is valid
   if (stations.length > 0) {
@@ -109,5 +232,11 @@ export function normalizeLiveTrainData(rawData: any) {
     is_cancelled: rawData.is_cancelled || false,
     api_used: rawData.api_used || rawData.apiUsed || '',
     is_ai_estimated: rawData.is_ai_estimated || rawData.api_used === 'GEMINI_AI' || false,
+    coach_position: rawCoachPosition,
+    coachPosition: rawCoachPosition,
+    rake_type: rawRakeType,
+    rakeType: rawRakeType,
+    coaches,
+    total_coaches: totalCoaches,
   };
 }

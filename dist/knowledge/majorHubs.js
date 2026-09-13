@@ -9,10 +9,10 @@ exports.isMajorHub = isMajorHub;
 const stationAliases_1 = require("../services/stationAliases");
 exports.MAJOR_HUBS = [
     'NDLS', 'CSMT', 'HWH', 'SBC', 'MAS', 'SC', 'PNBE', 'LKO', 'CNB', 'ADI',
-    'BPL', 'JP', 'NGP', 'BBS', 'GHY', 'CDG', 'BSB', 'PRYJ', 'DDU', 'KGP',
+    'BPL', 'JP', 'NGP', 'BBS', 'GHY', 'CDG', 'BSB', 'PRYJ', 'PCOI', 'DDU', 'KGP',
     'VSKP', 'BZA', 'GNT', 'UBL', 'PUNE', 'ST', 'BRC', 'KOTA', 'AGC', 'GWL',
     'JHS', 'GKP', 'BST', 'GD', 'MFP', 'SPJ', 'GAYA', 'BGP', 'MGS', 'ASN',
-    'DHN', 'TATA', 'RNC', 'RYP', 'BSP', 'JBP', 'ET', 'BSL', 'MMR', 'NK',
+    'DHN', 'TATA', 'RNC', 'RYP', 'BSP', 'JBP', 'STA', 'MKP', 'KTE', 'ET', 'BSL', 'MMR', 'NK',
     'BVI', 'SUR', 'GR', 'RC', 'GTL', 'RU', 'KPD', 'ED', 'CBE', 'PGT',
     'SRR', 'ERS', 'TVC', 'MDU', 'TPJ', 'VM', 'CGL',
     'RJT', 'BVC', 'MAO', 'RN', 'MAJN', 'KCG', 'SHM', 'MLDT', 'NJP', 'DBRG',

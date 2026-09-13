@@ -17,12 +17,15 @@ exports.PAN_INDIA_CLUSTERS = [
     ['SC', 'HYB', 'KCG'],
     ['PUNE', 'CCH', 'LNL', 'SVJR', 'KK', 'HDP'],
     ['ADI', 'SBT', 'SBIB', 'GNC'],
-    ['BSB', 'BSBS', 'DDU', 'MUV'],
-    ['PRYJ', 'PRRB', 'NYN', 'ALD'],
+    ['BSB', 'BSBS', 'DDU', 'MUV', 'MGS'],
+    ['PRYJ', 'PRRB', 'NYN', 'ALD', 'PCOI', 'SFG', 'COI'],
     ['PNBE', 'PPTA', 'RJPB', 'DNR'],
     ['LKO', 'LJN', 'ASH'],
     ['GHY', 'KYQ'],
-    ['ST', 'UDN']
+    ['ST', 'UDN'],
+    ['BPL', 'RKMP', 'HBJ'],
+    ['VGLJ', 'JHS'],
+    ['AY', 'AYC', 'FD']
 ];
 exports.TERMINAL_ALIASES = {};
 for (const cluster of exports.PAN_INDIA_CLUSTERS) {
@@ -40,6 +43,14 @@ exports.IRCTC_CANONICAL = {
     SBT: 'ADI',
     // PHASE_5B037 — Bengaluru: Yeshwantpur → SBC (IRCTC canonical)
     YPR: 'SBC',
+    // Renamed station aliases to modern operational codes
+    ALD: 'PRYJ',
+    COI: 'PCOI',
+    MGS: 'DDU',
+    MUV: 'BSBS',
+    JHS: 'VGLJ',
+    HBJ: 'RKMP',
+    FD: 'AYC',
 };
 function areStationsCompatible(code1, code2) {
     const c1 = code1.toUpperCase().trim();

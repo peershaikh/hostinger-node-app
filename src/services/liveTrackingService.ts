@@ -30,6 +30,7 @@ export interface LiveTrainStatus {
   api_used: string;
   active_journey_date?: string;
   coach_position?: string | any[] | null;
+  rake_type?: string | null;
   distance_to_next_km?: number | null;
 }
 
@@ -612,7 +613,8 @@ export class LiveTrackingService {
             journey_timeline: histTimeline,
             api_used: 'RAILKIT_HISTORY',
             active_journey_date: requestedDateStr,
-            coach_position: histData.coachPosition || null
+            coach_position: histData.coachPosition || null,
+            rake_type: histData.rakeType || null
           };
 
           cacheService.set(cacheKey, histStatus, 86400); // 24 hours
@@ -1332,6 +1334,11 @@ export class LiveTrackingService {
           liveData.trainInfo?.[0]?.coachPosition ||
           liveData.coachPosition ||
           liveData.coach_position ||
+          null,
+        rake_type:
+          liveData.trainInfo?.[0]?.rakeType ||
+          liveData.rakeType ||
+          liveData.rake_type ||
           null,
         distance_to_next_km:
           liveData.currentLocation?.distanceToNextStationKm ??

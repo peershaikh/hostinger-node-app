@@ -801,7 +801,10 @@ class SegmentAvailabilityEngine {
             return [];
         const intermediateStops = stops.filter(s => {
             const sn = Number(s.SN);
-            return sn > srcSn && sn < destSn && (0, majorHubs_1.isMajorHub)(s.Station_Code);
+            return sn > srcSn && sn < destSn
+                && (0, majorHubs_1.isMajorHub)(s.Station_Code)
+                && !(0, stationAliases_2.areStationsCompatible)(s.Station_Code, srcStop.Station_Code)
+                && !(0, stationAliases_2.areStationsCompatible)(s.Station_Code, destStop.Station_Code);
         });
         if (intermediateStops.length === 0)
             return [];

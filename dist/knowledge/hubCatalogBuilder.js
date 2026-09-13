@@ -31,7 +31,10 @@ async function buildHubCandidatesFromStops(stops, srcCode, destCode) {
         const isBetween = srcSn < destSn
             ? s.SN > srcSn && s.SN < destSn
             : s.SN < srcSn && s.SN > destSn;
-        return isBetween && (0, majorHubs_1.isMajorHub)(s.Station_Code);
+        return isBetween
+            && (0, majorHubs_1.isMajorHub)(s.Station_Code)
+            && !(0, stationAliases_1.areStationsCompatible)(s.Station_Code, srcStop.Station_Code)
+            && !(0, stationAliases_1.areStationsCompatible)(s.Station_Code, destStop.Station_Code);
     });
     if (intermediateStops.length === 0)
         return [];

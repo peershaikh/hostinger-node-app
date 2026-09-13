@@ -1,164 +1,571 @@
 {
-    "AGRA": ["AGC", "AF", "AGA"],
-    "AHMEDABAD": ["ADI", "SBT", "HAPA"],
-    "AJMER": ["AII"],
-    "AKOLA": ["AK"],
-    "ALIGARH": ["ALJN"],
-    "ALIPURDUAR": ["APDJ"],
-    "AMBALA": ["UMB"],
-    "AMRAVATI": ["AMI"],
-    "AMRITSAR": ["ASR"],
-    "ANAND": ["ANND"],
-    "ARA": ["ARA"],
-    "ASANSOL": ["ASN"],
-    "AURANGABAD": ["AWB"],
-    "AYODHYA": ["AY", "AYC", "FD"],
-    "BALLARI": ["BAY"],
-    "BANGALORE": ["SBC", "YPR", "KJM", "SMVB", "BNC", "BLR"],
-    "BAREILLY": ["BE"],
-    "BASTI": ["BST"],
-    "BELAGAVI": ["BGM"],
-    "BELGAUM": ["BGM"],
-    "BENGALURU": ["SBC", "YPR", "KJM", "SMVB", "BNC", "BLR"],
-    "BHAGALPUR": ["BGP"],
-    "BHARUCH": ["BH"],
-    "BHAVNAGAR": ["BVC"],
-    "BHILAI": ["BPHB"],
-    "BHOPAL": ["BPL", "RKMP"],
-    "BHUBANESWAR": ["BBS"],
-    "BHUJ": ["BHUJ"],
-    "BIKANER": ["BKN"],
-    "BILASPUR": ["BSP"],
-    "BOISAR": ["BOR"],
-    "BOKARO": ["BKSC"],
-    "BUXAR": ["BXR"],
-    "CALICUT": ["CLT"],
-    "CHANDIGARH": ["CDG"],
-    "CHENNAI": ["MAS", "MS", "TBM", "PER"],
-    "CHHAPRA": ["CPR", "CHPG"],
-    "COIMBATORE": ["CBE"],
-    "COOCH BEHAR": ["NCB"],
-    "COZIKHODE": ["CLT"],
-    "CUTTACK": ["CTC"],
-    "DAHANU": ["DRD"],
-    "DAHOD": ["DHD"],
-    "DARBHANGA": ["DBG"],
-    "DEHRADUN": ["DDN"],
-    "DELHI": ["NDLS", "DLI", "NZM", "ANVT", "DEC", "GZB"],
-    "DEORIA": ["DEOS"],
-    "DHANBAD": ["DHN"],
-    "DHARWAD": ["DWR"],
-    "DIBRUGARH": ["DBRG", "DBRT"],
-    "DURG": ["DURG"],
-    "ERODE": ["ED"],
-    "FAIZABAD": ["AY", "AYC", "FD"],
-    "GADAG": ["GDG"],
-    "GANDHIDHAM": ["GIMB"],
-    "GAYA": ["GAYA"],
-    "GODHRA": ["GDA"],
-    "GONDA": ["GD"],
-    "GORAKHPUR": ["GKP"],
-    "GUNTUR": ["GNT"],
-    "GUWAHATI": ["GHY", "KYQ"],
-    "GWALIOR": ["GWL"],
-    "HARIDWAR": ["HW"],
-    "HOSAPETE": ["HPT"],
-    "HOWRAH": ["HWH"],
-    "HUBBALLI": ["UBL"],
-    "HUBLI": ["UBL"],
-    "HYDERABAD": ["SC", "HYB", "KCG", "LPI"],
-    "INDORE": ["INDB", "LMNR"],
-    "ITARSI": ["ET"],
-    "JABALPUR": ["JBP"],
-    "JAIPUR": ["JP", "DPA", "GTJT"],
-    "JALANDHAR": ["JUC", "JRC"],
-    "JALGAON": ["JL"],
-    "JALNA": ["J"],
-    "JAMMU": ["JAT"],
-    "JAMNAGAR": ["JAM", "HAPA"],
-    "JAMSHEDPUR": ["TATA"],
-    "JHANSI": ["VGLJ"],
-    "JODHPUR": ["JU"],
-    "JUNAGADH": ["JND"],
-    "KALABURAGI": ["KLBG"],
-    "KALYAN": ["KYN"],
-    "KANNUR": ["CAN"],
-    "KANPUR": ["CNB", "CPA", "CPY"],
-    "KARWAR": ["KAWR"],
-    "KATRA": ["SVDK", "JAT", "MCTM"],
-    "KHARAGPUR": ["KGP"],
-    "KOCHI": ["ERS", "ERN", "AWY"],
-    "KOLHAPUR": ["KOP"],
-    "KOLKATA": ["HWH", "SDAH", "KOAA", "SHM", "SRC"],
-    "KOLLAM": ["QLN"],
-    "KOTA": ["KOTA"],
-    "KOTTAYAM": ["KTYM"],
-    "LUCKNOW": ["LKO", "LJN", "ASH", "BNZ"],
-    "LUDHIANA": ["LDH"],
-    "MADGAON": ["MAO"],
-    "MADURAI": ["MDU"],
-    "MALDA": ["MLDT"],
-    "MANGALORE": ["MAQ", "MAJN"],
-    "MATHURA": ["MTJ"],
-    "MEERUT": ["MTC"],
-    "MIRAJ": ["MRJ"],
-    "MIRZAPUR": ["MZP"],
-    "MORADABAD": ["MB"],
-    "MUMBAI": ["CSMT", "MMCT", "LTT", "BDTS", "DR", "DDR"],
-    "MUZAFFARPUR": ["MFP"],
-    "MYSORE": ["MYS"],
-    "NAGPUR": ["NGP", "AJNI"],
-    "NANDED": ["NED"],
-    "NASIK": ["NK"],
-    "NELLORE": ["NLR"],
-    "ONGOLE": ["OGL"],
-    "PALAKKAD": ["PGT"],
-    "PALGHAR": ["PLG"],
-    "PANVEL": ["PNVL"],
-    "PATHANKOT": ["PTK", "PTKC"],
-    "PATNA": ["PNBE", "PPTA", "DNR", "RJPB"],
-    "PRAYAGRAJ": ["PRYJ", "SFG", "NYN", "PYGS"],
-    "PUNE": ["PUNE", "SHIV", "KK", "HDP"],
-    "PURI": ["PURI"],
-    "RAICHUR": ["RC"],
-    "RAIPUR": ["R"],
-    "RAJKOT": ["RJT"],
-    "RAJAHMUNDRY": ["RJY"],
-    "RANCHI": ["RNC", "HTE"],
-    "RATLAM": ["RTM"],
-    "RATNAGIRI": ["RN"],
-    "ROORKEE": ["RK"],
-    "SAHARANPUR": ["SRE"],
-    "SALEM": ["SA"],
-    "SAMASTIPUR": ["SPJ"],
-    "SAMBALPUR": ["SBP"],
-    "SANGLI": ["SLI"],
-    "SATARA": ["STR"],
-    "SECUNDERABAD": ["SC", "HYB", "KCG", "LPI"],
-    "SHAHJAHANPUR": ["SPN"],
-    "SILCHAR": ["SCL"],
-    "SILIGURI": ["NJP", "SGUJ"],
-    "SOLAPUR": ["SUR"],
-    "SRINAGAR": ["SINA"],
-    "SURAT": ["ST", "UDN"],
-    "TEZPUR": ["TZR"],
-    "THRISSUR": ["TCR"],
-    "TINSUKIA": ["NTSK", "TSK"],
-    "TIRUCHIRAPPALLI": ["TPJ"],
-    "TIRUPATI": ["TPTY", "RU"],
-    "TRICHY": ["TPJ"],
-    "TRIVANDRUM": ["TVC"],
-    "UDAIPUR": ["UDZ"],
-    "UDUPI": ["UD"],
-    "UJJAIN": ["UJN"],
-    "VADODARA": ["BRC", "ANND"],
-    "VALSAD": ["BL"],
-    "VAPI": ["VAPI"],
-    "VARANASI": ["BSB", "BSBS", "DDU"],
-    "VASAI": ["BSR"],
-    "VERAVAL": ["VRL"],
-    "VIJAYAPURA": ["BJP"],
-    "VIJAYAWADA": ["BZA"],
-    "VISAKHAPATNAM": ["VSKP", "DVD"],
-    "WARANGAL": ["WL"]
+  "AGRA": [
+    "AGC",
+    "AF",
+    "AGA"
+  ],
+  "AHMEDABAD": [
+    "ADI",
+    "SBT",
+    "HAPA"
+  ],
+  "AJMER": [
+    "AII"
+  ],
+  "AKOLA": [
+    "AK"
+  ],
+  "ALIGARH": [
+    "ALJN"
+  ],
+  "ALIPURDUAR": [
+    "APDJ"
+  ],
+  "AMBALA": [
+    "UMB"
+  ],
+  "AMRAVATI": [
+    "AMI"
+  ],
+  "AMRITSAR": [
+    "ASR"
+  ],
+  "ANAND": [
+    "ANND"
+  ],
+  "ARA": [
+    "ARA"
+  ],
+  "ASANSOL": [
+    "ASN"
+  ],
+  "AURANGABAD": [
+    "AWB"
+  ],
+  "AYODHYA": [
+    "AY",
+    "AYC",
+    "FD"
+  ],
+  "BALLARI": [
+    "BAY"
+  ],
+  "BANGALORE": [
+    "SBC",
+    "YPR",
+    "KJM",
+    "SMVB",
+    "BNC",
+    "BLR"
+  ],
+  "BAREILLY": [
+    "BE"
+  ],
+  "BASTI": [
+    "BST"
+  ],
+  "BELAGAVI": [
+    "BGM"
+  ],
+  "BELGAUM": [
+    "BGM"
+  ],
+  "BENGALURU": [
+    "SBC",
+    "YPR",
+    "KJM",
+    "SMVB",
+    "BNC",
+    "BLR"
+  ],
+  "BHAGALPUR": [
+    "BGP"
+  ],
+  "BHARUCH": [
+    "BH"
+  ],
+  "BHAVNAGAR": [
+    "BVC"
+  ],
+  "BHILAI": [
+    "BPHB"
+  ],
+  "BHOPAL": [
+    "BPL",
+    "RKMP"
+  ],
+  "BHUBANESWAR": [
+    "BBS"
+  ],
+  "BHUJ": [
+    "BHUJ"
+  ],
+  "BIKANER": [
+    "BKN"
+  ],
+  "BILASPUR": [
+    "BSP"
+  ],
+  "BOISAR": [
+    "BOR"
+  ],
+  "BOKARO": [
+    "BKSC"
+  ],
+  "BUXAR": [
+    "BXR"
+  ],
+  "CALICUT": [
+    "CLT"
+  ],
+  "CHANDIGARH": [
+    "CDG"
+  ],
+  "CHENNAI": [
+    "MAS",
+    "MS",
+    "TBM",
+    "PER"
+  ],
+  "CHHAPRA": [
+    "CPR",
+    "CHPG"
+  ],
+  "COIMBATORE": [
+    "CBE"
+  ],
+  "COOCH BEHAR": [
+    "NCB"
+  ],
+  "COZIKHODE": [
+    "CLT"
+  ],
+  "CUTTACK": [
+    "CTC"
+  ],
+  "DAHANU": [
+    "DRD"
+  ],
+  "DAHOD": [
+    "DHD"
+  ],
+  "DARBHANGA": [
+    "DBG"
+  ],
+  "DEHRADUN": [
+    "DDN"
+  ],
+  "DELHI": [
+    "NDLS",
+    "DLI",
+    "NZM",
+    "ANVT",
+    "DEC",
+    "GZB"
+  ],
+  "DEORIA": [
+    "DEOS"
+  ],
+  "DHANBAD": [
+    "DHN"
+  ],
+  "DHARWAD": [
+    "DWR"
+  ],
+  "DIBRUGARH": [
+    "DBRG",
+    "DBRT"
+  ],
+  "DURG": [
+    "DURG"
+  ],
+  "ERODE": [
+    "ED"
+  ],
+  "FAIZABAD": [
+    "AY",
+    "AYC",
+    "FD"
+  ],
+  "GADAG": [
+    "GDG"
+  ],
+  "GANDHIDHAM": [
+    "GIMB"
+  ],
+  "GAYA": [
+    "GAYA"
+  ],
+  "GODHRA": [
+    "GDA"
+  ],
+  "GONDA": [
+    "GD"
+  ],
+  "GORAKHPUR": [
+    "GKP"
+  ],
+  "GUNTUR": [
+    "GNT"
+  ],
+  "GUWAHATI": [
+    "GHY",
+    "KYQ"
+  ],
+  "GWALIOR": [
+    "GWL"
+  ],
+  "HARIDWAR": [
+    "HW"
+  ],
+  "HOSAPETE": [
+    "HPT"
+  ],
+  "HOWRAH": [
+    "HWH"
+  ],
+  "HUBBALLI": [
+    "UBL"
+  ],
+  "HUBLI": [
+    "UBL"
+  ],
+  "HYDERABAD": [
+    "SC",
+    "HYB",
+    "KCG",
+    "LPI"
+  ],
+  "INDORE": [
+    "INDB",
+    "LMNR"
+  ],
+  "ITARSI": [
+    "ET"
+  ],
+  "JABALPUR": [
+    "JBP"
+  ],
+  "JAIPUR": [
+    "JP",
+    "DPA",
+    "GTJT"
+  ],
+  "JALANDHAR": [
+    "JUC",
+    "JRC"
+  ],
+  "JALGAON": [
+    "JL"
+  ],
+  "JALNA": [
+    "J"
+  ],
+  "JAMMU": [
+    "JAT"
+  ],
+  "JAMNAGAR": [
+    "JAM",
+    "HAPA"
+  ],
+  "JAMSHEDPUR": [
+    "TATA"
+  ],
+  "JHANSI": [
+    "VGLJ"
+  ],
+  "JODHPUR": [
+    "JU"
+  ],
+  "JUNAGADH": [
+    "JND"
+  ],
+  "KALABURAGI": [
+    "KLBG"
+  ],
+  "KALYAN": [
+    "KYN"
+  ],
+  "KANNUR": [
+    "CAN"
+  ],
+  "KANPUR": [
+    "CNB",
+    "CPA",
+    "CPY"
+  ],
+  "KARWAR": [
+    "KAWR"
+  ],
+  "KATRA": [
+    "SVDK",
+    "JAT",
+    "MCTM"
+  ],
+  "KHARAGPUR": [
+    "KGP"
+  ],
+  "KOCHI": [
+    "ERS",
+    "ERN",
+    "AWY"
+  ],
+  "KOLHAPUR": [
+    "KOP"
+  ],
+  "KOLKATA": [
+    "HWH",
+    "SDAH",
+    "KOAA",
+    "SHM",
+    "SRC"
+  ],
+  "KOLLAM": [
+    "QLN"
+  ],
+  "KOTA": [
+    "KOTA"
+  ],
+  "KOTTAYAM": [
+    "KTYM"
+  ],
+  "LUCKNOW": [
+    "LKO",
+    "LJN",
+    "ASH",
+    "BNZ"
+  ],
+  "LUDHIANA": [
+    "LDH"
+  ],
+  "MADGAON": [
+    "MAO"
+  ],
+  "MADURAI": [
+    "MDU"
+  ],
+  "MALDA": [
+    "MLDT"
+  ],
+  "MANGALORE": [
+    "MAQ",
+    "MAJN"
+  ],
+  "MATHURA": [
+    "MTJ"
+  ],
+  "MEERUT": [
+    "MTC"
+  ],
+  "MIRAJ": [
+    "MRJ"
+  ],
+  "MIRZAPUR": [
+    "MZP"
+  ],
+  "MORADABAD": [
+    "MB"
+  ],
+  "MUMBAI": [
+    "CSMT",
+    "MMCT",
+    "LTT",
+    "BDTS",
+    "DR",
+    "DDR"
+  ],
+  "MUZAFFARPUR": [
+    "MFP"
+  ],
+  "MYSORE": [
+    "MYS"
+  ],
+  "NAGPUR": [
+    "NGP",
+    "AJNI"
+  ],
+  "NANDED": [
+    "NED"
+  ],
+  "NASIK": [
+    "NK"
+  ],
+  "NELLORE": [
+    "NLR"
+  ],
+  "ONGOLE": [
+    "OGL"
+  ],
+  "PALAKKAD": [
+    "PGT"
+  ],
+  "PALGHAR": [
+    "PLG"
+  ],
+  "PANVEL": [
+    "PNVL"
+  ],
+  "PATHANKOT": [
+    "PTK",
+    "PTKC"
+  ],
+  "PATNA": [
+    "PNBE",
+    "PPTA",
+    "DNR",
+    "RJPB"
+  ],
+  "PRAYAGRAJ": [
+    "PRYJ",
+    "SFG",
+    "NYN",
+    "PYGS",
+    "PCOI",
+    "PRRB",
+    "ALD"
+  ],
+  "PUNE": [
+    "PUNE",
+    "SHIV",
+    "KK",
+    "HDP"
+  ],
+  "PURI": [
+    "PURI"
+  ],
+  "RAICHUR": [
+    "RC"
+  ],
+  "RAIPUR": [
+    "R"
+  ],
+  "RAJKOT": [
+    "RJT"
+  ],
+  "RAJAHMUNDRY": [
+    "RJY"
+  ],
+  "RANCHI": [
+    "RNC",
+    "HTE"
+  ],
+  "RATLAM": [
+    "RTM"
+  ],
+  "RATNAGIRI": [
+    "RN"
+  ],
+  "ROORKEE": [
+    "RK"
+  ],
+  "SAHARANPUR": [
+    "SRE"
+  ],
+  "SALEM": [
+    "SA"
+  ],
+  "SAMASTIPUR": [
+    "SPJ"
+  ],
+  "SAMBALPUR": [
+    "SBP"
+  ],
+  "SANGLI": [
+    "SLI"
+  ],
+  "SATARA": [
+    "STR"
+  ],
+  "SECUNDERABAD": [
+    "SC",
+    "HYB",
+    "KCG",
+    "LPI"
+  ],
+  "SHAHJAHANPUR": [
+    "SPN"
+  ],
+  "SILCHAR": [
+    "SCL"
+  ],
+  "SILIGURI": [
+    "NJP",
+    "SGUJ"
+  ],
+  "SOLAPUR": [
+    "SUR"
+  ],
+  "SRINAGAR": [
+    "SINA"
+  ],
+  "SURAT": [
+    "ST",
+    "UDN"
+  ],
+  "TEZPUR": [
+    "TZR"
+  ],
+  "THRISSUR": [
+    "TCR"
+  ],
+  "TINSUKIA": [
+    "NTSK",
+    "TSK"
+  ],
+  "TIRUCHIRAPPALLI": [
+    "TPJ"
+  ],
+  "TIRUPATI": [
+    "TPTY",
+    "RU"
+  ],
+  "TRICHY": [
+    "TPJ"
+  ],
+  "TRIVANDRUM": [
+    "TVC"
+  ],
+  "UDAIPUR": [
+    "UDZ"
+  ],
+  "UDUPI": [
+    "UD"
+  ],
+  "UJJAIN": [
+    "UJN"
+  ],
+  "VADODARA": [
+    "BRC",
+    "ANND"
+  ],
+  "VALSAD": [
+    "BL"
+  ],
+  "VAPI": [
+    "VAPI"
+  ],
+  "VARANASI": [
+    "BSB",
+    "BSBS",
+    "DDU"
+  ],
+  "VASAI": [
+    "BSR"
+  ],
+  "VERAVAL": [
+    "VRL"
+  ],
+  "VIJAYAPURA": [
+    "BJP"
+  ],
+  "VIJAYAWADA": [
+    "BZA"
+  ],
+  "VISAKHAPATNAM": [
+    "VSKP",
+    "DVD"
+  ],
+  "WARANGAL": [
+    "WL"
+  ]
 }

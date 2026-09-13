@@ -33,6 +33,24 @@ class ContentController {
             res.status(500).json({ success: false, error: err.message });
         }
     }
+    async getPopupOffer(req, res) {
+        try {
+            const offer = await contentService_1.contentService.getPopupOffer();
+            res.json({ success: true, data: offer });
+        }
+        catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    }
+    async updatePopupOffer(req, res) {
+        try {
+            const offer = await contentService_1.contentService.updatePopupOffer(req.body);
+            res.json({ success: true, data: offer });
+        }
+        catch (err) {
+            res.status(500).json({ success: false, error: err.message });
+        }
+    }
     // ==========================================
     // ADMIN ENDPOINTS (CRUD)
     // ==========================================

@@ -814,7 +814,7 @@ class AuthService {
         }
         return true;
     }
-    async signup(email, password, referredByCode, deviceId, otp, fullName, mobileNumber, dob, deviceMeta) {
+    async signup(email, password, referredByCode, deviceId, otp, fullName, mobileNumber, dob, deviceMeta, signupState) {
         if (await this.getUserByEmail(email)) {
             throw new Error('Email already exists');
         }
@@ -857,7 +857,7 @@ class AuthService {
             browser: deviceMeta?.browser || 'Unknown',
             clientType: deviceMeta?.clientType || 'desktop_web',
             signupIp: deviceMeta?.signupIp,
-            signupState: deviceMeta?.signupState
+            signupState: signupState || deviceMeta?.signupState
         };
         newUser.referralCode = await (0, referralService_1.generateReferralCode)(newUser.id);
         let referralMeta;
@@ -1873,6 +1873,8 @@ class AuthService {
             user.fullName = updates.fullName;
         if (updates.dob !== undefined)
             user.dob = updates.dob;
+        if (updates.state !== undefined)
+            user.signupState = updates.state;
         if (updates.preferences !== undefined) {
             if (updates.preferences.notifyEmail !== undefined)
                 user.notifyEmail = !!updates.preferences.notifyEmail;
@@ -1895,6 +1897,7 @@ class AuthService {
                     fullName: user.fullName,
                     dob: user.dob,
                     mobileNumber: user.mobileNumber,
+                    signupState: user.signupState,
                     mobileVerified: user.mobileVerified,
                     mobileVerificationMethod: user.mobileVerificationMethod,
                     mobileVerifiedAt: user.mobileVerifiedAt
