@@ -920,6 +920,14 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "jammu-bct":        ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
   "bct-katra":        ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
   "katra-bct":        ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
+
+  // —— Mumbai – Ranchi / Hatia ——
+  "mumbai-ranchi":    ["ROU", "BSP", "NGP", "R", "TATA", "JSG", "BSL", "BKSC", "DDU", "GAYA", "ET", "JBP"],
+  "ranchi-mumbai":    ["ROU", "BSP", "NGP", "R", "TATA", "JSG", "BSL", "BKSC", "DDU", "GAYA", "ET", "JBP"],
+  "mumbai-rnc":       ["ROU", "BSP", "NGP", "R", "TATA", "JSG", "BSL", "BKSC", "DDU", "GAYA", "ET", "JBP"],
+  "rnc-mumbai":       ["ROU", "BSP", "NGP", "R", "TATA", "JSG", "BSL", "BKSC", "DDU", "GAYA", "ET", "JBP"],
+  "mumbai-hte":       ["ROU", "BSP", "NGP", "R", "TATA", "JSG", "BSL", "BKSC", "DDU", "GAYA", "ET", "JBP"],
+  "hte-mumbai":       ["ROU", "BSP", "NGP", "R", "TATA", "JSG", "BSL", "BKSC", "DDU", "GAYA", "ET", "JBP"],
   "mumbai-lucknow": ["CNB", "VGLJ", "BPL", "ET", "BSL", "JHS", "BINA", "ORAI", "ST", "KOTA"],
   "mumbai-delhi": ["ST", "BRC", "RTM", "KOTA", "MTJ", "BSL", "ET", "BPL", "VGLJ", "GWL", "AGC", "ADI", "AII", "JP", "RE"],
   "mumbai-jaipur": ["KOTA", "SWM", "RTM", "BRC", "ST", "AII", "ABR", "NAD", "FL", "ADI"],
