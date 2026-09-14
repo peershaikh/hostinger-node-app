@@ -3061,7 +3061,10 @@ export class SplitJourneyEngine {
     const normalizeCityAlias = (city: string): string => {
       const c = (city || '').toLowerCase().trim();
       if (c === 'bombay' || c === 'bct') return 'mumbai';
-      if (c === 'calcutta') return 'kolkata';
+      if (c === 'calcutta' || c === 'howrah') return 'kolkata';
+      if (c === 'allahabad') return 'prayagraj';
+      if (c === 'banaras' || c === 'kashi') return 'varanasi';
+      if (c === 'new delhi') return 'delhi';
       return c;
     };
 
