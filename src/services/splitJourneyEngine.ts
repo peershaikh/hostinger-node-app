@@ -908,6 +908,18 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "jammu-panvel":     ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
   "panvel-katra":     ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
   "katra-panvel":     ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
+  "bombay-jammu":     ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
+  "jammu-bombay":     ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
+  "bombay-katra":     ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
+  "katra-bombay":     ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
+  "bombay-jat":       ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
+  "jat-bombay":       ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
+  "bombay-svdk":      ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
+  "svdk-bombay":      ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
+  "bct-jammu":        ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
+  "jammu-bct":        ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
+  "bct-katra":        ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
+  "katra-bct":        ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
   "mumbai-lucknow": ["CNB", "VGLJ", "BPL", "ET", "BSL", "JHS", "BINA", "ORAI", "ST", "KOTA"],
   "mumbai-delhi": ["ST", "BRC", "RTM", "KOTA", "MTJ", "BSL", "ET", "BPL", "VGLJ", "GWL", "AGC", "ADI", "AII", "JP", "RE"],
   "mumbai-jaipur": ["KOTA", "SWM", "RTM", "BRC", "ST", "AII", "ABR", "NAD", "FL", "ADI"],
@@ -3036,8 +3048,17 @@ export class SplitJourneyEngine {
 
 
     // —— Step 1: Corridor-first hub pool ———————————————————————————————————
-    const sourceCity = getCity(sCode).toLowerCase();
-    const destCity = getCity(dCode).toLowerCase();
+    // Canonical city alias normalization for deterministic corridors & corridor fallbacks
+    // (stationService.getCitySync returns "BOMBAY" for CSMT/BDTS/LTT/MMCT/PNVL and "BCT" for BCT)
+    const normalizeCityAlias = (city: string): string => {
+      const c = (city || '').toLowerCase().trim();
+      if (c === 'bombay' || c === 'bct') return 'mumbai';
+      if (c === 'calcutta') return 'kolkata';
+      return c;
+    };
+
+    const sourceCity = normalizeCityAlias(getCity(sCode));
+    const destCity = normalizeCityAlias(getCity(dCode));
     const pairKey1 = `${sourceCity.toLowerCase()}-${destCity.toLowerCase()}`;
     const pairKey2 = `${destCity.toLowerCase()}-${sourceCity.toLowerCase()}`;
 
