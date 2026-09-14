@@ -1897,25 +1897,42 @@ export class AuthService {
       return { success: true, message: "Ad watched successfully! +1 Search granted." };
   }
 
-  public async claimReviewReward(userId: string | null, deviceId: string): Promise<{ success: boolean, message: string, minutesGranted: number }> {
+  public async claimReviewReward(userId: string | null, deviceId: string): Promise<{ success: boolean, message: string, minutesGranted: number, extraSearchesGranted?: number }> {
       if (userId) {
           const user = await this.getUserById(userId);
           if (!user) return { success: false, message: "Account not found", minutesGranted: 0 };
-          await this.upgradeToPro(userId, 'safar_pro_30m', 30, 'admin');
+          if ((user as any).reviewRewardClaimed) {
+              return { success: false, message: "Review reward already claimed on this account.", minutesGranted: 0 };
+          }
+          user.dailySearchCount = Math.max(0, (user.dailySearchCount || 0) - 2);
+          (user as any).reviewRewardClaimed = true;
+          this.updateLocalUser(user);
+          if (isSupabaseConfigured()) {
+            userRepository.update(userId, { dailySearchCount: user.dailySearchCount } as any).catch(err => 
+              winstonLogger.error(`[AUTH] Failed to sync dailySearchCount to Supabase: ${err.message}`)
+            );
+          }
+          this.saveUsers();
           return {
               success: true,
-              message: "🎉 Thank you for rating Trayago! 30 Minutes Free Pro Access Unlocked!",
-              minutesGranted: 30
+              message: "🎉 Thank you for rating Trayago! +2 Extra Searches Unlocked!",
+              minutesGranted: 0,
+              extraSearchesGranted: 2
           };
       } else {
           const guest = this.getOrCreateGuest(deviceId);
           if (!guest) return { success: false, message: "Device not recognized", minutesGranted: 0 };
-          guest.dailySearchCount = Math.max(0, (guest.dailySearchCount || 0) - 5);
+          if ((guest as any).reviewRewardClaimed) {
+              return { success: false, message: "Review reward already claimed on this device.", minutesGranted: 0 };
+          }
+          guest.dailySearchCount = Math.max(0, (guest.dailySearchCount || 0) - 2);
+          (guest as any).reviewRewardClaimed = true;
           this.saveGuests();
           return {
               success: true,
-              message: "🎉 Thank you for rating Trayago! 5 Extra Searches Unlocked!",
-              minutesGranted: 30
+              message: "🎉 Thank you for rating Trayago! +2 Extra Searches Unlocked!",
+              minutesGranted: 0,
+              extraSearchesGranted: 2
           };
       }
   }
