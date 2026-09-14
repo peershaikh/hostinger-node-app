@@ -3299,28 +3299,40 @@ export class SplitJourneyEngine {
       (!['CSMT', 'CSTM', 'LTT', 'DR', 'DDR', 'KYN', 'TNA', 'PNVL'].includes(primarySource) && sCodes.some(c => ['BDTS', 'MMCT', 'BCT', 'BVI'].includes((c || '').toUpperCase().trim())));
     const isDeccanOrigin = ['PUNE'].includes(primarySource) || sCodes.some(c => ['PUNE'].includes((c || '').toUpperCase().trim()));
 
+    const prioritizeList = (targetList: string[], prioritySet: Set<string>): string[] => {
+      const priority = targetList.filter(h => prioritySet.has(h));
+      const others = targetList.filter(h => !prioritySet.has(h));
+      return [...priority, ...others];
+    };
+
+    let prioritySet: Set<string> | null = null;
     if (isCentralOrigin) {
       const CENTRAL_PRIORITY_HUBS = new Set([
         'BSL', 'ET', 'BPL', 'VGLJ', 'JHS', 'GWL', 'AGC', 'NGP', 'R', 'BSP', 'ROU', 'TATA', 'KGP',
         'JBP', 'PCOI', 'PRYJ', 'DDU', 'GAYA', 'ASN', 'PUNE', 'SUR', 'WADI', 'GTL', 'RU'
       ]);
-      const central = hubs.filter(h => CENTRAL_PRIORITY_HUBS.has(h));
-      const others = hubs.filter(h => !CENTRAL_PRIORITY_HUBS.has(h));
-      hubs = [...central, ...others];
+      prioritySet = CENTRAL_PRIORITY_HUBS;
     } else if (isWesternOrigin) {
       const WESTERN_PRIORITY_HUBS = new Set([
         'ST', 'BRC', 'RTM', 'KOTA', 'MTJ', 'ADI', 'AII', 'JP', 'RE', 'AWR', 'ABR', 'PNU'
       ]);
-      const western = hubs.filter(h => WESTERN_PRIORITY_HUBS.has(h));
-      const others = hubs.filter(h => !WESTERN_PRIORITY_HUBS.has(h));
-      hubs = [...western, ...others];
+      prioritySet = WESTERN_PRIORITY_HUBS;
     } else if (isDeccanOrigin) {
       const DECCAN_PRIORITY_HUBS = new Set([
         'SUR', 'WADI', 'GTL', 'RU', 'DMM', 'RC', 'KPD'
       ]);
-      const deccan = hubs.filter(h => DECCAN_PRIORITY_HUBS.has(h));
-      const others = hubs.filter(h => !DECCAN_PRIORITY_HUBS.has(h));
-      hubs = [...deccan, ...others];
+      prioritySet = DECCAN_PRIORITY_HUBS;
+    }
+
+    if (prioritySet) {
+      if (isDeterministic) {
+        const pinnedSet = new Set(DETERMINISTIC_CORRIDORS[pairKey1] || DETERMINISTIC_CORRIDORS[pairKey2] || []);
+        const pinned = hubs.filter(h => pinnedSet.has(h));
+        const remainder = hubs.filter(h => !pinnedSet.has(h));
+        hubs = [...pinned, ...prioritizeList(remainder, prioritySet)];
+      } else {
+        hubs = prioritizeList(hubs, prioritySet);
+      }
     }
 
     winstonLogger.debug(`[SPLIT_TRACE] Total candidate hubs after all filters: ${hubs.length} → [${hubs.join(', ')}]`);
