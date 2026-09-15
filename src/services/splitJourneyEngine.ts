@@ -920,6 +920,10 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "jammu-bct":        ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
   "bct-katra":        ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
   "katra-bct":        ["NDLS", "UMB", "LDH", "KOTA", "RTM", "BRC", "ST", "MTJ", "JRC", "PTKC", "JAT", "BPL"],
+  "mumbai-chandigarh": ["UMB", "NDLS", "KOTA", "BRC", "RTM", "ST", "LDH", "PNP", "MTJ", "BPL", "ET", "BSL"],
+  "chandigarh-mumbai": ["UMB", "NDLS", "KOTA", "BRC", "RTM", "ST", "LDH", "PNP", "MTJ", "BPL", "ET", "BSL"],
+  "mumbai-cdg":        ["UMB", "NDLS", "KOTA", "BRC", "RTM", "ST", "LDH", "PNP", "MTJ", "BPL", "ET", "BSL"],
+  "cdg-mumbai":        ["UMB", "NDLS", "KOTA", "BRC", "RTM", "ST", "LDH", "PNP", "MTJ", "BPL", "ET", "BSL"],
 
   // —— Mumbai – Ranchi / Hatia ——
   "mumbai-ranchi":    ["ROU", "BSP", "NGP", "R", "TATA", "JSG", "BSL", "BKSC", "DDU", "GAYA", "ET", "JBP"],
