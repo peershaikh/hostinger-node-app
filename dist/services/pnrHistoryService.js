@@ -54,6 +54,7 @@ class PnrHistoryService {
                         .from('pnr_history')
                         .update({
                         history: historyArray.slice(0, 10),
+                        last_status: currentStatus,
                         last_checked: new Date().toISOString()
                     })
                         .eq('id', existingRecord.id);
@@ -63,6 +64,7 @@ class PnrHistoryService {
                         .from('pnr_history')
                         .insert([{
                             pnr: historyRecord.pnr,
+                            last_status: currentStatus,
                             history: [historyRecord],
                             is_active: true,
                             last_checked: new Date().toISOString()

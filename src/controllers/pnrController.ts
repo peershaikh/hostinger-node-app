@@ -629,6 +629,24 @@ export class PnrController {
         winstonLogger.error(`[PNR_LEARNING] Failed to log learning for PNR: ${pnr}: ${saveError.message}`);
       }
 
+      try {
+        const { pnrHistoryService } = require('../services/pnrHistoryService');
+        await pnrHistoryService.savePnrHistory({
+          pnr,
+          train_no: normalized.train_no,
+          train_name: normalized.train_name,
+          source: cleanResponse.data.source,
+          destination: cleanResponse.data.destination,
+          class: normalized.class || 'Unknown',
+          passengers: cleanedPassengers,
+          chart_status: cleanResponse.data.chart_status,
+          prediction: prediction
+        });
+        winstonLogger.info(`[PNR_HISTORY] Saved full journey history for PNR: ${pnr}`);
+      } catch (histError: any) {
+        winstonLogger.warn(`[PNR_HISTORY] Failed to save history for PNR: ${pnr}: ${histError.message}`);
+      }
+
       // LOG PARSED OUTPUT
       winstonLogger.info(`[PNR PARSED OUTPUT] pnr=${pnr}: ${JSON.stringify(cleanResponse)}`);
       res.status(200).json(cleanResponse);

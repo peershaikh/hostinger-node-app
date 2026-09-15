@@ -1569,28 +1569,53 @@ class AdminController {
             let topWaitlistedTrains = [];
             if ((0, supabase_1.isSupabaseConfigured)()) {
                 try {
-                    const { data: pnrRows } = await supabase_1.supabase
+                    const seenPnrs = new Set();
+                    // 1. Fetch from pnr_history table
+                    const { data: pnrRows, error: pnrErr } = await supabase_1.supabase
                         .from('pnr_history')
                         .select('*')
-                        .order('checked_at', { ascending: false })
-                        .limit(30);
+                        .order('last_checked', { ascending: false })
+                        .limit(50);
+                    if (pnrErr) {
+                        logger_1.winstonLogger.warn(`[PNR_INTEL_DB_FAIL] pnr_history fetch: ${pnrErr.message}`);
+                    }
                     if (pnrRows && pnrRows.length > 0) {
-                        recentPnrChecks = pnrRows.map(r => ({
-                            pnr: r.pnr ? `${r.pnr.slice(0, 3)}****${r.pnr.slice(-2)}` : 'PNR-***',
-                            full_pnr: r.pnr || '',
-                            train_no: r.train_no,
-                            train_name: r.train_name,
-                            source: r.source,
-                            destination: r.destination,
-                            class: r.class,
-                            booking_status: r.booking_status,
-                            current_status: r.current_status,
-                            chart_prepared: r.chart_prepared,
-                            prediction_chance: r.prediction_chance,
-                            checked_at: r.checked_at
-                        }));
-                        pnrRows.forEach(r => {
-                            const status = (r.current_status || r.booking_status || '').toUpperCase();
+                        for (const r of pnrRows) {
+                            const latest = Array.isArray(r.history) && r.history.length > 0
+                                ? r.history[0]
+                                : (typeof r.history === 'object' && r.history !== null ? r.history : {});
+                            const pnrStr = r.pnr || latest.pnr || '';
+                            if (!pnrStr || seenPnrs.has(pnrStr))
+                                continue;
+                            seenPnrs.add(pnrStr);
+                            recentPnrChecks.push({
+                                pnr: pnrStr.length >= 10 ? `${pnrStr.slice(0, 3)}****${pnrStr.slice(-2)}` : pnrStr,
+                                full_pnr: pnrStr,
+                                train_no: latest.train_no || r.train_no || '—',
+                                train_name: latest.train_name || r.train_name || 'Express',
+                                source: latest.source || r.source || '—',
+                                destination: latest.destination || r.destination || '—',
+                                class: latest.class || r.class || '3A',
+                                booking_status: latest.booking_status || r.booking_status || r.last_status || '—',
+                                current_status: latest.current_status || r.current_status || r.last_status || '—',
+                                chart_prepared: latest.chart_prepared !== undefined ? latest.chart_prepared : (r.chart_prepared || false),
+                                prediction_chance: latest.prediction_chance || r.prediction_chance || '—',
+                                checked_at: latest.checked_at || r.last_checked || r.created_at || new Date().toISOString()
+                            });
+                        }
+                    }
+                    // 2. Also fetch recent telemetry from pnr_learning to calculate real breakdown & backfill missing checks
+                    const { data: learningRows, error: learnErr } = await supabase_1.supabase
+                        .from('pnr_learning')
+                        .select('*')
+                        .order('time_checked', { ascending: false })
+                        .limit(100);
+                    if (learnErr) {
+                        logger_1.winstonLogger.warn(`[PNR_INTEL_DB_FAIL] pnr_learning fetch: ${learnErr.message}`);
+                    }
+                    if (learningRows && learningRows.length > 0) {
+                        learningRows.forEach(r => {
+                            const status = (r.final_status || r.initial_status || '').toUpperCase();
                             statusBreakdown.total++;
                             if (status.includes('CNF') || status.includes('CONFIRM')) {
                                 statusBreakdown.confirmed++;
@@ -1602,17 +1627,44 @@ class AdminController {
                                 statusBreakdown.rac++;
                             }
                         });
-                        const wlMap = new Map();
-                        pnrRows.filter(r => (r.current_status || '').toUpperCase().includes('WL')).forEach(r => {
+                        // Supplement recent checks with any PNR checked in pnr_learning not yet in pnr_history
+                        for (const lr of learningRows) {
+                            if (recentPnrChecks.length >= 30)
+                                break;
+                            if (!lr.pnr || seenPnrs.has(lr.pnr))
+                                continue;
+                            seenPnrs.add(lr.pnr);
+                            recentPnrChecks.push({
+                                pnr: lr.pnr.length >= 10 ? `${lr.pnr.slice(0, 3)}****${lr.pnr.slice(-2)}` : lr.pnr,
+                                full_pnr: lr.pnr,
+                                train_no: '—',
+                                train_name: 'Passenger Journey',
+                                source: 'Origin',
+                                destination: 'Destination',
+                                class: '3A',
+                                booking_status: lr.initial_status || '—',
+                                current_status: lr.final_status || '—',
+                                chart_prepared: Boolean(lr.chart_prepared),
+                                prediction_chance: '—',
+                                checked_at: lr.time_checked || new Date().toISOString()
+                            });
+                        }
+                    }
+                    // 3. Calculate top waitlisted trains from real checks
+                    const wlMap = new Map();
+                    recentPnrChecks
+                        .filter(r => (r.current_status || '').toUpperCase().includes('WL'))
+                        .forEach(r => {
+                        if (r.train_no && r.train_no !== '—') {
                             const current = wlMap.get(r.train_no) || { count: 0, name: r.train_name || r.train_no };
                             current.count++;
                             wlMap.set(r.train_no, current);
-                        });
-                        topWaitlistedTrains = Array.from(wlMap.entries())
-                            .map(([train_no, info]) => ({ train_no, train_name: info.name, waitlist_checks: info.count }))
-                            .sort((a, b) => b.waitlist_checks - a.waitlist_checks)
-                            .slice(0, 5);
-                    }
+                        }
+                    });
+                    topWaitlistedTrains = Array.from(wlMap.entries())
+                        .map(([train_no, info]) => ({ train_no, train_name: info.name, waitlist_checks: info.count }))
+                        .sort((a, b) => b.waitlist_checks - a.waitlist_checks)
+                        .slice(0, 5);
                 }
                 catch (dbErr) {
                     logger_1.winstonLogger.warn(`[PNR_INTEL_DB_FAIL] ${dbErr.message}`);
