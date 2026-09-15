@@ -924,6 +924,10 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "chandigarh-mumbai": ["UMB", "NDLS", "KOTA", "BRC", "RTM", "ST", "LDH", "PNP", "MTJ", "BPL", "ET", "BSL"],
   "mumbai-cdg":        ["UMB", "NDLS", "KOTA", "BRC", "RTM", "ST", "LDH", "PNP", "MTJ", "BPL", "ET", "BSL"],
   "cdg-mumbai":        ["UMB", "NDLS", "KOTA", "BRC", "RTM", "ST", "LDH", "PNP", "MTJ", "BPL", "ET", "BSL"],
+  "mumbai-dehradun":   ["NDLS", "UMB", "KOTA", "HW", "MOTC", "BRC", "ST", "MTJ", "BPL", "ET", "BSL"],
+  "dehradun-mumbai":   ["NDLS", "UMB", "KOTA", "HW", "MOTC", "BRC", "ST", "MTJ", "BPL", "ET", "BSL"],
+  "mumbai-haridwar":   ["NDLS", "UMB", "KOTA", "HW", "MOTC", "BRC", "ST", "MTJ", "BPL", "ET", "BSL"],
+  "haridwar-mumbai":   ["NDLS", "UMB", "KOTA", "HW", "MOTC", "BRC", "ST", "MTJ", "BPL", "ET", "BSL"],
 
   // —— Mumbai – Ranchi / Hatia ——
   "mumbai-ranchi":    ["ROU", "BSP", "NGP", "R", "TATA", "JSG", "BSL", "BKSC", "DDU", "GAYA", "ET", "JBP"],
@@ -3071,6 +3075,7 @@ export class SplitJourneyEngine {
       if (c === 'allahabad') return 'prayagraj';
       if (c === 'banaras' || c === 'kashi') return 'varanasi';
       if (c === 'new delhi') return 'delhi';
+      if (c === 'thiruvananthapuram' || c === 'trivandrum') return 'trivandrum';
       return c;
     };
 
