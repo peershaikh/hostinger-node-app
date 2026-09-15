@@ -1028,8 +1028,11 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "mumbai-ald": ["JBP", "STA", "ET", "MKP", "BSL", "KTE", "CNB", "BPL", "VGLJ", "JHS"],
   "ald-mumbai": ["JBP", "STA", "ET", "MKP", "BSL", "KTE", "CNB", "BPL", "VGLJ", "JHS"],
 
-  // —— Delhi corridors ——
-  "delhi-lko": ["CNB", "PRYJ"],
+  // —— Delhi – Lucknow ——
+  "delhi-lucknow": ["CNB", "MB", "BE", "ALJN", "TDL", "SPN", "PRYJ", "HPU", "AGC", "ETW"],
+  "lucknow-delhi": ["CNB", "MB", "BE", "ALJN", "TDL", "SPN", "PRYJ", "HPU", "AGC", "ETW"],
+  "delhi-lko":     ["CNB", "MB", "BE", "ALJN", "TDL", "SPN", "PRYJ", "HPU", "AGC", "ETW"],
+  "lko-delhi":     ["CNB", "MB", "BE", "ALJN", "TDL", "SPN", "PRYJ", "HPU", "AGC", "ETW"],
   "delhi-kolkata": ["CNB", "PRYJ", "DDU", "GAYA", "ASN", "HWH"],
   "delhi-trivandrum": ["ET", "NGP", "BZA", "ERS", "TVC"],
   "delhi-varanasi": ["AGC", "CNB", "PRYJ", "DDU", "BSB"],
