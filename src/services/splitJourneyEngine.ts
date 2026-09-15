@@ -932,6 +932,8 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "kanpur-mumbai":     ["CNB", "ET", "BPL", "JHS", "VGLJ", "BSL", "NDLS", "PRYJ", "LKO", "AGC"],
   "mumbai-agra":       ["AGC", "MTJ", "NDLS", "KOTA", "BPL", "ET", "JHS", "GWL", "BRC", "ST"],
   "agra-mumbai":       ["AGC", "MTJ", "NDLS", "KOTA", "BPL", "ET", "JHS", "GWL", "BRC", "ST"],
+  "mumbai-gwalior":    ["GWL", "JHS", "VGLJ", "AGC", "BPL", "ET", "BSL", "MTJ", "NDLS", "KOTA"],
+  "gwalior-mumbai":    ["GWL", "JHS", "VGLJ", "AGC", "BPL", "ET", "BSL", "MTJ", "NDLS", "KOTA"],
 
   // —— Mumbai – Ranchi / Hatia ——
   "mumbai-ranchi":    ["ROU", "BSP", "NGP", "R", "TATA", "JSG", "BSL", "BKSC", "DDU", "GAYA", "ET", "JBP"],
