@@ -6,7 +6,7 @@ import { getStations } from '../utils/stationMapper';
 import { cacheService } from './cacheService';
 import { featureFlags } from '../config/featureFlags';
 import { OfflineStationProvider } from './OfflineStationProvider';
-import { TERMINAL_ALIASES } from './stationAliases';
+import { TERMINAL_ALIASES, isValidStationCode } from './stationAliases';
 
 // Global city mapping (loaded once as fallback)
 let CITY_MAP: Record<string, string[]> = {};
@@ -169,7 +169,7 @@ export class StationService {
 
   isCode(input: string): boolean {
     if (!input) return false;
-    return /^[A-Z]{2,6}$/.test(input.toUpperCase().trim());
+    return isValidStationCode(input);
   }
 
   /**
@@ -310,8 +310,8 @@ export class StationService {
         winstonLogger.error(`[STATION] Step 4.5 Legacy fallback getStations failed: ${legacyErr.message}`);
       }
       const mapped = resolveStationsWithShadow(cleanCity, legacyMapped);
-      // Ensure we don't just blindly accept the fallback if it's the exact same non-code string
-      const validMapped = mapped.filter(m => m !== cleanCity || this.isCode(m));
+      // Ensure we only accept verified station codes, preventing unmapped city names from short-circuiting
+      const validMapped = mapped.filter(m => this.isCode(m));
       if (validMapped.length > 0) {
         winstonLogger.info(`[STATION_RESOLVE] Step 4.5 (JSON Fallback) hit for "${cleanCity}" → [${validMapped.join(', ')}]`);
         cacheService.set(cacheKey, validMapped, 3600);

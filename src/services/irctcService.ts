@@ -2,6 +2,7 @@ import { winstonLogger } from '../middleware/logger';
 import { featureFlags } from '../config/featureFlags';
 import { cacheService } from './cacheService';
 import { providerConfigService } from './providerConfigService';
+import { isValidStationCode } from './stationAliases';
 
 // ── PHASE_087N49 — Sync-specific classified result type ───────────────────────
 // Used ONLY by getTrainInfoForSync(). All existing public methods are unchanged.
@@ -497,6 +498,11 @@ export class IrctcService {
       }
     }
 
+    if (!isValidStationCode(normCode)) {
+      winstonLogger.warn(`[IRCTC_TIMETABLE_REJECT] Invalid station code rejected before API call: '${normCode}'`);
+      return null;
+    }
+
     const cacheKey = `stn_sched_${normCode}_${formattedDate || 'all'}`;
     const cached = cacheService.get(cacheKey);
     if (cached) return cached;
@@ -526,6 +532,11 @@ export class IrctcService {
     if (!this.isReady() || !stationCode) return null;
 
     const normCode = stationCode.toUpperCase().trim();
+    if (!isValidStationCode(normCode)) {
+      winstonLogger.warn(`[IRCTC_LIVE_STN_REJECT] Invalid station code rejected before API call: '${normCode}'`);
+      return null;
+    }
+
     const cacheKey = `stn_live_${normCode}_${hours}h`;
     const cached = cacheService.get(cacheKey);
     if (cached) return cached;
@@ -552,7 +563,15 @@ export class IrctcService {
     await this.ensureInit();
     if (!this.isReady() || !from || !to || !date) return [];
 
-    const cacheKey = `search_${from}_${to}_${date}`;
+    const fromCode = (from || '').toUpperCase().trim();
+    const toCode = (to || '').toUpperCase().trim();
+
+    if (!isValidStationCode(fromCode) || !isValidStationCode(toCode)) {
+      winstonLogger.warn(`[IRCTC_SEARCH_REJECT] Invalid station code rejected before external API call: from='${fromCode}', to='${toCode}'`);
+      return [];
+    }
+
+    const cacheKey = `search_${fromCode}_${toCode}_${date}`;
     const cached = cacheService.get<any>(cacheKey);
     // PHASE_4C931 TASK 1: Guard — do NOT serve a cached empty array.
     // If cached is a non-empty array, serve it. If empty array, treat as cache miss.
@@ -618,6 +637,12 @@ export class IrctcService {
 
     const fromNorm = sanitizeStationCode(from);
     const toNorm = sanitizeStationCode(to);
+
+    if (!isValidStationCode(fromNorm) || !isValidStationCode(toNorm)) {
+      winstonLogger.warn(`[IRCTC_AVAIL_REJECT] Invalid station code rejected before external API call: train=${trainNo} from='${fromNorm}', to='${toNorm}'`);
+      return null;
+    }
+
     const quotaNorm = (quota || 'GN').toUpperCase().trim();
     const classNorm = (classType || '3A').toUpperCase().trim();
 

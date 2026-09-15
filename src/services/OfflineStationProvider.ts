@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { winstonLogger } from '../middleware/logger';
+import { isValidStationCode } from './stationAliases';
 
 export interface OfflineStationStats {
   aliasesCount: number;
@@ -150,8 +151,11 @@ export class OfflineStationProvider {
       return this.cityMap[key];
     }
 
-    // 3. Fallback: treat input as station code itself
-    return [key];
+    // 3. Fallback: treat input as station code only if it is a valid station code
+    if (isValidStationCode(key)) {
+      return [key];
+    }
+    return [];
   }
 
   /**

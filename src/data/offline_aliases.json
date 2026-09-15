@@ -209,5 +209,39 @@
   ],
   "HARIDWAR": [
     "HW"
+  ],
+  "SIWAN": [
+    "SV"
+  ],
+  "SIWAN JN": [
+    "SV"
+  ],
+  "MURUDESHWAR": [
+    "MRDW"
+  ],
+  "MURDESHWAR": [
+    "MRDW"
+  ],
+  "SHIRDI": [
+    "SNSI"
+  ],
+  "SAINAGAR SHIRDI": [
+    "SNSI"
+  ],
+  "GONDIA": [
+    "G"
+  ],
+  "GONDIA JN": [
+    "G"
+  ],
+  "AYODHYA": [
+    "AY",
+    "AYC"
+  ],
+  "AYODHYA DHAM": [
+    "AY"
+  ],
+  "AYODHYA CANTT": [
+    "AYC"
   ]
 }

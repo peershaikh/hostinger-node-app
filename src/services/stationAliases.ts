@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+
 /**
  * PHASE_4C862 — Shared station alias definitions for schedule matching and IRCTC API mapping.
  * Train-aware resolution lives in trainStationResolver.ts (does NOT blindly map DR→CSMT).
@@ -102,3 +105,57 @@ export function normalizeForAPILegacy(code: string): string {
   if (clean === 'KSR') return 'SBC';
   return clean;
 }
+
+let KNOWN_STATION_CODES_SET: Set<string> | null = null;
+
+export function getKnownStationCodes(): Set<string> {
+  if (KNOWN_STATION_CODES_SET) return KNOWN_STATION_CODES_SET;
+  KNOWN_STATION_CODES_SET = new Set<string>();
+  try {
+    const stationsPath = path.join(__dirname, '../data/full_stations.json');
+    if (fs.existsSync(stationsPath)) {
+      const rawData = JSON.parse(fs.readFileSync(stationsPath, 'utf8'));
+      if (rawData?.features && Array.isArray(rawData.features)) {
+        for (const f of rawData.features) {
+          if (f?.properties?.code) {
+            KNOWN_STATION_CODES_SET.add(String(f.properties.code).toUpperCase().trim());
+          }
+        }
+      }
+    }
+  } catch (e) {
+    // Graceful fallback if full_stations.json cannot be read
+  }
+
+  // Ensure major operational stations and single-letter codes are present
+  KNOWN_STATION_CODES_SET.add('R'); // Raipur
+  KNOWN_STATION_CODES_SET.add('G'); // Gondia
+  KNOWN_STATION_CODES_SET.add('J'); // Jalna
+  KNOWN_STATION_CODES_SET.add('SV'); // Siwan
+  KNOWN_STATION_CODES_SET.add('MRDW'); // Murdeshwar
+  KNOWN_STATION_CODES_SET.add('SNSI'); // Sainagar Shirdi
+  KNOWN_STATION_CODES_SET.add('AY'); // Ayodhya Dham
+  KNOWN_STATION_CODES_SET.add('AYC'); // Ayodhya Cantt
+
+  return KNOWN_STATION_CODES_SET;
+}
+
+/**
+ * Strict check if a string is an authentic Indian Railways station code.
+ * Rules:
+ * 1. Must be 1 to 5 uppercase alphanumeric characters (e.g. 'R', 'G', 'NDLS', 'CSMT', 'SVDK').
+ * 2. If the known station codes registry is loaded (~9,740 stations), it MUST exist in the registry.
+ * 3. Never accepts full city/station names (e.g. 'SIWAN', 'MURUDESHWAR', 'SHIRDI', 'GONDIA').
+ */
+export function isValidStationCode(code: string): boolean {
+  if (!code || typeof code !== 'string') return false;
+  const clean = code.toUpperCase().trim();
+  if (clean.length < 1 || clean.length > 5) return false;
+  if (!/^[A-Z0-9]{1,5}$/.test(clean)) return false;
+
+  const known = getKnownStationCodes();
+  if (known && known.size > 0) {
+    return known.has(clean);
+  }
+  return /^[A-Z]{1,4}$/.test(clean);
+}
