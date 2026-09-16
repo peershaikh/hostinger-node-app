@@ -86,8 +86,8 @@ const DEFAULT_AI_CONFIG: AiSystemConfig = {
       providerId: 'DEEPSEEK',
       displayName: 'DeepSeek',
       enabled: true,
-      activeModel: 'deepseek-chat',
-      allowedModels: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-flash', 'deepseek-v4-pro'],
+      activeModel: 'deepseek-flash',
+      allowedModels: ['deepseek-flash', 'deepseek-v4-flash', 'deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-pro'],
       capabilities: {
         predictPnr: true,
         analyzeRoute: true,
@@ -183,12 +183,21 @@ const DEFAULT_AI_CONFIG: AiSystemConfig = {
       },
       defaultForReasoning: true
     },
+    'deepseek-flash': {
+      modelId: 'deepseek-flash', displayName: 'DeepSeek Flash (V4.1)', providerId: 'DEEPSEEK',
+      pricing: {
+        inputPerMillionUsd: 0.22, outputPerMillionUsd: 0.90,
+        cacheHitInputPerMillionUsd: 0.005,
+        notes: 'DeepSeek official Flash model ($0.15–$0.30 in, $0.60–$1.20 out per M tokens).'
+      },
+      defaultForHighVolume: true
+    },
     'deepseek-v4-flash': {
       modelId: 'deepseek-v4-flash', displayName: 'DeepSeek V4 Flash', providerId: 'DEEPSEEK',
       pricing: {
-        inputPerMillionUsd: 0.22, outputPerMillionUsd: 0.66,
-        cacheHitInputPerMillionUsd: 0.007,
-        notes: 'Off-peak cache-miss rates. Peak is 2x. Cache-hit input $0.007/M.'
+        inputPerMillionUsd: 0.22, outputPerMillionUsd: 0.90,
+        cacheHitInputPerMillionUsd: 0.005,
+        notes: 'Legacy alias for DeepSeek-V4.1-Flash (billed at Flash rates).'
       },
       defaultForHighVolume: true
     },

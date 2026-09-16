@@ -27,8 +27,9 @@
       "providerId": "DEEPSEEK",
       "displayName": "DeepSeek",
       "enabled": true,
-      "activeModel": "deepseek-v4-flash",
+      "activeModel": "deepseek-flash",
       "allowedModels": [
+        "deepseek-flash",
         "deepseek-v4-flash",
         "deepseek-v4-pro",
         "deepseek-chat"
@@ -90,7 +91,7 @@
     "PNR_PREDICTION": {
       "primaryProvider": "DEEPSEEK",
       "fallbackProvider": "GEMINI",
-      "model": "deepseek-v4-flash"
+      "model": "deepseek-flash"
     },
     "ROUTE_ANALYSIS": {
       "primaryProvider": "GEMINI",

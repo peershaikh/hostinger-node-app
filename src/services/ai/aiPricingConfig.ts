@@ -37,18 +37,34 @@ export const AI_MODEL_PRICING: Record<string, ModelPricing> = {
     inputPerMillionUsd: 3.00,
     outputPerMillionUsd: 15.00
   },
-  // DeepSeek V4-Flash — official off-peak cache-miss rates (August 2026).
-  // Cache-hit input: $0.007/M. Peak rates are 2x higher.
-  // Source: https://api.deepseek.com (pricing page, verified August 2026).
+  // DeepSeek Flash — official rates (DeepSeek-V4.1-Flash).
+  // Off-peak: In $0.15/M, Out $0.60/M. Peak: In $0.30/M, Out $1.20/M. Cache-hit: $0.003-$0.006/M.
+  // Blended average: In $0.22/M, Out $0.90/M.
+  'deepseek-flash': {
+    inputPerMillionUsd: 0.22,
+    outputPerMillionUsd: 0.90,
+    cacheHitInputPerMillionUsd: 0.005,
+    notes: 'DeepSeek-V4.1-Flash (Off-peak $0.15/$0.60, Peak $0.30/$1.20 per M tokens)'
+  },
   'deepseek-v4-flash': {
     inputPerMillionUsd: 0.22,
-    outputPerMillionUsd: 0.66,
-    cacheHitInputPerMillionUsd: 0.007,
-    notes: 'Off-peak cache-miss. Peak is 2x. Cache-hit $0.007/M.'
+    outputPerMillionUsd: 0.90,
+    cacheHitInputPerMillionUsd: 0.005,
+    notes: 'DeepSeek-V4.1-Flash legacy alias (billed at Flash rate)'
   },
-  // DeepSeek V4-Pro — official off-peak cache-miss rates (August 2026).
-  // Cache-hit input: $0.022/M. Peak rates are 2x higher.
-  // Source: https://api.deepseek.com (pricing page, verified August 2026).
+  'deepseek-chat': {
+    inputPerMillionUsd: 0.14,
+    outputPerMillionUsd: 0.28,
+    cacheHitInputPerMillionUsd: 0.014,
+    notes: 'DeepSeek Chat V3 ($0.14 in, $0.28 out per M tokens)'
+  },
+  'deepseek-reasoner': {
+    inputPerMillionUsd: 0.55,
+    outputPerMillionUsd: 2.19,
+    cacheHitInputPerMillionUsd: 0.14,
+    notes: 'DeepSeek Reasoner R1 ($0.55 in, $2.19 out per M tokens)'
+  },
+  // DeepSeek V4-Pro — official off-peak cache-miss rates.
   'deepseek-v4-pro': {
     inputPerMillionUsd: 0.66,
     outputPerMillionUsd: 1.98,
@@ -71,7 +87,16 @@ export function calculateAiCost(
     return null;
   }
 
-  const pricing = AI_MODEL_PRICING[model.toLowerCase().trim()];
+  let modelKey = (model || '').toLowerCase().trim();
+  if (modelKey.startsWith('deepseek') && (modelKey.includes('flash') || modelKey.includes('v4-flash') || modelKey.includes('v4.1'))) {
+    modelKey = 'deepseek-flash';
+  } else if (modelKey === 'deepseek-v3' || modelKey === 'deepseek-chat-v3') {
+    modelKey = 'deepseek-chat';
+  } else if (modelKey === 'deepseek-r1' || modelKey === 'deepseek-reasoner-r1') {
+    modelKey = 'deepseek-reasoner';
+  }
+
+  const pricing = AI_MODEL_PRICING[modelKey] || AI_MODEL_PRICING[(model || '').toLowerCase().trim()];
   if (!pricing) {
     return null;
   }

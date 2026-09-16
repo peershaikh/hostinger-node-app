@@ -34,11 +34,14 @@ export interface AiObservabilitySnapshot {
     totalOutputTokens: number;
     totalTokens: number;
     estimatedCostUsd: number;
+    estimatedCostInr?: number;
+    avgCostPerRequestUsd?: number;
+    avgCostPerRequestInr?: number;
   };
   breakdowns: {
-    byProvider: Record<string, { requests: number; successRatePct: number; tokens: number; estimatedCostUsd: number }>;
-    byModel: Record<string, { requests: number; tokens: number; estimatedCostUsd: number; avgLatencyMs: number }>;
-    byFeature: Record<string, { requests: number; successRatePct: number; avgLatencyMs: number; tokens: number; estimatedCostUsd: number; fallbackCount: number }>;
+    byProvider: Record<string, { requests: number; successRatePct: number; tokens: number; estimatedCostUsd: number; costPerRequestUsd?: number; costPerRequestInr?: number }>;
+    byModel: Record<string, { requests: number; tokens: number; estimatedCostUsd: number; avgLatencyMs: number; costPerRequestUsd?: number; costPerRequestInr?: number }>;
+    byFeature: Record<string, { requests: number; successRatePct: number; avgLatencyMs: number; tokens: number; estimatedCostUsd: number; costPerRequestUsd?: number; costPerRequestInr?: number; fallbackCount: number }>;
     byDay: Record<string, { requests: number; tokens: number; estimatedCostUsd: number; errors: number }>;
   };
   fallbackMetrics: {
@@ -192,35 +195,46 @@ export class AiObservabilityService {
     const errorRatePct = totalRequests > 0 ? Math.round(((totalRequests - successfulRequests) / totalRequests) * 1000) / 10 : 0;
     const avgLatencyMs = totalRequests > 0 ? Math.round(totalLatency / totalRequests) : 0;
 
+    const USD_TO_INR = 87.5;
+
     // Transform breakdowns
-    const normalizedProviders: Record<string, { requests: number; successRatePct: number; tokens: number; estimatedCostUsd: number }> = {};
+    const normalizedProviders: Record<string, { requests: number; successRatePct: number; tokens: number; estimatedCostUsd: number; costPerRequestUsd: number; costPerRequestInr: number }> = {};
     for (const [k, v] of Object.entries(byProvider)) {
+      const perReqUsd = v.requests > 0 ? Math.round((v.estimatedCostUsd / v.requests) * 100000) / 100000 : 0;
       normalizedProviders[k] = {
         requests: v.requests,
         successRatePct: v.requests > 0 ? Math.round((v.successCount / v.requests) * 1000) / 10 : 100,
         tokens: v.tokens,
-        estimatedCostUsd: Math.round(v.estimatedCostUsd * 10000) / 10000
+        estimatedCostUsd: Math.round(v.estimatedCostUsd * 10000) / 10000,
+        costPerRequestUsd: perReqUsd,
+        costPerRequestInr: Math.round(perReqUsd * USD_TO_INR * 1000) / 1000
       };
     }
 
-    const normalizedModels: Record<string, { requests: number; tokens: number; estimatedCostUsd: number; avgLatencyMs: number }> = {};
+    const normalizedModels: Record<string, { requests: number; tokens: number; estimatedCostUsd: number; avgLatencyMs: number; costPerRequestUsd: number; costPerRequestInr: number }> = {};
     for (const [k, v] of Object.entries(byModel)) {
+      const perReqUsd = v.requests > 0 ? Math.round((v.estimatedCostUsd / v.requests) * 100000) / 100000 : 0;
       normalizedModels[k] = {
         requests: v.requests,
         tokens: v.tokens,
         estimatedCostUsd: Math.round(v.estimatedCostUsd * 10000) / 10000,
-        avgLatencyMs: v.requests > 0 ? Math.round(v.totalLatency / v.requests) : 0
+        avgLatencyMs: v.requests > 0 ? Math.round(v.totalLatency / v.requests) : 0,
+        costPerRequestUsd: perReqUsd,
+        costPerRequestInr: Math.round(perReqUsd * USD_TO_INR * 1000) / 1000
       };
     }
 
-    const normalizedFeatures: Record<string, { requests: number; successRatePct: number; avgLatencyMs: number; tokens: number; estimatedCostUsd: number; fallbackCount: number }> = {};
+    const normalizedFeatures: Record<string, { requests: number; successRatePct: number; avgLatencyMs: number; tokens: number; estimatedCostUsd: number; costPerRequestUsd: number; costPerRequestInr: number; fallbackCount: number }> = {};
     for (const [k, v] of Object.entries(byFeature)) {
+      const perReqUsd = v.requests > 0 ? Math.round((v.estimatedCostUsd / v.requests) * 100000) / 100000 : 0;
       normalizedFeatures[k] = {
         requests: v.requests,
         successRatePct: v.requests > 0 ? Math.round((v.successCount / v.requests) * 1000) / 10 : 100,
         avgLatencyMs: v.requests > 0 ? Math.round(v.totalLatency / v.requests) : 0,
         tokens: v.tokens,
         estimatedCostUsd: Math.round(v.estimatedCostUsd * 10000) / 10000,
+        costPerRequestUsd: perReqUsd,
+        costPerRequestInr: Math.round(perReqUsd * USD_TO_INR * 1000) / 1000,
         fallbackCount: v.fallbackCount
       };
     }
@@ -235,6 +249,10 @@ export class AiObservabilityService {
       };
     }
 
+    const roundedCostUsd = Math.round(estimatedCostUsd * 10000) / 10000;
+    const avgCostPerReqUsd = totalRequests > 0 ? Math.round((estimatedCostUsd / totalRequests) * 100000) / 100000 : 0;
+    const avgCostPerReqInr = Math.round(avgCostPerReqUsd * USD_TO_INR * 1000) / 1000;
+
     return {
       summary: {
         totalRequests,
@@ -244,7 +262,10 @@ export class AiObservabilityService {
         totalInputTokens,
         totalOutputTokens,
         totalTokens,
-        estimatedCostUsd: Math.round(estimatedCostUsd * 10000) / 10000
+        estimatedCostUsd: roundedCostUsd,
+        estimatedCostInr: Math.round(roundedCostUsd * USD_TO_INR * 100) / 100,
+        avgCostPerRequestUsd: avgCostPerReqUsd,
+        avgCostPerRequestInr: avgCostPerReqInr
       },
       breakdowns: {
         byProvider: normalizedProviders,
