@@ -1075,8 +1075,17 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "delhi-raipur": ["ET", "NGP", "BSP"],
   "delhi-amritsar": ["CDG", "LDH", "ASR"],
 
-  // —— Kolkata corridors ——
-  "kolkata-bbs": ["KGP", "BLS", "CTC"],
+  // —— Kolkata – Bhubaneswar ——
+  "kolkata-bhubaneswar": ["KGP", "CTC", "BLS", "BHC", "JJKR", "HIJ", "TATA", "ROU", "SBP", "ANGL", "JER", "MDN"],
+  "bhubaneswar-kolkata": ["KGP", "CTC", "BLS", "BHC", "JJKR", "HIJ", "TATA", "ROU", "SBP", "ANGL", "JER", "MDN"],
+  "kolkata-bbs":         ["KGP", "CTC", "BLS", "BHC", "JJKR", "HIJ", "TATA", "ROU", "SBP", "ANGL", "JER", "MDN"],
+  "bbs-kolkata":         ["KGP", "CTC", "BLS", "BHC", "JJKR", "HIJ", "TATA", "ROU", "SBP", "ANGL", "JER", "MDN"],
+  "howrah-bhubaneswar":  ["KGP", "CTC", "BLS", "BHC", "JJKR", "HIJ", "TATA", "ROU", "SBP", "ANGL", "JER", "MDN"],
+  "bhubaneswar-howrah":  ["KGP", "CTC", "BLS", "BHC", "JJKR", "HIJ", "TATA", "ROU", "SBP", "ANGL", "JER", "MDN"],
+  "howrah-bbs":          ["KGP", "CTC", "BLS", "BHC", "JJKR", "HIJ", "TATA", "ROU", "SBP", "ANGL", "JER", "MDN"],
+  "bbs-howrah":          ["KGP", "CTC", "BLS", "BHC", "JJKR", "HIJ", "TATA", "ROU", "SBP", "ANGL", "JER", "MDN"],
+  "kolkata-bbsn":        ["KGP", "CTC", "BLS", "BHC", "JJKR", "HIJ", "TATA", "ROU", "SBP", "ANGL", "JER", "MDN"],
+  "bbsn-kolkata":        ["KGP", "CTC", "BLS", "BHC", "JJKR", "HIJ", "TATA", "ROU", "SBP", "ANGL", "JER", "MDN"],
   "kolkata-puri": ["KGP", "BLS", "CTC", "BBS", "KUR"],
   "kolkata-guwahati": ["MLDT", "NJP", "GHY"],
   "kolkata-dibrugarh": ["MLDT", "NJP", "GHY", "DBRG"],
