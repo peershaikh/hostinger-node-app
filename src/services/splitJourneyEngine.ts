@@ -1028,6 +1028,12 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "mumbai-ald": ["JBP", "STA", "ET", "MKP", "BSL", "KTE", "CNB", "BPL", "VGLJ", "JHS"],
   "ald-mumbai": ["JBP", "STA", "ET", "MKP", "BSL", "KTE", "CNB", "BPL", "VGLJ", "JHS"],
 
+  // —— Delhi – Kanpur ——
+  "delhi-kanpur": ["ALJN", "TDL", "ETW", "GZB", "FZD", "SKB", "HRS", "MTJ", "AGC", "PHD", "KRJ"],
+  "kanpur-delhi": ["ALJN", "TDL", "ETW", "GZB", "FZD", "SKB", "HRS", "MTJ", "AGC", "PHD", "KRJ"],
+  "delhi-cnb":    ["ALJN", "TDL", "ETW", "GZB", "FZD", "SKB", "HRS", "MTJ", "AGC", "PHD", "KRJ"],
+  "cnb-delhi":    ["ALJN", "TDL", "ETW", "GZB", "FZD", "SKB", "HRS", "MTJ", "AGC", "PHD", "KRJ"],
+
   // —— Delhi – Lucknow ——
   "delhi-lucknow": ["CNB", "MB", "BE", "ALJN", "TDL", "SPN", "PRYJ", "HPU", "AGC", "ETW"],
   "lucknow-delhi": ["CNB", "MB", "BE", "ALJN", "TDL", "SPN", "PRYJ", "HPU", "AGC", "ETW"],
