@@ -1034,6 +1034,16 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "delhi-cnb":    ["ALJN", "TDL", "ETW", "GZB", "FZD", "SKB", "HRS", "MTJ", "AGC", "PHD", "KRJ"],
   "cnb-delhi":    ["ALJN", "TDL", "ETW", "GZB", "FZD", "SKB", "HRS", "MTJ", "AGC", "PHD", "KRJ"],
 
+  // —— Delhi – Prayagraj ——
+  "delhi-prayagraj": ["CNB", "ALJN", "TDL", "ETW", "FTP", "GZB", "FZD", "LKO", "AGC", "MTJ", "MKP", "SKB"],
+  "prayagraj-delhi": ["CNB", "ALJN", "TDL", "ETW", "FTP", "GZB", "FZD", "LKO", "AGC", "MTJ", "MKP", "SKB"],
+  "delhi-pryj":      ["CNB", "ALJN", "TDL", "ETW", "FTP", "GZB", "FZD", "LKO", "AGC", "MTJ", "MKP", "SKB"],
+  "pryj-delhi":      ["CNB", "ALJN", "TDL", "ETW", "FTP", "GZB", "FZD", "LKO", "AGC", "MTJ", "MKP", "SKB"],
+  "delhi-pcoi":      ["CNB", "ALJN", "TDL", "ETW", "FTP", "GZB", "FZD", "LKO", "AGC", "MTJ", "MKP", "SKB"],
+  "pcoi-delhi":      ["CNB", "ALJN", "TDL", "ETW", "FTP", "GZB", "FZD", "LKO", "AGC", "MTJ", "MKP", "SKB"],
+  "delhi-ald":       ["CNB", "ALJN", "TDL", "ETW", "FTP", "GZB", "FZD", "LKO", "AGC", "MTJ", "MKP", "SKB"],
+  "ald-delhi":       ["CNB", "ALJN", "TDL", "ETW", "FTP", "GZB", "FZD", "LKO", "AGC", "MTJ", "MKP", "SKB"],
+
   // —— Delhi – Lucknow ——
   "delhi-lucknow": ["CNB", "MB", "BE", "ALJN", "TDL", "SPN", "PRYJ", "HPU", "AGC", "ETW"],
   "lucknow-delhi": ["CNB", "MB", "BE", "ALJN", "TDL", "SPN", "PRYJ", "HPU", "AGC", "ETW"],
