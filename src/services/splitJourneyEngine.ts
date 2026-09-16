@@ -3088,7 +3088,8 @@ export class SplitJourneyEngine {
     // Canonical city alias normalization for deterministic corridors & corridor fallbacks
     // (stationService.getCitySync returns "BOMBAY" for CSMT/BDTS/LTT/MMCT/PNVL and "BCT" for BCT)
     const normalizeCityAlias = (city: string): string => {
-      const c = (city || '').toLowerCase().trim();
+      let c = (city || '').toLowerCase().trim();
+      c = c.replace(/\s+(?:jn\.?|junction|cantt\.?|city)$/i, '').trim();
       if (c === 'bombay' || c === 'bct') return 'mumbai';
       if (c === 'calcutta' || c === 'howrah') return 'kolkata';
       if (c === 'allahabad') return 'prayagraj';
