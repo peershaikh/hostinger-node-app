@@ -1138,6 +1138,8 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "chennai-ernakulam": ["SA", "CBE", "ERS"],
   "chennai-vijayawada": ["GDR", "RU", "BZA"],
   "chennai-visakhapatnam": ["GDR", "RU", "BZA", "VSKP"],
+  "chennai-pune": ["SUR", "WADI", "GTL", "BZA", "SC", "KPD", "JTJ"],
+  "pune-chennai": ["SUR", "WADI", "GTL", "BZA", "SC", "KPD", "JTJ"],
 
   // —— Bangalore/Bengaluru corridors ——
   "bengaluru-trivandrum": ["CBE", "ERS"],
