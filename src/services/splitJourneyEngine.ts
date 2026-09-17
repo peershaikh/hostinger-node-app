@@ -1166,6 +1166,14 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "jodhpur-chennai":  ["MJ", "ABR", "ADI", "JP", "KOTA", "RTM", "BPL", "ET", "NGP", "BZA", "BPQ", "SC"],
   "mas-ju":           ["MJ", "ABR", "ADI", "JP", "KOTA", "RTM", "BPL", "ET", "NGP", "BZA", "BPQ", "SC"],
   "ju-mas":           ["MJ", "ABR", "ADI", "JP", "KOTA", "RTM", "BPL", "ET", "NGP", "BZA", "BPQ", "SC"],
+  "chennai-jammu":    ["PTKC", "LDH", "UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
+  "jammu-chennai":    ["PTKC", "LDH", "UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
+  "chennai-katra":    ["PTKC", "LDH", "UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
+  "katra-chennai":    ["PTKC", "LDH", "UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
+  "mas-jat":          ["PTKC", "LDH", "UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
+  "jat-mas":          ["PTKC", "LDH", "UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
+  "mas-svdk":         ["PTKC", "LDH", "UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
+  "svdk-mas":         ["PTKC", "LDH", "UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
 
   // —— Bangalore/Bengaluru corridors ——
   "bengaluru-trivandrum": ["CBE", "ERS"],
