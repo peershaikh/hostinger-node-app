@@ -1174,6 +1174,10 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "jat-mas":          ["PTKC", "LDH", "UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
   "mas-svdk":         ["PTKC", "LDH", "UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
   "svdk-mas":         ["PTKC", "LDH", "UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
+  "chennai-chandigarh": ["UMB", "NDLS", "PNP", "AGC", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
+  "chandigarh-chennai": ["UMB", "NDLS", "PNP", "AGC", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
+  "mas-cdg":            ["UMB", "NDLS", "PNP", "AGC", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
+  "cdg-mas":            ["UMB", "NDLS", "PNP", "AGC", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
 
   // —— Bangalore/Bengaluru corridors ——
   "bengaluru-trivandrum": ["CBE", "ERS"],
