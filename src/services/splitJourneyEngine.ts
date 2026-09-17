@@ -1213,7 +1213,16 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "kcg-bengaluru":          ["GTL", "DMM", "DHNE", "KRNT", "MBNR", "RC", "WADI", "VKB", "ATP", "YG", "TDU", "HUP"],
   "bengaluru-hyb":          ["GTL", "DMM", "DHNE", "KRNT", "MBNR", "RC", "WADI", "VKB", "ATP", "YG", "TDU", "HUP"],
   "hyb-bengaluru":          ["GTL", "DMM", "DHNE", "KRNT", "MBNR", "RC", "WADI", "VKB", "ATP", "YG", "TDU", "HUP"],
-  "bengaluru-varanasi": ["SC", "NGP", "ET", "PRYJ", "BSB"],
+  "bengaluru-varanasi": ["PRYJ", "STA", "KTE", "JBP", "ET", "NGP", "BPQ", "WL", "BZA", "SC", "WADI", "GTL"],
+  "varanasi-bengaluru": ["PRYJ", "STA", "KTE", "JBP", "ET", "NGP", "BPQ", "WL", "BZA", "SC", "WADI", "GTL"],
+  "bangalore-varanasi": ["PRYJ", "STA", "KTE", "JBP", "ET", "NGP", "BPQ", "WL", "BZA", "SC", "WADI", "GTL"],
+  "varanasi-bangalore": ["PRYJ", "STA", "KTE", "JBP", "ET", "NGP", "BPQ", "WL", "BZA", "SC", "WADI", "GTL"],
+  "sbc-bsb":            ["PRYJ", "STA", "KTE", "JBP", "ET", "NGP", "BPQ", "WL", "BZA", "SC", "WADI", "GTL"],
+  "bsb-sbc":            ["PRYJ", "STA", "KTE", "JBP", "ET", "NGP", "BPQ", "WL", "BZA", "SC", "WADI", "GTL"],
+  "ypr-bsb":            ["PRYJ", "STA", "KTE", "JBP", "ET", "NGP", "BPQ", "WL", "BZA", "SC", "WADI", "GTL"],
+  "bsb-ypr":            ["PRYJ", "STA", "KTE", "JBP", "ET", "NGP", "BPQ", "WL", "BZA", "SC", "WADI", "GTL"],
+  "smvb-bsb":           ["PRYJ", "STA", "KTE", "JBP", "ET", "NGP", "BPQ", "WL", "BZA", "SC", "WADI", "GTL"],
+  "bsb-smvb":           ["PRYJ", "STA", "KTE", "JBP", "ET", "NGP", "BPQ", "WL", "BZA", "SC", "WADI", "GTL"],
   "bengaluru-lucknow": ["SC", "NGP", "ET", "CNB", "LKO"],
   "bengaluru-ernakulam": ["CBE", "ERS"],
   "bengaluru-coimbatore": ["SA", "CBE"],
@@ -1271,7 +1280,6 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
 
   // —— Varanasi corridors ——
   "varanasi-mumbai": ["JBP", "STA", "ET", "PCOI", "PRYJ", "MKP", "BSL", "KTE", "CNB", "DDU"],
-  "varanasi-bangalore": ["PRYJ", "ET", "NGP", "SC", "SBC"],
   "varanasi-chennai": ["DDU", "HWH", "BZA", "MAS"],
   "varanasi-kolkata": ["DDU", "ASN", "HWH"],
 
