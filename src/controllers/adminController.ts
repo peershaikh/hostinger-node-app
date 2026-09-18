@@ -261,8 +261,30 @@ export class AdminController {
       let recentEvents: any[] = [];
 
       try {
-        const { data } = await supabase.from('search_history').select('source, destination, search_count').order('search_count', { ascending: false }).limit(5);
-        topSearched = data || [];
+        const { data: recentHistory } = await supabase
+          .from('search_history')
+          .select('source, destination')
+          .order('searched_at', { ascending: false })
+          .limit(500);
+
+        if (recentHistory && recentHistory.length > 0) {
+          const map = new Map<string, { source: string; destination: string; search_count: number }>();
+          for (const row of recentHistory) {
+            if (!row.source || !row.destination) continue;
+            const src = row.source.trim().toUpperCase();
+            const dst = row.destination.trim().toUpperCase();
+            const key = `${src}->${dst}`;
+            const existing = map.get(key);
+            if (existing) {
+              existing.search_count++;
+            } else {
+              map.set(key, { source: src, destination: dst, search_count: 1 });
+            }
+          }
+          topSearched = Array.from(map.values())
+            .sort((a, b) => b.search_count - a.search_count)
+            .slice(0, 5);
+        }
       } catch (err: any) { winstonLogger.warn(`[INSIGHT_SEARCH_FAIL] ${err.message}`); }
 
       try {
@@ -1475,7 +1497,7 @@ export class AdminController {
           const { count: sCount } = await supabase
             .from('search_history')
             .select('*', { count: 'exact', head: true })
-            .gte('created_at', startOfDay);
+            .gte('searched_at', startOfDay);
           if (typeof sCount === 'number' && sCount > searchesToday) {
             searchesToday = sCount;
           }
@@ -1488,19 +1510,70 @@ export class AdminController {
             pnrChecksToday = pCount;
           }
 
-          // Top route today
-          const { data: topRoutes } = await supabase
+          // Top route today - aggregated from today's real searches
+          const { data: todaySearches } = await supabase
             .from('search_history')
-            .select('source, destination, search_count')
-            .order('search_count', { ascending: false })
-            .limit(1);
+            .select('source, destination')
+            .gte('searched_at', startOfDay)
+            .order('searched_at', { ascending: false })
+            .limit(2000);
 
-          if (topRoutes && topRoutes[0]) {
-            topRouteToday = {
-              source: topRoutes[0].source || 'NDLS',
-              destination: topRoutes[0].destination || 'BSB',
-              count: topRoutes[0].search_count || 1
-            };
+          if (todaySearches && todaySearches.length > 0) {
+            const routeCounts = new Map<string, { source: string; destination: string; count: number }>();
+            for (const s of todaySearches) {
+              if (!s.source || !s.destination) continue;
+              const src = s.source.trim().toUpperCase();
+              const dst = s.destination.trim().toUpperCase();
+              const key = `${src}->${dst}`;
+              const curr = routeCounts.get(key);
+              if (curr) {
+                curr.count++;
+              } else {
+                routeCounts.set(key, { source: src, destination: dst, count: 1 });
+              }
+            }
+
+            let bestRoute: { source: string; destination: string; count: number } | null = null;
+            for (const r of routeCounts.values()) {
+              if (!bestRoute || r.count > bestRoute.count) {
+                bestRoute = r;
+              }
+            }
+            if (bestRoute) {
+              topRouteToday = bestRoute;
+            }
+          } else {
+            // Fallback to recent searches if day has just started
+            const { data: fallbackSearches } = await supabase
+              .from('search_history')
+              .select('source, destination')
+              .order('searched_at', { ascending: false })
+              .limit(200);
+
+            if (fallbackSearches && fallbackSearches.length > 0) {
+              const routeCounts = new Map<string, { source: string; destination: string; count: number }>();
+              for (const s of fallbackSearches) {
+                if (!s.source || !s.destination) continue;
+                const src = s.source.trim().toUpperCase();
+                const dst = s.destination.trim().toUpperCase();
+                const key = `${src}->${dst}`;
+                const curr = routeCounts.get(key);
+                if (curr) {
+                  curr.count++;
+                } else {
+                  routeCounts.set(key, { source: src, destination: dst, count: 1 });
+                }
+              }
+              let bestRoute: { source: string; destination: string; count: number } | null = null;
+              for (const r of routeCounts.values()) {
+                if (!bestRoute || r.count > bestRoute.count) {
+                  bestRoute = r;
+                }
+              }
+              if (bestRoute) {
+                topRouteToday = bestRoute;
+              }
+            }
           }
         }
       } catch (dbErr: any) {
@@ -1604,27 +1677,45 @@ export class AdminController {
           } else {
             const { data: histData } = await supabase
               .from('search_history')
-              .select('source, destination, search_count')
-              .order('search_count', { ascending: false })
-              .limit(20);
-            topRoutes = (histData || []).map(r => ({
-              source: r.source,
-              destination: r.destination,
-              count: r.search_count,
-              last_searched_at: new Date().toISOString()
-            }));
+              .select('source, destination')
+              .order('searched_at', { ascending: false })
+              .limit(1000);
+
+            if (histData && histData.length > 0) {
+              const routeMap = new Map<string, { source: string; destination: string; count: number; last_searched_at: string }>();
+              for (const r of histData) {
+                if (!r.source || !r.destination) continue;
+                const src = r.source.trim().toUpperCase();
+                const dst = r.destination.trim().toUpperCase();
+                const key = `${src}->${dst}`;
+                const existing = routeMap.get(key);
+                if (existing) {
+                  existing.count++;
+                } else {
+                  routeMap.set(key, {
+                    source: src,
+                    destination: dst,
+                    count: 1,
+                    last_searched_at: new Date().toISOString()
+                  });
+                }
+              }
+              topRoutes = Array.from(routeMap.values())
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 20);
+            }
           }
 
           const { data: recData } = await supabase
             .from('search_history')
-            .select('source, destination, date, direct_train_count, split_used, created_at')
-            .order('created_at', { ascending: false })
+            .select('source, destination, date, results_shown, searched_at')
+            .order('searched_at', { ascending: false })
             .limit(30);
 
           recentSearches = recData || [];
 
           highDemandUnserved = (recData || [])
-            .filter(r => r.split_used || r.direct_train_count === 0)
+            .filter(r => r.results_shown === 0)
             .slice(0, 10);
 
           const { count: tCount } = await supabase
@@ -1814,7 +1905,7 @@ export class AdminController {
       if (isSupabaseConfigured()) {
         try {
           const [sRes, tRes, nRes] = await Promise.all([
-            supabase.from('search_history').select('*').eq('user_id', id).order('created_at', { ascending: false }).limit(15),
+            supabase.from('search_history').select('*').eq('user_id', id).order('searched_at', { ascending: false }).limit(15),
             supabase.from('payment_transactions').select('*').eq('user_id', id).order('created_at', { ascending: false }).limit(10),
             supabase.from('user_notification_history').select('*').eq('user_id', id).order('created_at', { ascending: false }).limit(10)
           ]);
@@ -2098,7 +2189,7 @@ export class AdminController {
           const { count } = await supabase
             .from('search_history')
             .select('*', { count: 'exact', head: true })
-            .gte('created_at', todayStr);
+            .gte('searched_at', todayStr);
           searchesToday = count || 0;
         } else {
           const searchHistoryFile = path.join(__dirname, '../../data/search_history_fallback.jsonl');
