@@ -3431,6 +3431,7 @@ export class SplitJourneyEngine {
       if (c === 'banaras' || c === 'kashi') return 'varanasi';
       if (c === 'new delhi') return 'delhi';
       if (c === 'thiruvananthapuram' || c === 'trivandrum') return 'trivandrum';
+      if (c === 'secunderabad') return 'hyderabad';
       return c;
     };
 
