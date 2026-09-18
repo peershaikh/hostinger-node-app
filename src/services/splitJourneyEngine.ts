@@ -1401,6 +1401,28 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "smvb-guwahati":     ["NJP", "HWH", "BZA", "VSKP", "KGP", "MLDT", "BBS", "CTC", "NBQ", "PNBE", "NGP", "DDU"],
   "guwahati-smvb":     ["NJP", "HWH", "BZA", "VSKP", "KGP", "MLDT", "BBS", "CTC", "NBQ", "PNBE", "NGP", "DDU"],
 
+  // —— Bengaluru ↔ Chandigarh deterministic corridor ——
+  "bengaluru-chandigarh": ["UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "SC", "GTL", "WADI", "BPQ", "PNP", "LDH"],
+  "chandigarh-bengaluru": ["UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "SC", "GTL", "WADI", "BPQ", "PNP", "LDH"],
+  "bangalore-chandigarh": ["UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "SC", "GTL", "WADI", "BPQ", "PNP", "LDH"],
+  "chandigarh-bangalore": ["UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "SC", "GTL", "WADI", "BPQ", "PNP", "LDH"],
+  "bengaluru-cdg":        ["UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "SC", "GTL", "WADI", "BPQ", "PNP", "LDH"],
+  "cdg-bengaluru":        ["UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "SC", "GTL", "WADI", "BPQ", "PNP", "LDH"],
+  "bangalore-cdg":        ["UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "SC", "GTL", "WADI", "BPQ", "PNP", "LDH"],
+  "cdg-bangalore":        ["UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "SC", "GTL", "WADI", "BPQ", "PNP", "LDH"],
+  "sbc-cdg":             ["UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "SC", "GTL", "WADI", "BPQ", "PNP", "LDH"],
+  "cdg-sbc":             ["UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "SC", "GTL", "WADI", "BPQ", "PNP", "LDH"],
+  "ypr-cdg":             ["UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "SC", "GTL", "WADI", "BPQ", "PNP", "LDH"],
+  "cdg-ypr":             ["UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "SC", "GTL", "WADI", "BPQ", "PNP", "LDH"],
+  "smvb-cdg":            ["UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "SC", "GTL", "WADI", "BPQ", "PNP", "LDH"],
+  "cdg-smvb":            ["UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "SC", "GTL", "WADI", "BPQ", "PNP", "LDH"],
+  "sbc-chandigarh":      ["UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "SC", "GTL", "WADI", "BPQ", "PNP", "LDH"],
+  "chandigarh-sbc":      ["UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "SC", "GTL", "WADI", "BPQ", "PNP", "LDH"],
+  "ypr-chandigarh":      ["UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "SC", "GTL", "WADI", "BPQ", "PNP", "LDH"],
+  "chandigarh-ypr":      ["UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "SC", "GTL", "WADI", "BPQ", "PNP", "LDH"],
+  "smvb-chandigarh":     ["UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "SC", "GTL", "WADI", "BPQ", "PNP", "LDH"],
+  "chandigarh-smvb":     ["UMB", "NDLS", "VGLJ", "BPL", "ET", "NGP", "SC", "GTL", "WADI", "BPQ", "PNP", "LDH"],
+
   // —— Hyderabad/Secunderabad corridors ——
   "hyderabad-delhi": ["NGP", "ET", "BPL", "JHS", "NDLS"],
   "secunderabad-delhi": ["NGP", "ET", "BPL", "JHS", "NDLS"],
