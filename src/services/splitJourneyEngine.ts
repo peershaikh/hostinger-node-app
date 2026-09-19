@@ -1073,7 +1073,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "delhi-nagpur": ["BPL", "ET", "NGP"],
   "delhi-indore": ["AGC", "KOTA", "RTM"],
   "delhi-raipur": ["ET", "NGP", "BSP"],
-  "delhi-amritsar": ["CDG", "LDH", "ASR"],
+  "delhi-amritsar": ["CDG", "LDH"],
 
   // —— Delhi – Ranchi ——
   "delhi-ranchi": ["GAYA", "PNBE", "DDU", "MGS", "CNB", "NDLS", "G", "R", "BSP", "ROU"],
@@ -1559,12 +1559,12 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "jodhpur-delhi": ["JU", "MTD", "DNA", "JP", "AWR", "RE", "NDLS"],
   "delhi-udaipur": ["JP", "AII", "BHL", "COR", "UDZ"],
   "udaipur-delhi": ["UDZ", "COR", "BHL", "AII", "JP", "NDLS"],
-  "delhi-jammu": ["UMB", "LDH", "JRC", "PTKC", "JAT"],
-  "jammu-delhi": ["JAT", "PTKC", "JRC", "LDH", "UMB", "NDLS"],
-  "delhi-dehradun": ["MTC", "SRE", "RK", "HW", "DDN"],
-  "dehradun-delhi": ["DDN", "HW", "RK", "SRE", "MTC", "NDLS"],
-  "delhi-chandigarh": ["PNP", "KKDE", "UMB", "CDG"],
-  "chandigarh-delhi": ["CDG", "UMB", "KKDE", "PNP", "NDLS"],
+  "delhi-jammu": ["UMB", "LDH", "JRC", "PTKC"],
+  "jammu-delhi": ["PTKC", "JRC", "LDH", "UMB"],
+  "delhi-dehradun": ["MTC", "SRE", "RK", "HW"],
+  "dehradun-delhi": ["HW", "RK", "SRE", "MTC"],
+  "delhi-chandigarh": ["PNP", "KKDE", "UMB"],
+  "chandigarh-delhi": ["UMB", "KKDE", "PNP"],
   "delhi-haridwar": ["MTC", "SRE", "RK", "HW"],
   "haridwar-delhi": ["HW", "RK", "SRE", "MTC", "NDLS"],
 
