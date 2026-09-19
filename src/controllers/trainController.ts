@@ -1132,7 +1132,7 @@ export class TrainController {
    */
   getTrainCoaches = async (req: Request, res: Response) => {
     const { trainNo } = req.params;
-    if (!trainNo) return res.status(400).json({ success: false, error: 'trainNo is required' });
+    if (!trainNo || !/^\d{4,5}$/.test(trainNo)) return res.status(400).json({ success: false, error: 'Invalid train number format' });
 
     try {
       const cacheKey = `coach_comp:${trainNo}`;
