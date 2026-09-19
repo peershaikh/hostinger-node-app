@@ -1052,6 +1052,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "delhi-kolkata": ["CNB", "PRYJ", "DDU", "GAYA", "ASN"],
   "delhi-trivandrum": ["ET", "NGP", "BZA", "ERS", "TVC"],
   "delhi-varanasi": ["AGC", "CNB", "PRYJ", "DDU", "BSB"],
+  "varanasi-delhi": ["DDU", "PRYJ", "CNB", "AGC"],
   "delhi-patna": ["CNB", "PRYJ", "DDU", "GAYA"],
   "delhi-gorakhpur": ["CNB", "LKO", "GKP"],
   "delhi-guwahati": ["CNB", "PNBE", "KGP", "NJP", "GHY"],
@@ -1074,6 +1075,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "delhi-indore": ["AGC", "KOTA", "RTM"],
   "delhi-raipur": ["ET", "NGP", "BSP"],
   "delhi-amritsar": ["CDG", "LDH"],
+  "amritsar-delhi": ["LDH", "UMB", "CDG"],
 
   // —— Delhi – Ranchi ——
   "delhi-ranchi": ["GAYA", "PNBE", "DDU", "MGS", "CNB", "NDLS", "G", "R", "BSP", "ROU"],
@@ -1111,6 +1113,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "kolkata-hyderabad": ["KGP", "VSKP", "BZA"],
   "kolkata-secunderabad": ["KGP", "BBS", "VSKP", "BZA", "SC"],
   "kolkata-patna": ["ASN", "DHN", "GAYA", "PNBE"],
+  "patna-kolkata": ["GAYA", "DHN", "ASN"],
   "kolkata-lucknow": ["ASN", "MGS", "PRYJ", "CNB", "LKO"],
   "kolkata-varanasi": ["ASN", "MGS", "BSB"],
   "kolkata-ahmedabad": ["KGP", "TATA", "NGP", "BPL", "RTM", "ADI"],
@@ -1473,6 +1476,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "hyderabad-lucknow": ["NGP", "ET", "CNB", "LKO"],
   "hyderabad-chennai": ["BZA", "GDR"],
   "hyderabad-guwahati": ["BZA", "KGP", "HWH", "NJP", "GHY"],
+  "guwahati-hyderabad": ["NJP", "HWH", "KGP", "BZA"],
 
   // —— Lucknow corridors ——
   "lucknow-mumbai": ["CNB", "VGLJ", "BPL", "ET", "BSL", "JHS", "BINA", "ORAI", "ST", "KOTA"],
@@ -1518,6 +1522,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "visakhapatnam-delhi": ["BZA", "NGP", "ET", "BPL", "NDLS"],
   "guwahati-delhi": ["NJP", "MLDT", "HWH", "MGS", "CNB"],
   "guwahati-chennai": ["HWH", "KGP", "VSKP", "BZA", "MAS"],
+  "chennai-guwahati": ["BZA", "VSKP", "KGP", "HWH", "NJP"],
 
   // —— South India internal ——
   "ernakulam-delhi": ["SA", "SC", "NGP", "ET", "BPL", "NDLS"],
