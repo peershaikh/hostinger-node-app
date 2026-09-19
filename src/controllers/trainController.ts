@@ -1198,10 +1198,13 @@ export class TrainController {
    * counts, and regional breakdown (Jaipur/NWR, Delhi/NR, etc.).
    * Public read-only endpoint, 2-hour server caching.
    */
-  getDailyCancellations = async (_req: Request, res: Response) => {
+  getDailyCancellations = async (req: Request, res: Response) => {
     try {
       const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-      const cacheKey = `api_daily_cancellations_${today}`;
+      const queryDate = typeof req.query?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date.trim())
+        ? req.query.date.trim()
+        : today;
+      const cacheKey = `api_daily_cancellations_${queryDate}`;
       const cached = cacheService.get<any>(cacheKey);
       if (cached) {
         return res.json({ success: true, data: cached });
@@ -1231,7 +1234,7 @@ export class TrainController {
       const delhiCancellations = filterByCity([...fullyCancelled, ...partiallyCancelled], delhiKeywords);
 
       const payload = {
-        date: today,
+        date: queryDate,
         totalFullyCancelled: fullyCancelled.length,
         totalPartiallyCancelled: partiallyCancelled.length,
         totalAffected: fullyCancelled.length + partiallyCancelled.length,
