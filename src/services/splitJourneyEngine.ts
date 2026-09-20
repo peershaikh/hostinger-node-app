@@ -1013,6 +1013,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "bpl-panvel":      ["ET", "BSL", "KNW", "UJN", "RTM", "MMR", "BRC", "ST", "NAD", "JL"],
   "mumbai-itarsi": ["BSL", "ET"],
   "mumbai-gorakhpur": ["BSL", "NGP", "ET", "BPL", "CNB", "LKO", "GKP"],
+  "gorakhpur-mumbai": ["LKO", "CNB", "BPL", "ET", "BSL", "KNW", "NK"],
   "mumbai-basti": ["LKO", "CNB", "GD", "GKP", "VGLJ", "BPL", "ET", "BSL", "KOTA", "AY"],
   "basti-mumbai": ["LKO", "CNB", "GD", "GKP", "VGLJ", "BPL", "ET", "BSL", "KOTA", "AY"],
   "mumbai-bst": ["LKO", "CNB", "GD", "GKP", "VGLJ", "BPL", "ET", "BSL", "KOTA", "AY"],
