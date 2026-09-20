@@ -1076,6 +1076,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "delhi-visakhapatnam": ["CNB", "DDU", "HWH", "BZA", "VSKP"],
   "delhi-nagpur": ["BPL", "ET", "NGP"],
   "delhi-indore": ["AGC", "KOTA", "RTM"],
+  "indore-delhi": ["UJN", "RTM", "KOTA", "MTJ", "AGC"],
   "delhi-raipur": ["ET", "NGP", "BSP"],
   "delhi-amritsar": ["CDG", "LDH"],
   "amritsar-delhi": ["LDH", "UMB", "CDG"],
