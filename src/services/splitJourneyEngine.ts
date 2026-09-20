@@ -1108,6 +1108,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "bbsn-kolkata":        ["KGP", "CTC", "BLS", "BHC", "JJKR", "HIJ", "TATA", "ROU", "SBP", "ANGL", "JER", "MDN"],
   "kolkata-puri": ["KGP", "BLS", "CTC", "BBS", "KUR"],
   "kolkata-guwahati": ["MLDT", "NJP", "GHY"],
+  "guwahati-kolkata": ["NJP", "MLDT", "RPH", "BWN"],
   "kolkata-dibrugarh": ["MLDT", "NJP", "GHY", "DBRG"],
   "kolkata-mumbai": ["KGP", "ASN", "TATA", "GAYA", "ROU", "DDU", "BSP", "JBP", "NGP", "ET", "BSL", "PCOI"],
   "kolkata-delhi": ["ASN", "DHN", "MGS", "CNB"],
