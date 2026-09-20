@@ -1136,6 +1136,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "chennai-kolkata": ["BZA", "RJY", "VSKP", "VZM", "BAM", "KUR", "BBS", "CTC", "BHC", "BLS", "KGP", "GDR"],
   "chennai-hyderabad": ["GDR", "RU", "BZA"],
   "chennai-secunderabad": ["GDR", "RU", "BZA", "SC"],
+  "secunderabad-chennai": ["BZA", "RU", "GDR"],
   "chennai-patna": ["BZA", "KGP", "HWH", "PNBE"],
   "chennai-lucknow": ["BZA", "NGP", "ET", "CNB", "LKO"],
   "chennai-ahmedabad": ["BZA", "NGP", "ET", "RTM", "ADI"],
@@ -1480,7 +1481,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "hyderabad-kolkata": ["BZA", "VSKP", "KGP"],
   "hyderabad-patna": ["BZA", "KGP", "HWH", "PNBE"],
   "hyderabad-lucknow": ["NGP", "ET", "CNB", "LKO"],
-  "hyderabad-chennai": ["BZA", "GDR"],
+  "hyderabad-chennai": ["BZA", "RU", "GDR"],
   "hyderabad-guwahati": ["BZA", "KGP", "HWH", "NJP", "GHY"],
   "guwahati-hyderabad": ["NJP", "HWH", "KGP", "BZA"],
 
