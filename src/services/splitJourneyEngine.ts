@@ -1496,6 +1496,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "lucknow-chennai": ["CNB", "PRYJ", "BSB", "HWH", "BZA", "MAS"],
   "lucknow-hyderabad": ["CNB", "ET", "NGP", "SC"],
   "lucknow-patna": ["PRYJ", "DDU", "GAYA", "PNBE"],
+  "patna-lucknow": ["DDU", "BSB", "PRYJ", "CNB", "MGS"],
   "lucknow-guwahati": ["PNBE", "KGP", "NJP", "GHY"],
   "lucknow-ahmedabad": ["JHS", "KOTA", "RTM", "ADI"],
 
