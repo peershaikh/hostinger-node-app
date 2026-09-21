@@ -1111,6 +1111,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "kolkata-bbsn":        ["KGP", "CTC", "BLS", "BHC", "JJKR", "HIJ", "TATA", "ROU", "SBP", "ANGL", "JER", "MDN"],
   "bbsn-kolkata":        ["KGP", "CTC", "BLS", "BHC", "JJKR", "HIJ", "TATA", "ROU", "SBP", "ANGL", "JER", "MDN"],
   "kolkata-puri": ["KGP", "BLS", "CTC", "BBS", "KUR"],
+  "puri-kolkata": ["KUR", "BBS", "CTC", "BLS", "KGP"],
   "kolkata-guwahati": ["MLDT", "NJP", "GHY"],
   "guwahati-kolkata": ["NJP", "MLDT", "RPH", "BWN"],
   "kolkata-dibrugarh": ["MLDT", "NJP", "GHY", "DBRG"],
