@@ -386,8 +386,24 @@ export function parseLegAvailability(rawAvail: any): LegAvailabilityAnalysis {
     confirmationChancePercent = Math.round((confirmationChancePercent + providerPercentage) / 2);
   }
 
+  // Format exact quota status text (e.g. PQWL 10, RLWL 8, GNWL 6, TQWL 2)
+  let formattedStatusText = text;
+  if (isWl && wlNumber > 0) {
+    if (quotaType === 'PQWL') {
+      formattedStatusText = `PQWL ${wlNumber}`;
+    } else if (quotaType === 'RLWL') {
+      formattedStatusText = `RLWL ${wlNumber}`;
+    } else if (quotaType === 'GNWL' || quotaType === 'GENERAL') {
+      formattedStatusText = `GNWL ${wlNumber}`;
+    } else if (quotaType === 'TQWL') {
+      formattedStatusText = `TQWL ${wlNumber}`;
+    } else {
+      formattedStatusText = `WL ${wlNumber}`;
+    }
+  }
+
   return {
-    statusText: text,
+    statusText: formattedStatusText,
     rawStatus,
     isConfirmed: false,
     isRAC: false,
@@ -1227,11 +1243,16 @@ export class SegmentAvailabilityEngine {
         const minChance = Math.min(leg1Info.confirmationChancePercent, leg2Info.confirmationChancePercent);
 
         // Dynamic badges
+        const isDoubleWaitlist = leg1Info.isWaitlist && leg2Info.isWaitlist;
         const badges: string[] = ['SAME TRAIN'];
         if (isConfirmed) {
           badges.push('100% CONFIRMED');
         } else if (isPartialRac) {
           badges.push('RAC + CONFIRMED');
+        } else if (isDoubleWaitlist) {
+          const q1 = leg1Info.quotaType || 'WL';
+          const q2 = leg2Info.quotaType || 'WL';
+          badges.push(`${q1} + ${q2} (~${minChance}% CHANCE)`);
         } else {
           badges.push(`WL ≤ 50 (~${minChance}% CHANCE)`);
         }
@@ -1252,8 +1273,8 @@ export class SegmentAvailabilityEngine {
         } else {
           confidence = minChance >= 70 ? 'MEDIUM' : 'LOW';
           const maxWl = Math.max(leg1Info.wlNumber, leg2Info.wlNumber);
-          score = Math.max(50, Math.round(70 - maxWl / 2));
-          warning = `Segment includes Waitlist (${text1} / ${text2}). Overall confirmation probability: ~${minChance}%.`;
+          score = Math.max(40, Math.round(60 - maxWl / 2));
+          warning = `Segment includes Waitlist (${text1} / ${text2}). Overall confirmation probability: ~${minChance}%. Direct journey uses GNWL quota.`;
           disclaimer = 'Ye ek AI-based prediction hai, 100% confirmation ki guarantee nahi hai. Final chart preparation par depend karta hai.';
         }
 

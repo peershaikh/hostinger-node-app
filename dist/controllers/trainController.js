@@ -829,19 +829,84 @@ class TrainController {
                     return s || null;
                 };
                 const buildEntry = (raw) => {
-                    const st = normalizeStatus(raw?.availabilityText || raw?.status || raw?.current_status || raw?.availability ||
+                    const rawStatus = String(raw?.rawStatus || raw?.booking_status || raw?.status || '').toUpperCase().trim();
+                    const textStatus = normalizeStatus(raw?.availabilityText || raw?.status || raw?.current_status || raw?.availability ||
                         raw?.booking_status || raw?.avl_status);
-                    if (!st)
+                    if (!textStatus && !rawStatus)
                         return null;
+                    const combined = `${rawStatus} ${textStatus || ''}`.toUpperCase().trim();
                     const prob = raw?.probability ?? raw?.chance ?? raw?.booking_probability ?? raw?.predictionPercentage ?? null;
-                    // PHASE 1: Detect Current Booking (e.g. CURR_AVBL 12, CURR_AVBL, CURRENT_AVAILABLE, CURR AVBL)
-                    const currMatch = st.match(/CURR(?:ENT)?[\s_-]*AV(?:B|AI)?L(?:ABLE)?[\s_-]*(\d+)?/i);
+                    // 1. Detect Current Booking (e.g. CURR_AVBL 12, CURR_AVBL, CURRENT_AVAILABLE, CURR AVBL)
+                    const currMatch = (textStatus || combined).match(/CURR(?:ENT)?[\s_-]*AV(?:B|AI)?L(?:ABLE)?[\s_-]*(\d+)?/i);
                     const isCurrAvbl = Boolean(currMatch);
                     const currSeats = currMatch && currMatch[1] ? parseInt(currMatch[1], 10) : null;
-                    const isCnf = isCurrAvbl || st.includes('CNF') || st.includes('AVL') || st.includes('AVAILABLE');
-                    const isRac = !isCurrAvbl && st.includes('RAC');
-                    const isWl = !isCurrAvbl && st.includes('WL');
-                    const isRegret = st.includes('REGRET') || st.includes('NOT AVAILABLE') || st.includes('NO ROOM') || st.includes('BLOCKED');
+                    const isCnf = isCurrAvbl || combined.includes('CNF') || combined.includes('AVAILABLE') || combined.includes('AVL');
+                    const isRac = !isCurrAvbl && combined.includes('RAC');
+                    const isWl = !isCurrAvbl && (combined.includes('WL') || combined.includes('WAITLIST'));
+                    const isRegret = combined.includes('REGRET') || combined.includes('NOT AVAILABLE') || combined.includes('NO ROOM') || combined.includes('BLOCKED');
+                    // Extract Quota type and exact formatted status
+                    let quotaType;
+                    let formattedStatus = textStatus || rawStatus;
+                    let wlNum = null;
+                    if (isWl) {
+                        if (combined.includes('PQWL')) {
+                            quotaType = 'PQWL';
+                        }
+                        else if (combined.includes('RLWL')) {
+                            quotaType = 'RLWL';
+                        }
+                        else if (combined.includes('TQWL') || combined.includes('CKWL')) {
+                            quotaType = 'TQWL';
+                        }
+                        else if (combined.includes('RSWL')) {
+                            quotaType = 'RSWL';
+                        }
+                        else if (combined.includes('GNWL')) {
+                            quotaType = 'GNWL';
+                        }
+                        else if (qt === 'GN') {
+                            quotaType = 'GNWL';
+                        }
+                        // Extract numeric waitlist position (e.g. GNWL9/WL6 -> 6, PQWL16/WL10 -> 10, WL 6 -> 6)
+                        const currentWlMatch = combined.match(/\/WL\s*(\d+)/i) ||
+                            combined.match(/WL\s*(\d+)/i) ||
+                            combined.match(/(\d+)$/);
+                        if (currentWlMatch && currentWlMatch[1]) {
+                            wlNum = parseInt(currentWlMatch[1], 10);
+                        }
+                        else {
+                            const anyDigits = combined.match(/\d+/);
+                            if (anyDigits)
+                                wlNum = parseInt(anyDigits[0], 10);
+                        }
+                        if (quotaType && wlNum !== null) {
+                            formattedStatus = `${quotaType} ${wlNum}`;
+                        }
+                        else if (wlNum !== null) {
+                            formattedStatus = `WL ${wlNum}`;
+                        }
+                    }
+                    else if (isCnf && !isCurrAvbl) {
+                        const avlMatch = combined.match(/(?:AVAILABLE|AVL|CNF)\s*(\d+)?/i);
+                        if (avlMatch && avlMatch[1]) {
+                            formattedStatus = `AVAILABLE ${avlMatch[1]}`;
+                        }
+                        else if (combined.includes('CNF')) {
+                            formattedStatus = 'CNF';
+                        }
+                        else {
+                            formattedStatus = textStatus || 'AVAILABLE';
+                        }
+                    }
+                    else if (isRac) {
+                        const racMatch = combined.match(/RAC\s*(\d+)?/i);
+                        if (racMatch && racMatch[1]) {
+                            formattedStatus = `RAC ${racMatch[1]}`;
+                        }
+                        else {
+                            formattedStatus = 'RAC';
+                        }
+                    }
                     let chance;
                     if (isCurrAvbl) {
                         chance = 95;
@@ -853,8 +918,6 @@ class TrainController {
                         chance = 60;
                     }
                     else if (isWl) {
-                        const wlNumMatch = st.match(/(\d+)/);
-                        const wlNum = wlNumMatch ? parseInt(wlNumMatch[1], 10) : null;
                         if (wlNum === null) {
                             chance = 25;
                         }
@@ -884,7 +947,9 @@ class TrainController {
                         chance = 50;
                     }
                     return {
-                        status: st,
+                        status: formattedStatus,
+                        quota: quotaType,
+                        wlNumber: wlNum,
                         available: isCnf,
                         probability: prob,
                         chance,
