@@ -199,9 +199,9 @@ export class PnrWorker {
     }
 
     // Stage 1: First Chart Window
-    // A. ~10 hours before departure window (8h to 11h before departure)
-    if (hoursToJourney >= 8 && hoursToJourney <= 11) {
-      return 30; // Poll every 30 mins during the 10-hour First Chart window
+    // A. Official 8 to 10 hours before departure window (7.5h to 11h before departure)
+    if (hoursToJourney >= 7.5 && hoursToJourney <= 11) {
+      return 20; // Poll every 20 mins during the official 8–10 hour First Chart window
     }
 
     // B. Previous night 20:00 - 21:45 IST window for morning trains (journey between 10h and 22h away)

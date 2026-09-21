@@ -189,7 +189,7 @@ export class AlertService {
         pnr,
         chartStatus,
         email: email || undefined,
-        title: `📋 Chart Prepared — PNR ${pnr}`,
+        title: `📋 Chart Prepared (8–10h Window) — PNR ${pnr}`,
         message
       }
     });
