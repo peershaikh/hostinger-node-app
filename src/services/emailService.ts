@@ -241,6 +241,86 @@ export class EmailService {
       tag: 'HEALTH_REPORT',
     });
   }
+
+  async sendContactInquiryEmail(options: {
+    adminEmails: string | string[];
+    userName: string;
+    userEmail: string;
+    userPhone?: string;
+    subject: string;
+    message: string;
+    category?: string;
+  }): Promise<boolean> {
+    const { adminEmails, userName, userEmail, userPhone, subject, message, category } = options;
+    const catBadge = category ? `[${category.toUpperCase()}] ` : '';
+    const emailSubject = `[Trayago Contact] ${catBadge}${subject || 'New Contact Inquiry'}`;
+    const safeName = String(userName || 'User').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safeEmail = String(userEmail || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safePhone = userPhone ? String(userPhone).replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
+    const safeCategory = category ? String(category).replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
+    const safeSubject = String(subject || 'Inquiry').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safeMessage = String(message || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    const html = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background-color: #f8fafc; border-radius: 12px; color: #1e293b;">
+        <div style="background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); padding: 24px; border-radius: 10px 10px 0 0; text-align: center; color: white;">
+          <h2 style="margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.5px;">Trayago Contact Inquiry</h2>
+          <p style="margin: 6px 0 0; font-size: 13px; opacity: 0.9;">New message submitted via www.trayago.in/contact</p>
+        </div>
+        
+        <div style="background-color: #ffffff; padding: 28px; border-radius: 0 0 10px 10px; border: 1px solid #e2e8f0; border-top: none;">
+          <div style="margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #f1f5f9;">
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 6px 0; color: #64748b; font-size: 13px; width: 100px; font-weight: 600;">FROM:</td>
+                <td style="padding: 6px 0; color: #0f172a; font-size: 14px; font-weight: 600;">${safeName}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b; font-size: 13px; font-weight: 600;">EMAIL:</td>
+                <td style="padding: 6px 0; color: #2563eb; font-size: 14px;"><a href="mailto:${safeEmail}" style="color: #2563eb; text-decoration: none;">${safeEmail}</a></td>
+              </tr>
+              ${safePhone ? `
+              <tr>
+                <td style="padding: 6px 0; color: #64748b; font-size: 13px; font-weight: 600;">PHONE:</td>
+                <td style="padding: 6px 0; color: #0f172a; font-size: 14px;">${safePhone}</td>
+              </tr>
+              ` : ''}
+              ${safeCategory ? `
+              <tr>
+                <td style="padding: 6px 0; color: #64748b; font-size: 13px; font-weight: 600;">CATEGORY:</td>
+                <td style="padding: 6px 0; color: #7c3aed; font-size: 13px; font-weight: 600;">${safeCategory.toUpperCase()}</td>
+              </tr>
+              ` : ''}
+            </table>
+          </div>
+
+          <div style="margin-bottom: 20px;">
+            <p style="margin: 0 0 8px; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Subject</p>
+            <div style="font-size: 15px; font-weight: 600; color: #0f172a; margin-bottom: 16px;">${safeSubject}</div>
+            
+            <p style="margin: 0 0 8px; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Message</p>
+            <div style="background-color: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 14px; line-height: 1.6; color: #334155; white-space: pre-wrap;">${safeMessage}</div>
+          </div>
+
+          <div style="text-align: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid #f1f5f9;">
+            <a href="mailto:${safeEmail}?subject=Re: ${encodeURIComponent(subject)}" style="display: inline-block; background-color: #4f46e5; color: #ffffff; padding: 10px 20px; border-radius: 6px; font-size: 13px; font-weight: 600; text-decoration: none;">Reply Directly to User</a>
+          </div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 16px; font-size: 11px; color: #94a3b8;">
+          Sent by Trayago Platform Notification System &bull; IST
+        </div>
+      </div>
+    `;
+
+    return this.sendWithFailover({
+      to: adminEmails,
+      subject: emailSubject,
+      html,
+      senderName: 'Trayago Contact',
+      tag: 'CONTACT_INQUIRY',
+    });
+  }
 }
 
 export const emailService = new EmailService();

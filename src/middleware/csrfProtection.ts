@@ -123,6 +123,10 @@ export const conditionalCsrf = (req: Request, res: Response, next: NextFunction)
     '/api/analytics/split-click',
     '/analytics/feedback',
     '/api/analytics/feedback',
+    '/feedback',
+    '/api/feedback',
+    '/contact',
+    '/api/contact',
     '/analytics/complaint',
     '/api/analytics/complaint'
   ];
