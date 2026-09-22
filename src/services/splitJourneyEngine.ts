@@ -1528,7 +1528,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   // —— Varanasi corridors ——
   "varanasi-mumbai": ["JBP", "STA", "ET", "PCOI", "PRYJ", "MKP", "BSL", "KTE", "CNB", "DDU"],
   "varanasi-chennai": ["DDU", "HWH", "BZA", "MAS"],
-  "varanasi-kolkata": ["DDU", "ASN", "HWH"],
+  "varanasi-kolkata": ["DDU", "GAYA", "PNBE", "ASN", "BWN"],
 
   // —— East/NE corridors ——
   "bhubaneswar-mumbai": ["KGP", "TATA", "NGP", "ET", "BSL"],
