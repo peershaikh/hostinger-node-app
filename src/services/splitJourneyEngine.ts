@@ -1587,7 +1587,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "delhi-chandigarh": ["PNP", "KKDE", "UMB"],
   "chandigarh-delhi": ["UMB", "PNP", "KKDE"],
   "delhi-haridwar": ["MTC", "SRE", "RK", "HW"],
-  "haridwar-delhi": ["HW", "RK", "SRE", "MTC", "NDLS"],
+  "haridwar-delhi": ["RK", "SRE", "MTC"],
 
   // Southern & Deccan
   "bengaluru-pune": ["UBL", "BGM", "MRJ", "STR", "PUNE"],
