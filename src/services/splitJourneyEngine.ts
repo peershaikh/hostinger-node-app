@@ -1575,7 +1575,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
 
   // Northern / Himalayan / Pilgrimage
   "delhi-ajmer": ["RE", "AWR", "JP", "KSG", "AII"],
-  "ajmer-delhi": ["AII", "KSG", "JP", "AWR", "RE", "NDLS"],
+  "ajmer-delhi": ["JP", "RE", "AWR", "BKI", "KSG"],
   "delhi-jodhpur": ["RE", "AWR", "JP", "DNA", "MTD", "JU"],
   "jodhpur-delhi": ["JP", "AII", "RE", "AWR", "BKI"],
   "delhi-udaipur": ["JP", "AII", "BHL", "COR", "UDZ"],
