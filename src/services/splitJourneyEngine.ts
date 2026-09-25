@@ -1532,7 +1532,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
 
   // —— East/NE corridors ——
   "bhubaneswar-mumbai": ["KGP", "TATA", "NGP", "ET", "BSL"],
-  "bhubaneswar-delhi": ["KGP", "DHN", "MGS", "CNB", "NDLS"],
+  "bhubaneswar-delhi": ["KGP", "DHN", "MGS", "CNB"],
   "bhubaneswar-bangalore": ["KGP", "VSKP", "BZA", "SC", "SBC"],
   "visakhapatnam-mumbai": ["BZA", "SC", "NGP", "BSL"],
   "visakhapatnam-delhi": ["BZA", "NGP", "ET", "BPL", "NDLS"],
