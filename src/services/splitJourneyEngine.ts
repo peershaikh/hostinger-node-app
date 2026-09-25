@@ -1485,7 +1485,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
 
   // —— Hyderabad/Secunderabad corridors ——
   "hyderabad-delhi": ["NGP", "ET", "BPL", "JHS"],
-  "secunderabad-delhi": ["NGP", "ET", "BPL", "JHS", "NDLS"],
+  "secunderabad-delhi": ["NGP", "ET", "BPL", "JHS"],
   "hyderabad-kolkata": ["BZA", "VSKP", "KGP"],
   "hyderabad-patna": ["BZA", "KGP", "HWH", "PNBE"],
   "hyderabad-lucknow": ["NGP", "ET", "CNB", "LKO"],
