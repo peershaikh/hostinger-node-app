@@ -7,6 +7,7 @@ const pnrTrackingService_1 = require("../services/pnrTrackingService");
 const railProviderResolver_1 = require("../services/railProviderResolver");
 const trainService_1 = require("../services/trainService");
 const pnrNormalizer_1 = require("../utils/pnrNormalizer");
+const cacheService_1 = require("../services/cacheService");
 class PnrController {
     constructor() {
         this.getStatus = async (req, res) => {
@@ -15,6 +16,11 @@ class PnrController {
             const sessionId = req.headers['x-session-id'];
             if (!pnr || pnr.length !== 10) {
                 return res.status(400).json({ error: 'Valid 10-digit PNR is required' });
+            }
+            const cachedResponse = cacheService_1.cacheService.getCachedPNR(pnr);
+            if (cachedResponse) {
+                logger_1.winstonLogger.info(`[PNR_CONTROLLER] Cache hit for PNR: ${pnr}`);
+                return res.status(200).json(cachedResponse);
             }
             try {
                 const userId = req.headers['x-user-id'] || null;
@@ -496,6 +502,7 @@ class PnrController {
                 }
                 // LOG PARSED OUTPUT
                 logger_1.winstonLogger.info(`[PNR PARSED OUTPUT] pnr=${pnr}: ${JSON.stringify(cleanResponse)}`);
+                cacheService_1.cacheService.cachePNR(pnr, cleanResponse);
                 res.status(200).json(cleanResponse);
             }
             catch (err) {

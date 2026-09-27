@@ -546,14 +546,18 @@ SOURCE INFORMATION:
 - Raw Content: "${input.summary}"
 
 STRICT GUARDRAIL RULES:
-1. ZERO FABRICATION: Extract ONLY facts present in the text above. Do NOT invent train numbers, timings, station names, fare amounts, or quotes.
+1. ZERO FABRICATION: Extract ONLY facts present in the text above. Do NOT invent train numbers, timings, station names, fare amounts, quotes, or policies.
 2. If specific timings or train numbers are NOT mentioned in the source, write "Specific timings/trains to be notified by zonal railways".
-3. Formulate 3 key takeaways:
+3. Write a comprehensive, factual article body ("content") of approximately 250-450 words in clean GitHub-Flavored Markdown.
+   - Use ## subheadings (e.g. ## Overview, ## Service Impact & Route Details, ## Passenger & Booking Guidance).
+   - Base every statement strictly on the source facts above.
+4. Provide plain-text passenger advice ("passenger_advice") with 1-2 sentences of actionable guidance for commuters (e.g. refund rules, booking alternatives).
+5. Formulate 3 key takeaways:
    - what_happened: 1-2 sentence factual summary of the event.
    - who_is_affected: Which routes, passengers, or zones are impacted.
    - what_passengers_should_do: Clear actionable advice for travelers.
-4. Formulate 2-3 passenger FAQs answerable strictly from the source.
-5. Create concise SEO metadata:
+6. Formulate 2-4 passenger FAQs answerable strictly from the source.
+7. Create concise SEO metadata:
    - seo_title: Max 60 characters, keyword rich.
    - meta_description: Max 155 characters.
    - slug: Clean, URL-friendly slug (e.g. western-railway-special-trains-mumbai-delhi-2026).
@@ -561,7 +565,9 @@ STRICT GUARDRAIL RULES:
 Return ONLY valid JSON matching this schema:
 {
   "title": "Clear concise headline (max 80 chars)",
-  "summary": "Passenger summary (1-2 paragraphs in markdown)",
+  "summary": "Passenger summary (1-2 paragraphs in plain text or markdown)",
+  "content": "Detailed, factual 250-450 word article in clean Markdown with ## subheadings. Must contain ONLY verified facts from the source without inventing any details.",
+  "passenger_advice": "Actionable commuter guidance in plain text (1-2 sentences on refund procedures, alternate routes, or booking instructions based strictly on source facts).",
   "key_takeaways": {
     "what_happened": "...",
     "who_is_affected": "...",
@@ -583,9 +589,29 @@ Return ONLY valid JSON matching this schema:
       return null;
     }
 
+    const content = typeof result.content === 'string' && result.content.trim().length > 30
+      ? result.content.trim()
+      : null;
+
+    const passengerAdvice = typeof result.passenger_advice === 'string' && result.passenger_advice.trim().length > 10
+      ? result.passenger_advice.trim()
+      : null;
+
+    const validFaqs = Array.isArray(result.faqs)
+      ? result.faqs
+          .filter((f: any) => f && typeof f === 'object' && typeof f.question === 'string' && typeof f.answer === 'string')
+          .map((f: any) => ({
+            question: String(f.question).trim(),
+            answer: String(f.answer).trim()
+          }))
+          .filter((f: any) => f.question.length > 0 && f.answer.length > 0)
+      : [];
+
     return {
       title: String(result.title || input.title),
       summary: String(result.summary || input.summary),
+      content,
+      passenger_advice: passengerAdvice,
       key_takeaways: {
         what_happened: String(result.key_takeaways?.what_happened || ''),
         who_is_affected: String(result.key_takeaways?.who_is_affected || ''),
@@ -596,7 +622,7 @@ Return ONLY valid JSON matching this schema:
       seo_title: String(result.seo_title || result.title).slice(0, 70),
       meta_description: String(result.meta_description || result.summary).slice(0, 160),
       slug: String(result.slug || '').toLowerCase().replace(/[^\w-]/g, '').slice(0, 80),
-      faqs: Array.isArray(result.faqs) ? result.faqs : [],
+      faqs: validFaqs,
       confidence: result.confidence === 'LOW' || result.confidence === 'MEDIUM' ? result.confidence : 'HIGH',
       model: this.getActiveModel('NEWS_DISTILLATION')
     };

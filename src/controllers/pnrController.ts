@@ -7,6 +7,7 @@ import { railProviderResolver } from '../services/railProviderResolver';
 import { rapidApiService } from '../services/rapidApiService';
 import { trainService } from '../services/trainService';
 import { normalizeRawPnr } from '../utils/pnrNormalizer';
+import { cacheService } from '../services/cacheService';
 
 export class PnrController {
   private isValidPnrResponse(rawStatus: any): boolean {
@@ -132,6 +133,12 @@ export class PnrController {
 
     if (!pnr || pnr.length !== 10) {
       return res.status(400).json({ error: 'Valid 10-digit PNR is required' });
+    }
+
+    const cachedResponse = cacheService.getCachedPNR(pnr);
+    if (cachedResponse) {
+      winstonLogger.info(`[PNR_CONTROLLER] Cache hit for PNR: ${pnr}`);
+      return res.status(200).json(cachedResponse);
     }
 
     try {
@@ -649,6 +656,7 @@ export class PnrController {
 
       // LOG PARSED OUTPUT
       winstonLogger.info(`[PNR PARSED OUTPUT] pnr=${pnr}: ${JSON.stringify(cleanResponse)}`);
+      cacheService.cachePNR(pnr, cleanResponse);
       res.status(200).json(cleanResponse);
     } catch (err: any) {
       winstonLogger.error(`PNR Controller Error: ${err.message}`);

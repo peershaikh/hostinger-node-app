@@ -42,6 +42,7 @@ export type NewsAuditAction =
 
 /** CMS-specific fields stored alongside CanonicalNewsArticle */
 export interface NewsAdminDraft {
+  content?: string | null;
   passenger_advice: string | null;
   faq: Array<{ question: string; answer: string }> | null;
   ai_confidence: 'HIGH' | 'MEDIUM' | 'LOW' | null;
@@ -56,13 +57,15 @@ export interface NewsAdminDraft {
 export type NewsEditableFields = Partial<{
   title: string;
   summary: string;
+  content: string | null;
   key_takeaways: string[];
-  passenger_advice: string;
-  faq: Array<{ question: string; answer: string }>;
+  passenger_advice: string | null;
+  faq: Array<{ question: string; answer: string }> | null;
   seo_title: string;
   meta_description: string;
   slug: string;
   category: string;
+  image_url: string | null;
   affected_trains: string[];
   affected_stations: string[];
 }>;
@@ -125,6 +128,7 @@ export interface CanonicalNewsArticle {
   meta_description: string | null;
   summary: string;
   key_takeaways: string[] | null;
+  content?: string | null;
   passenger_advice?: string | null;
   faq?: Array<{ question: string; answer: string }> | null;
   rejection_reason?: NewsRejectionReason | null;

@@ -70,7 +70,7 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'", "https://sdk.cashfree.com", "https://www.gstatic.com"],
-      connectSrc: ["'self'", "https://api.trayago.in", "https://*.supabase.co", "https://*.cashfree.com"],
+      connectSrc: ["'self'", "https://app.trayago.in", "https://api.trayago.in", "https://*.supabase.co", "https://*.cashfree.com"],
       imgSrc: ["'self'", "data:", "https:", "http:"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       fontSrc: ["'self'", "https:", "data:"]

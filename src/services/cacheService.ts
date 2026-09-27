@@ -8,7 +8,7 @@ import {
 import { knowledgeMetricsService } from './knowledgeMetricsService';
 
 // Initialize cache with default TTL and check period
-const cache = new NodeCache({ stdTTL: 600, checkperiod: 120 });
+const cache = new NodeCache({ stdTTL: 600, checkperiod: 120, maxKeys: 10000 });
 
 // Cache TTL configuration (in seconds)
 const CACHE_TTL = {

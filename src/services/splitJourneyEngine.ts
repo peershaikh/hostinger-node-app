@@ -1541,7 +1541,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "chennai-guwahati": ["BZA", "VSKP", "KGP", "HWH", "NJP"],
 
   // —— South India internal ——
-  "ernakulam-delhi": ["SA", "SC", "NGP", "ET", "BPL", "NDLS"],
+  "ernakulam-delhi": ["SA", "SC", "NGP", "ET", "BPL"],
   "ernakulam-mumbai": ["MAJN", "MAO", "PUNE"],
   "trivandrum-mumbai": ["ERS", "MAJN", "MAO", "PUNE"],
   "trivandrum-delhi": ["ERS", "CBE", "SC", "NGP", "BPL", "NDLS"],

@@ -18,8 +18,10 @@ class StationController {
         const cacheKey = `station_search_${query.toLowerCase()}`;
         // Cache hit
         const cached = cacheService_1.cacheService.get(cacheKey);
-        if (cached)
+        if (cached) {
+            res.setHeader?.('Cache-Control', 'public, max-age=3600');
             return res.json(cached);
+        }
         try {
             const upper = query.toUpperCase();
             // 🔥 Special Handling for Major Cities (Most Common Searches)
@@ -184,6 +186,7 @@ class StationController {
             if (majorCities[upper]) {
                 const data = majorCities[upper];
                 cacheService_1.cacheService.set(cacheKey, data, 3600);
+                res.setHeader?.('Cache-Control', 'public, max-age=3600');
                 return res.json(data);
             }
             // 2. City Prefix Match (e.g. "mumb" -> MUMBAI, "del" -> DELHI, "beng" -> BENGALURU)
@@ -282,6 +285,7 @@ class StationController {
                     selfLearningService_1.selfLearningService.logMissingStation(query, userId).catch(() => { });
                 });
             }
+            res.setHeader?.('Cache-Control', 'public, max-age=3600');
             return res.json(finalResults);
         }
         catch (err) {

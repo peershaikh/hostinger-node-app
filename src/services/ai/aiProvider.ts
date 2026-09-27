@@ -36,6 +36,8 @@ export interface NewsFaqItem {
 export interface NewsDistillationOutput {
   title: string;
   summary: string;
+  content?: string | null;
+  passenger_advice?: string | null;
   key_takeaways: NewsKeyTakeaways;
   affected_trains: string[];
   affected_stations: string[];

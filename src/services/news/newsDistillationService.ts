@@ -43,6 +43,16 @@ export class NewsFactValidator {
       }
     }
 
+    // Inspect AI-generated content for 5-digit train numbers with conservative hallucination guard
+    if (output.content && typeof output.content === 'string') {
+      const contentTrains = NewsFactValidator.extractTrainNumbersFromContent(output.content);
+      for (const trainStr of contentTrains) {
+        if (!trustedTrains.has(trainStr) && !rawSource.includes(trainStr.toLowerCase())) {
+          unsupportedEntities.push(`Train ${trainStr} (in content)`);
+        }
+      }
+    }
+
     if (unsupportedEntities.length > 0) {
       winstonLogger.warn('[NEWS_AI_VALIDATOR_REJECT] Hallucinated/unsupported entities detected in AI draft', {
         sourceTitle: source.title.slice(0, 50),
@@ -69,6 +79,72 @@ export class NewsFactValidator {
     }
 
     return { isValid: true, confidence };
+  }
+
+  /**
+   * Conservative extraction of 5-digit Indian Railway train numbers from article content.
+   * Rejects/flags only when a 5-digit train number appears in generated content.
+   * Ignores legitimate non-train 5-digit quantities (currency amounts, passenger/commuter counts,
+   * metric/distance measurements, and round thousand estimates without train indicators).
+   */
+  public static extractTrainNumbersFromContent(content: string): string[] {
+    if (!content || typeof content !== 'string') {
+      return [];
+    }
+
+    const trainNumbers = new Set<string>();
+    const regex = /\b(\d{5})\b/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(content)) !== null) {
+      const numStr = match[1];
+      const index = match.index;
+
+      const beforeText = content.slice(Math.max(0, index - 40), index);
+      const afterText = content.slice(index + numStr.length, Math.min(content.length, index + numStr.length + 40));
+
+      // 1. Explicit train indicators
+      const hasPrecedingTrainKeyword = /(?:trains?|tr\.)\s*(?:no\.?|num\.?|number|#)?\s*$/i.test(beforeText) || /#\s*$/.test(beforeText);
+      const hasFollowingTrainKeyword = /^\s*(?:express|superfast|mail|special|passenger|vande\s*bharat|rajdhani|shatabdi|duronto|intercity|local|garib\s*rath|tejas|humsafar|jan\s*shatabdi|sampark\s*kranti)\b/i.test(afterText);
+
+      if (hasPrecedingTrainKeyword || hasFollowingTrainKeyword) {
+        trainNumbers.add(numStr);
+        continue;
+      }
+
+      // 2. Check standard Indian Railway 5-digit train prefix (0, 1, or 2)
+      if (!/^[0-2]\d{4}$/.test(numStr)) {
+        continue;
+      }
+
+      // 3. Exclude currency amounts (preceded or followed by currency words/symbols)
+      const isPrecededByCurrency = /(?:₹|rs\.?|inr|usd|\$|eur|€|rupees?)\s*$/i.test(beforeText);
+      const isFollowedByCurrency = /^\s*(?:rupees?|rs\.?|inr|usd|\$|eur|€|crores?|cr\.?|lakhs?)\b/i.test(afterText);
+      if (isPrecededByCurrency || isFollowedByCurrency) {
+        continue;
+      }
+
+      // 4. Exclude passenger, commuter, seat, ticket, and metric/distance counts
+      const isFollowedByCountOrMetric = /^\s*(?:passengers?|commuters?|people|persons?|travelers?|travellers?|seats?|berths?|tickets?|bookings?|coaches|meters?|metres?|kms?|kilometers?|kilometres?|miles?|ft|feet|sq\s*(?:ft|m|km)|square\s*(?:ft|m|km|meters|metres|feet)|liters?|litres?|tons?|tonnes?|kg|kgs?|quintals?)\b/i.test(afterText);
+      if (isFollowedByCountOrMetric) {
+        continue;
+      }
+
+      // 5. Exclude measurement / financial context phrases
+      const isPrecededByMetricContext = /(?:distance of|stretch of|amount of|sum of|fine of|penalty of|cost of|worth of|budget of)\s*$/i.test(beforeText);
+      if (isPrecededByMetricContext) {
+        continue;
+      }
+
+      // 6. Exclude round thousand/ten-thousand estimates (e.g. 10000, 20000) when not explicitly marked as train
+      if (numStr.endsWith('000')) {
+        continue;
+      }
+
+      trainNumbers.add(numStr);
+    }
+
+    return Array.from(trainNumbers);
   }
 }
 
@@ -155,6 +231,8 @@ export class NewsDistillationService {
     return {
       title,
       summary,
+      content: article.content || null,
+      passenger_advice: article.passenger_advice || takeaways.what_passengers_should_do,
       key_takeaways: takeaways,
       affected_trains: article.affected_trains || [],
       affected_stations: article.affected_stations || [],
@@ -250,6 +328,13 @@ export class NewsDistillationService {
         ...article,
         title: aiOutput.title || article.title,
         summary: aiOutput.summary || article.summary,
+        content: (aiOutput.content !== undefined && aiOutput.content !== null) ? aiOutput.content : (article.content || null),
+        passenger_advice: (aiOutput.passenger_advice !== undefined && aiOutput.passenger_advice !== null) ? aiOutput.passenger_advice : (article.passenger_advice || null),
+        faq: (Array.isArray(aiOutput.faqs) && aiOutput.faqs.length > 0)
+          ? aiOutput.faqs
+          : (Array.isArray((aiOutput as any).faq) && (aiOutput as any).faq.length > 0
+            ? (aiOutput as any).faq
+            : (Array.isArray(article.faq) && article.faq.length > 0 ? article.faq : null)),
         key_takeaways: [
           aiOutput.key_takeaways.what_happened,
           aiOutput.key_takeaways.who_is_affected,
@@ -327,6 +412,13 @@ export class NewsDistillationService {
                 ...article,
                 title:            aiOutput.title   || article.title,
                 summary:          aiOutput.summary || article.summary,
+                content:          (aiOutput.content !== undefined && aiOutput.content !== null) ? aiOutput.content : (article.content || null),
+                passenger_advice: (aiOutput.passenger_advice !== undefined && aiOutput.passenger_advice !== null) ? aiOutput.passenger_advice : (article.passenger_advice || null),
+                faq:              (Array.isArray(aiOutput.faqs) && aiOutput.faqs.length > 0)
+                  ? aiOutput.faqs
+                  : (Array.isArray((aiOutput as any).faq) && (aiOutput as any).faq.length > 0
+                    ? (aiOutput as any).faq
+                    : (Array.isArray(article.faq) && article.faq.length > 0 ? article.faq : null)),
                 key_takeaways:    [
                   aiOutput.key_takeaways.what_happened,
                   aiOutput.key_takeaways.who_is_affected,
@@ -390,6 +482,13 @@ export class NewsDistillationService {
               ...article,
               title:            aiOutput.title   || article.title,
               summary:          aiOutput.summary || article.summary,
+              content:          (aiOutput.content !== undefined && aiOutput.content !== null) ? aiOutput.content : (article.content || null),
+              passenger_advice: (aiOutput.passenger_advice !== undefined && aiOutput.passenger_advice !== null) ? aiOutput.passenger_advice : (article.passenger_advice || null),
+              faq:              (Array.isArray(aiOutput.faqs) && aiOutput.faqs.length > 0)
+                ? aiOutput.faqs
+                : (Array.isArray((aiOutput as any).faq) && (aiOutput as any).faq.length > 0
+                  ? (aiOutput as any).faq
+                  : (Array.isArray(article.faq) && article.faq.length > 0 ? article.faq : null)),
               seo_title:        aiOutput.seo_title,
               meta_description: aiOutput.meta_description,
               slug:             aiOutput.slug    || article.slug,

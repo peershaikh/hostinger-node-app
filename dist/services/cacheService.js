@@ -10,7 +10,7 @@ const logger_1 = require("../middleware/logger");
 const availabilityCacheKeys_1 = require("../utils/availabilityCacheKeys");
 const knowledgeMetricsService_1 = require("./knowledgeMetricsService");
 // Initialize cache with default TTL and check period
-const cache = new node_cache_1.default({ stdTTL: 600, checkperiod: 120 });
+const cache = new node_cache_1.default({ stdTTL: 600, checkperiod: 120, maxKeys: 10000 });
 // Cache TTL configuration (in seconds)
 const CACHE_TTL = {
     SEARCH: 300, // 5 minutes

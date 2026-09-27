@@ -17,6 +17,7 @@ import { winstonLogger } from '../../middleware/logger';
 import { supabase, isSupabaseConfigured } from '../../config/supabase';
 import { cacheService } from '../cacheService';
 import { IngestionStatus } from './newsTypes';
+import { NewsFactValidator } from './newsDistillationService';
 
 const NEWS_CACHE_KEY = 'latest_railway_news_cache_v3';
 
@@ -254,6 +255,256 @@ export class NewsAutoCuratorService {
   }
 
   /**
+   * Validates a candidate draft's status and AI content against NewsFactValidator.
+   * Returns isValid: true if safe for auto-curation, or false with rejection reason.
+   */
+  public validateDraftForCuration(draft: any): { isValid: boolean; reason?: string } {
+    if (!draft || draft.status !== 'AI_DRAFTED') {
+      return { isValid: false, reason: `Invalid status: expected AI_DRAFTED, got ${draft?.status}` };
+    }
+
+    if (!draft.title || !draft.summary) {
+      return { isValid: false, reason: 'Incomplete candidate: missing title or summary' };
+    }
+
+    // Phase 4 — Step 6: Content Quality Gate
+    // Require draft.content to contain at least 150 words before automatic publication.
+    const contentStr = typeof draft.content === 'string' ? draft.content.trim() : '';
+    const wordCount = contentStr ? contentStr.split(/\s+/).filter(Boolean).length : 0;
+    if (wordCount < 150) {
+      return {
+        isValid: false,
+        reason: `Insufficient content volume: draft has ${wordCount} words, minimum 150 required for auto-curation`,
+      };
+    }
+
+    const rawSource = `${draft.source_title || ''} ${draft.source_summary || ''} ${draft.title || ''} ${draft.summary || ''}`.toLowerCase();
+    const candidateTrains = Array.isArray(draft.affected_trains)
+      ? draft.affected_trains.filter((t: any) => rawSource.includes(String(t).toLowerCase()))
+      : [];
+    const candidateStations = Array.isArray(draft.affected_stations) ? draft.affected_stations : [];
+
+    const validation = NewsFactValidator.validate(
+      {
+        title: draft.source_title || draft.title,
+        summary: draft.source_summary || draft.summary,
+        sourceName: draft.source_name || 'Railway Source',
+        sourceUrl: draft.source_url || 'https://www.indianrailways.gov.in',
+        sourceTier: draft.source_tier || 'TIER_1_OFFICIAL',
+        publishedAt: draft.published_at || new Date().toISOString(),
+        category: draft.category || 'Railway Updates',
+        candidateTrains,
+        candidateStations,
+      },
+      {
+        title: draft.title,
+        summary: draft.summary,
+        content: draft.content || null,
+        passenger_advice: draft.passenger_advice || null,
+        key_takeaways: {
+          what_happened: draft.summary?.slice(0, 150) || draft.title,
+          who_is_affected: 'Passengers and commuters',
+          what_passengers_should_do: 'Verify official updates',
+        },
+        affected_trains: Array.isArray(draft.affected_trains) ? draft.affected_trains : [],
+        affected_stations: Array.isArray(draft.affected_stations) ? draft.affected_stations : [],
+        seo_title: draft.seo_title || draft.title,
+        meta_description: draft.meta_description || draft.summary,
+        slug: draft.slug || '',
+        faqs: Array.isArray(draft.faq) ? draft.faq : (Array.isArray(draft.faqs) ? draft.faqs : []),
+        confidence: 'MEDIUM',
+        model: 'curator-validation',
+      }
+    );
+
+    if (!validation.isValid) {
+      return {
+        isValid: false,
+        reason: `Fact validation failed: ${validation.rejectionReason || 'UNSUPPORTED_CLAIM'}`,
+      };
+    }
+
+    return { isValid: true };
+  }
+
+  /**
+   * Injects deterministic internal links into article Markdown content:
+   * 1. Verified train numbers from affectedTrains: "Train 12002" → "[Train 12002](/live/12002)" (max 1 per train)
+   * 2. Contextual PNR: "PNR status" → "[PNR status](/pnr)" (max 1)
+   * 3. Contextual Alternate Route: "alternate routes" / "split journey" → "[alternate routes](/split-journey)" (max 1)
+   *
+   * Safeguards:
+   * - Never links currency or metrics (e.g. Rs 12000, 12000 km, 12000 passengers)
+   * - Never double-wraps text already inside Markdown links or code blocks
+   * - Pure regex tokenization without external dependencies or HTML dangerouslySetInnerHTML
+   */
+  public injectDeterministicInternalLinks(
+    content: string | null | undefined,
+    affectedTrains?: string[]
+  ): string {
+    if (!content || typeof content !== 'string' || content.trim().length === 0) {
+      return content || '';
+    }
+
+    // Sanitize and filter affected train numbers (strictly 5-digit strings)
+    const validTrains = Array.isArray(affectedTrains)
+      ? Array.from(
+          new Set(
+            affectedTrains
+              .map(t => String(t || '').trim())
+              .filter(t => /^\d{5}$/.test(t))
+          )
+        )
+      : [];
+
+    // Split content into protected chunks (code blocks, inline code, existing links/images) and plain text
+    const protectedPattern = /(```[\s\S]*?```|`[^`\n]+`|!?\[[^\]]*\]\([^)]*\))/g;
+    const parts = content.split(protectedPattern);
+
+    // Track already linked entities
+    const linkedTrains = new Set<string>();
+    let pnrLinked = false;
+    let splitJourneyLinked = false;
+
+    // Pre-scan protected chunks to check if any train, PNR, or split journey is already linked
+    for (let i = 1; i < parts.length; i += 2) {
+      const chunk = parts[i];
+      for (const t of validTrains) {
+        if (chunk.includes(t)) {
+          linkedTrains.add(t);
+        }
+      }
+      if (/\bpnr\b/i.test(chunk)) {
+        pnrLinked = true;
+      }
+      if (/\b(?:alternate\s+routes?|alternative\s+routes?|split\s+journey)\b/i.test(chunk)) {
+        splitJourneyLinked = true;
+      }
+    }
+
+    // Process plain text chunks (even indexes: 0, 2, 4, ...)
+    for (let i = 0; i < parts.length; i += 2) {
+      let text = parts[i];
+      if (!text) continue;
+
+      // 1. Train linking (max 1 per verified train in affectedTrains)
+      for (const trainNo of validTrains) {
+        if (linkedTrains.has(trainNo)) continue;
+
+        // Primary pattern: "Train [No.] 12002"
+        const trainRegex = new RegExp(`\\b(Train(?:\\s+No\\.?|\\s+Number)?\\s+${trainNo})\\b`, 'i');
+        const match = text.match(trainRegex);
+        if (match && match.index !== undefined) {
+          const matchedStr = match[1];
+          text = text.slice(0, match.index) + `[${matchedStr}](/live/${trainNo})` + text.slice(match.index + matchedStr.length);
+          linkedTrains.add(trainNo);
+          continue;
+        }
+
+        // Secondary pattern: Bare 5-digit train number (e.g. "Shatabdi (12002)" or "Express 12002")
+        // Strictly guards against currency (Rs, INR, ₹) and metrics/counts (km, passengers, people, seats, etc.)
+        const bareRegex = new RegExp(
+          `(?<!(?:Rs\\.?|INR|₹|inr|rupees?)\\s*)\\b(${trainNo})\\b(?!\\s*(?:km|kms|kilometres?|kilometers?|passengers?|people|commuters?|seats?|coaches?|berths?|crore|lakh|meters?|metres?|tons?|tonnes?|rs|inr|rupees?)\\b)`,
+          'i'
+        );
+        const bareMatch = text.match(bareRegex);
+        if (bareMatch && bareMatch.index !== undefined) {
+          const preSlice = text.slice(Math.max(0, bareMatch.index - 20), bareMatch.index);
+          const postSlice = text.slice(bareMatch.index + trainNo.length, Math.min(text.length, bareMatch.index + trainNo.length + 20));
+          const isCurrencyOrMetric =
+            /(?:rs|inr|₹|\$|€)\s*$/i.test(preSlice) ||
+            /^\s*(?:km|kms|kilomet|passenger|people|commuter|seat|coach|berth|crore|lakh|meter|metre|ton|rupee)/i.test(postSlice);
+
+          if (!isCurrencyOrMetric) {
+            const isRailwayContext =
+              /(?:trains?|express|superfast|mail|special|service|services|no\.?|number|\()\s*$/i.test(preSlice) ||
+              /^\s*\)/.test(postSlice);
+
+            if (isRailwayContext) {
+              text = text.slice(0, bareMatch.index) + `[${trainNo}](/live/${trainNo})` + text.slice(bareMatch.index + trainNo.length);
+              linkedTrains.add(trainNo);
+            }
+          }
+        }
+      }
+
+      // 2. Contextual PNR Link (max 1 per article)
+      if (!pnrLinked) {
+        const pnrRegex = /\b(PNR\s+status)\b/i;
+        const pnrMatch = text.match(pnrRegex);
+        if (pnrMatch && pnrMatch.index !== undefined) {
+          const matchedPnr = pnrMatch[1];
+          text = text.slice(0, pnrMatch.index) + `[${matchedPnr}](/pnr)` + text.slice(pnrMatch.index + matchedPnr.length);
+          pnrLinked = true;
+        }
+      }
+
+      // 3. Contextual Split-Journey / Alternate Route Link (max 1 per article)
+      if (!splitJourneyLinked) {
+        const splitRegex = /\b(alternate\s+routes?|alternative\s+routes?|split\s+journey)\b/i;
+        const splitMatch = text.match(splitRegex);
+        if (splitMatch && splitMatch.index !== undefined) {
+          const matchedSplit = splitMatch[1];
+          text = text.slice(0, splitMatch.index) + `[${matchedSplit}](/split-journey)` + text.slice(splitMatch.index + matchedSplit.length);
+          splitJourneyLinked = true;
+        }
+      }
+
+      parts[i] = text;
+    }
+
+    return parts.join('');
+  }
+
+  /**
+   * Prepares the canonical publication update payload, strictly preserving content,
+   * passenger_advice, and verified FAQs.
+   */
+  public preparePublishPayload(
+    draft: any,
+    cleanTitle: string,
+    canonicalSlug: string,
+    now: string = new Date().toISOString()
+  ): Record<string, any> {
+    const seoTitle = `${cleanTitle.slice(0, 55)} | Trayago News`;
+    const metaDesc = (draft.summary || cleanTitle).slice(0, 155).replace(/[\r\n]+/g, ' ').trim();
+    const takeaways = this.synthesizePassengerTakeaways({
+      title: cleanTitle,
+      summary: draft.summary,
+      category: draft.category,
+      affected_trains: draft.affected_trains,
+    });
+
+    let normalizedCategory = 'Railway Updates';
+    const lowerTitle = cleanTitle.toLowerCase();
+    if (lowerTitle.includes('cancel')) normalizedCategory = 'Cancellation';
+    else if (lowerTitle.includes('delay') || lowerTitle.includes('block')) normalizedCategory = 'Delays';
+    else if (lowerTitle.includes('special')) normalizedCategory = 'Special Trains';
+
+    const faqItems = Array.isArray(draft.faq) && draft.faq.length > 0
+      ? draft.faq
+      : (Array.isArray(draft.faqs) && draft.faqs.length > 0 ? draft.faqs : null);
+
+    const linkedContent = typeof draft.content === 'string'
+      ? this.injectDeterministicInternalLinks(draft.content, draft.affected_trains)
+      : (draft.content !== undefined ? draft.content : null);
+
+    return {
+      title: cleanTitle,
+      slug: canonicalSlug,
+      seo_title: seoTitle,
+      meta_description: metaDesc,
+      key_takeaways: takeaways,
+      category: normalizedCategory,
+      content: linkedContent,
+      passenger_advice: draft.passenger_advice !== undefined ? draft.passenger_advice : null,
+      faq: faqItems,
+      status: 'PUBLISHED',
+      updated_at: now,
+    };
+  }
+
+  /**
    * Main Autonomous Curation & Publishing Routine
    */
   public async curateAndPublishDailyBatch(options?: {
@@ -342,6 +593,17 @@ export class NewsAutoCuratorService {
         if (selectedForPublish.length >= publishQuotaRemaining) break;
         result.processedCount++;
 
+        // Status & Fact Validation Safeguard: Only valid AI_DRAFTED candidates can be curated
+        const validation = this.validateDraftForCuration(draft);
+        if (!validation.isValid) {
+          winstonLogger.warn(`[NEWS_AUTOCURATOR_VALIDATION_SKIP] Draft ${draft.id} skipped: ${validation.reason}`);
+          if (validation.reason?.startsWith('Fact validation failed')) {
+            await supabase.from('railway_news').update({ status: 'REJECTED', updated_at: new Date().toISOString() }).eq('id', draft.id);
+            result.archivedCount++;
+          }
+          continue;
+        }
+
         const cleanTitle = this.cleanHeadline(draft.title);
         const lowerClean = cleanTitle.toLowerCase();
 
@@ -384,32 +646,7 @@ export class NewsAutoCuratorService {
 
       for (const { draft, cleanTitle } of selectedForPublish) {
         const canonicalSlug = this.generateCanonicalSlug(cleanTitle, draft.published_at || now);
-        const seoTitle = `${cleanTitle.slice(0, 55)} | Trayago News`;
-        const metaDesc = (draft.summary || cleanTitle).slice(0, 155).replace(/[\r\n]+/g, ' ').trim();
-        const takeaways = this.synthesizePassengerTakeaways({
-          title: cleanTitle,
-          summary: draft.summary,
-          category: draft.category,
-          affected_trains: draft.affected_trains,
-        });
-
-        // Normalize category
-        let normalizedCategory = 'Railway Updates';
-        const lowerTitle = cleanTitle.toLowerCase();
-        if (lowerTitle.includes('cancel')) normalizedCategory = 'Cancellation';
-        else if (lowerTitle.includes('delay') || lowerTitle.includes('block')) normalizedCategory = 'Delays';
-        else if (lowerTitle.includes('special')) normalizedCategory = 'Special Trains';
-
-        const updatePayload: Record<string, any> = {
-          title: cleanTitle,
-          slug: canonicalSlug,
-          seo_title: seoTitle,
-          meta_description: metaDesc,
-          key_takeaways: takeaways,
-          category: normalizedCategory,
-          status: 'PUBLISHED',
-          updated_at: now,
-        };
+        const updatePayload = this.preparePublishPayload(draft, cleanTitle, canonicalSlug, now);
 
         const { error: updateErr } = await supabase
           .from('railway_news')
@@ -576,6 +813,18 @@ export class NewsAutoCuratorService {
         summary,
         key_takeaways: keyTakeaways,
         category: 'Cancellation',
+        content: null,
+        passenger_advice: 'Passengers with confirmed IRCTC e-tickets on fully cancelled trains are eligible for automatic 100% full refund to the original source account without filing TDR. Commuters requiring immediate travel are advised to use Trayago Split Journey Intelligence to discover alternative connected trains or partner bus options.',
+        faq: [
+          {
+            question: 'Will I get an automatic refund for fully cancelled trains?',
+            answer: 'Yes, 100% refund is automatically credited by IRCTC to the original booking account without needing to file a TDR.'
+          },
+          {
+            question: 'Where can I check alternate routes for cancelled trains?',
+            answer: 'Travelers can use Trayago Split Journey to find available connecting trains or alternate routes.'
+          }
+        ],
         status: 'PUBLISHED',
         published_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),

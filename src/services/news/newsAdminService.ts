@@ -10,6 +10,7 @@
 import { winstonLogger } from '../../middleware/logger';
 import { supabase, isSupabaseConfigured } from '../../config/supabase';
 import { cacheService } from '../cacheService';
+import { invalidateNewsCache } from '../railwayNewsService';
 import { newsSourceRegistry } from './newsSourceRegistry';
 import {
   IngestionStatus,
@@ -168,23 +169,74 @@ export class NewsAdminService {
       return { success: false, error: 'Source attribution cannot be cleared.' };
     }
 
+    // Build safe update payload from whitelist with strict field validation
+    const allowedEdits: Record<string, any> = {};
+
+    // Validate content: must be string or null
+    if ('content' in rawEdits && rawEdits.content !== undefined) {
+      if (rawEdits.content === null) {
+        allowedEdits.content = null;
+      } else if (typeof rawEdits.content === 'string') {
+        allowedEdits.content = rawEdits.content.trim() === '' ? null : rawEdits.content;
+      } else {
+        return { success: false, error: "Field 'content' must be a string or null." };
+      }
+    }
+
+    // Validate passenger_advice: must be string or null
+    if ('passenger_advice' in rawEdits && rawEdits.passenger_advice !== undefined) {
+      if (rawEdits.passenger_advice === null) {
+        allowedEdits.passenger_advice = null;
+      } else if (typeof rawEdits.passenger_advice === 'string') {
+        allowedEdits.passenger_advice = rawEdits.passenger_advice.trim() === '' ? null : rawEdits.passenger_advice;
+      } else {
+        return { success: false, error: "Field 'passenger_advice' must be a string or null." };
+      }
+    }
+
+    // Validate faq: must be array of valid { question, answer } objects or null
+    if (('faq' in rawEdits && rawEdits.faq !== undefined) || ('faqs' in rawEdits && rawEdits.faqs !== undefined)) {
+      const rawFaq = 'faq' in rawEdits ? rawEdits.faq : rawEdits.faqs;
+      if (rawFaq === null) {
+        allowedEdits.faq = null;
+      } else if (Array.isArray(rawFaq)) {
+        const sanitizedFaq: Array<{ question: string; answer: string }> = [];
+        for (const item of rawFaq) {
+          if (
+            item &&
+            typeof item === 'object' &&
+            typeof item.question === 'string' &&
+            typeof item.answer === 'string'
+          ) {
+            const q = item.question.trim();
+            const a = item.answer.trim();
+            if (q && a) {
+              sanitizedFaq.push({ question: q, answer: a });
+            }
+          }
+        }
+        allowedEdits.faq = sanitizedFaq.length > 0 ? sanitizedFaq : null;
+      } else {
+        return { success: false, error: "Field 'faq' must be an array of { question, answer } objects or null." };
+      }
+    }
+
+    const otherAllowedKeys: (keyof NewsEditableFields)[] = [
+      'title', 'summary', 'key_takeaways',
+      'seo_title', 'meta_description', 'slug', 'category',
+      'image_url',
+      'affected_trains', 'affected_stations',
+    ];
+    for (const key of otherAllowedKeys) {
+      if (key in rawEdits && rawEdits[key] !== undefined) {
+        allowedEdits[key] = rawEdits[key];
+      }
+    }
+    allowedEdits.updated_at = new Date().toISOString();
+
     try {
       const existing = await this.getArticle(id);
       if (!existing) return { success: false, error: 'Article not found.' };
-
-      // Build safe update payload from whitelist
-      const allowedEdits: Record<string, any> = {};
-      const allowedKeys: (keyof NewsEditableFields)[] = [
-        'title', 'summary', 'key_takeaways', 'passenger_advice', 'faq',
-        'seo_title', 'meta_description', 'slug', 'category',
-        'affected_trains', 'affected_stations',
-      ];
-      for (const key of allowedKeys) {
-        if (key in rawEdits && rawEdits[key] !== undefined) {
-          allowedEdits[key] = rawEdits[key];
-        }
-      }
-      allowedEdits.updated_at = new Date().toISOString();
 
       const { error } = await supabase
         .from('railway_news')
@@ -193,8 +245,12 @@ export class NewsAdminService {
 
       if (error) {
         if (error.code === 'PGRST204' || error.message?.includes('column')) {
-          // Fallback: only write known legacy columns
-          const legacyKeys = ['title', 'summary', 'key_takeaways', 'seo_title', 'meta_description', 'slug', 'category', 'affected_trains', 'affected_stations'];
+          // Fallback: only write known legacy columns including content, passenger_advice, faq
+          const legacyKeys = [
+            'title', 'summary', 'key_takeaways', 'seo_title', 'meta_description',
+            'slug', 'category', 'image_url', 'affected_trains', 'affected_stations',
+            'content', 'passenger_advice', 'faq'
+          ];
           const fallbackEdits: Record<string, any> = { updated_at: new Date().toISOString() };
           for (const k of legacyKeys) {
             if (k in allowedEdits) fallbackEdits[k] = allowedEdits[k];
@@ -206,7 +262,64 @@ export class NewsAdminService {
         }
       }
 
-      await this.writeAuditEntry('EDIT', id, adminId, existing.status, existing.status);
+      // Detect changes to content, passenger_advice, and faq for explicit audit logging
+      const changedFields: string[] = [];
+      const changedAuditDetails: Record<string, any> = {};
+
+      if ('content' in allowedEdits && allowedEdits.content !== existing.content) {
+        changedFields.push('content');
+        changedAuditDetails.content_changed = true;
+      }
+      if ('passenger_advice' in allowedEdits && allowedEdits.passenger_advice !== existing.passenger_advice) {
+        changedFields.push('passenger_advice');
+        changedAuditDetails.passenger_advice_changed = true;
+      }
+      if ('faq' in allowedEdits) {
+        const prevFaqStr = JSON.stringify(existing.faq || null);
+        const nextFaqStr = JSON.stringify(allowedEdits.faq || null);
+        if (prevFaqStr !== nextFaqStr) {
+          changedFields.push('faq');
+          changedAuditDetails.faq_changed = true;
+        }
+      }
+
+      for (const key of Object.keys(allowedEdits)) {
+        if (key !== 'updated_at' && !['content', 'passenger_advice', 'faq'].includes(key)) {
+          if (JSON.stringify(allowedEdits[key]) !== JSON.stringify(existing[key])) {
+            changedFields.push(key);
+          }
+        }
+      }
+
+      const editReason = changedFields.length > 0
+        ? `Edited fields: ${changedFields.join(', ')}`
+        : 'Editorial update';
+
+      await this.writeAuditEntry(
+        'EDIT',
+        id,
+        adminId,
+        existing.status,
+        existing.status,
+        editReason,
+        undefined,
+        {
+          changed_fields: changedFields,
+          ...changedAuditDetails,
+        }
+      );
+
+      // Invalidate memory listing cache and isolated single-article detail cache
+      invalidateNewsCache(existing.slug, id);
+      if (rawEdits.slug && rawEdits.slug !== existing.slug) {
+        invalidateNewsCache(rawEdits.slug);
+      }
+      try {
+        cacheService.del('latest_railway_news_cache_v3');
+      } catch {
+        // Non-fatal
+      }
+
       return { success: true };
     } catch (err: any) {
       winstonLogger.error(`[NEWS_ADMIN_EDIT_ERROR] ${id}: ${err.message}`);
@@ -296,10 +409,8 @@ export class NewsAdminService {
         }
       }
 
-      // Invalidate memory cache so public /api/news refreshes instantly
-      try {
-        cacheService.del('railway_news_v2');
-      } catch {}
+      // Invalidate memory listing cache and isolated single-article detail cache
+      invalidateNewsCache(existing.slug, id);
 
       // Map to audit action
       const actionMap: Partial<Record<IngestionStatus, NewsAuditAction>> = {
@@ -398,7 +509,8 @@ export class NewsAdminService {
     prevStatus: IngestionStatus | string,
     newStatus: IngestionStatus | string,
     reason?: string,
-    adminIp?: string
+    adminIp?: string,
+    extraDetails?: Record<string, any>
   ): Promise<void> {
     try {
       // Admin email is not resolved here to avoid coupling to auth internals.
@@ -417,6 +529,7 @@ export class NewsAdminService {
             previous_status: prevStatus,
             new_status: newStatus,
             reason: reason || null,
+            ...(extraDetails || {}),
           },
           timestamp: new Date().toISOString(),
         }]);

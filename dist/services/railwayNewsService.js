@@ -3,7 +3,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.railwayNewsService = void 0;
+exports.railwayNewsService = exports.NEWS_LISTING_PROJECTION = exports.NEWS_CACHE_TTL = exports.NEWS_DETAIL_CACHE_PREFIX = exports.NEWS_CACHE_KEY = void 0;
+exports.invalidateNewsCache = invalidateNewsCache;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const logger_1 = require("../middleware/logger");
@@ -11,11 +12,30 @@ const cacheService_1 = require("./cacheService");
 const supabase_1 = require("../config/supabase");
 const newsSourceRegistry_1 = require("./news/newsSourceRegistry");
 const newsIngestionEngine_1 = require("./news/newsIngestionEngine");
-// ─── Constants ────────────────────────────────────────────────────────────────
-const NEWS_CACHE_KEY = 'railway_news_v2';
-const NEWS_CACHE_TTL = 30 * 60; // 30 minutes
+// ─── Constants & Cache Management ─────────────────────────────────────────────
+exports.NEWS_CACHE_KEY = 'railway_news_v2';
+exports.NEWS_DETAIL_CACHE_PREFIX = 'NEWS_DETAIL_';
+exports.NEWS_CACHE_TTL = 30 * 60; // 30 minutes
+exports.NEWS_LISTING_PROJECTION = 'id, title, summary, category, source_name, source_url, source_id, source_tier, published_at, updated_at, image_url, slug, seo_title, meta_description, affected_trains, affected_stations, status';
 const MAX_TOTAL_ARTICLES = 40;
 const LOCAL_FALLBACK_FILE = path_1.default.join(process.cwd(), 'data', 'railway_news_cache.json');
+/**
+ * Invalidates news memory caches: listing feed and isolated single-article detail caches.
+ */
+function invalidateNewsCache(slug, id) {
+    try {
+        cacheService_1.cacheService.del(exports.NEWS_CACHE_KEY);
+        if (slug && typeof slug === 'string' && slug.trim() !== '') {
+            cacheService_1.cacheService.del(`${exports.NEWS_DETAIL_CACHE_PREFIX}${slug.trim().toLowerCase()}`);
+        }
+        if (id && typeof id === 'string' && id.trim() !== '') {
+            cacheService_1.cacheService.del(`${exports.NEWS_DETAIL_CACHE_PREFIX}${id.trim().toLowerCase()}`);
+        }
+    }
+    catch (err) {
+        logger_1.winstonLogger.warn('[NEWS_CACHE_INVALIDATE_FAIL]', { error: err.message });
+    }
+}
 // ─── Local Fallback Helper ────────────────────────────────────────────────────
 function readLocalNewsFallback() {
     try {
@@ -79,6 +99,11 @@ function transformToDatabasePayload(articles) {
         image_url: article.image_url,
         status: article.status || 'READY_FOR_AI',
         ingestion_status: article.ingestion_status || 'PENDING_AI',
+        content: article.content !== undefined ? article.content : null,
+        passenger_advice: article.passenger_advice !== undefined ? article.passenger_advice : null,
+        faq: (Array.isArray(article.faq) && article.faq.length > 0)
+            ? article.faq
+            : (Array.isArray(article.faqs) && article.faqs.length > 0 ? article.faqs : null),
         published_at: article.published_at,
         first_seen_at: article.first_seen_at,
         last_seen_at: article.last_seen_at,
@@ -110,6 +135,7 @@ function transformFromDatabaseRow(row) {
         faq: parseJsonArray(row.faq),
         affectedTrains: parseJsonArray(row.affected_trains),
         affectedStations: parseJsonArray(row.affected_stations),
+        ...(row.content !== undefined ? { content: row.content } : {}),
     };
 }
 function canonicalToLegacyArticle(a) {
@@ -137,6 +163,7 @@ function canonicalToLegacyArticle(a) {
         faq: a.faq || [],
         affectedTrains: a.affected_trains || [],
         affectedStations: a.affected_stations || [],
+        ...(a.content !== undefined ? { content: a.content } : {}),
     };
 }
 // ─── Related Articles Deterministic Ranking ───────────────────────────────────
@@ -176,7 +203,7 @@ exports.railwayNewsService = {
     getLatestNews: async (options) => {
         let allPublished = [];
         // 1. Memory cache
-        const cached = cacheService_1.cacheService.get(NEWS_CACHE_KEY);
+        const cached = cacheService_1.cacheService.get(exports.NEWS_CACHE_KEY);
         if (cached && cached.length > 0) {
             allPublished = cached.filter(a => a.status === 'PUBLISHED');
         }
@@ -185,7 +212,7 @@ exports.railwayNewsService = {
             try {
                 const { data: dbArticles, error } = await supabase_1.supabase
                     .from('railway_news')
-                    .select('*')
+                    .select(exports.NEWS_LISTING_PROJECTION)
                     .eq('status', 'PUBLISHED')
                     .order('published_at', { ascending: false })
                     .limit(100);
@@ -195,7 +222,7 @@ exports.railwayNewsService = {
                         .filter(a => a.status === 'PUBLISHED');
                     if (allPublished.length > 0) {
                         logger_1.winstonLogger.info('[NEWS_DB_FALLBACK] Serving from database', { count: allPublished.length });
-                        cacheService_1.cacheService.set(NEWS_CACHE_KEY, allPublished, NEWS_CACHE_TTL);
+                        cacheService_1.cacheService.set(exports.NEWS_CACHE_KEY, allPublished, exports.NEWS_CACHE_TTL);
                         writeLocalNewsFallback(allPublished);
                     }
                 }
@@ -210,7 +237,7 @@ exports.railwayNewsService = {
             if (local.length > 0) {
                 allPublished = local.filter(a => a.status === 'PUBLISHED');
                 if (allPublished.length > 0) {
-                    cacheService_1.cacheService.set(NEWS_CACHE_KEY, allPublished, NEWS_CACHE_TTL);
+                    cacheService_1.cacheService.set(exports.NEWS_CACHE_KEY, allPublished, exports.NEWS_CACHE_TTL);
                 }
             }
         }
@@ -226,6 +253,7 @@ exports.railwayNewsService = {
     },
     /**
      * Retrieves a single published article by slug (with deterministic related articles).
+     * Uses isolated single-article cache (NEWS_DETAIL_) and direct full row query.
      * Strictly enforces status === 'PUBLISHED'. Returns null if not found or not published.
      */
     getArticleBySlug: async (slug) => {
@@ -233,11 +261,17 @@ exports.railwayNewsService = {
             return null;
         }
         const cleanSlug = slug.trim().toLowerCase();
-        // 1. Check in-memory/recent published articles
+        const detailCacheKey = `${exports.NEWS_DETAIL_CACHE_PREFIX}${cleanSlug}`;
+        // 1. Check isolated single-article cache
+        const cachedDetail = cacheService_1.cacheService.get(detailCacheKey);
+        if (cachedDetail && cachedDetail.article && cachedDetail.article.status === 'PUBLISHED') {
+            return cachedDetail;
+        }
+        // 2. Fetch all published candidates for related scoring
         const allPublished = await exports.railwayNewsService.getLatestNews({ limit: 100 });
-        let article = allPublished.find(a => (a.slug && a.slug.toLowerCase() === cleanSlug) || a.id === cleanSlug);
-        // 2. Direct Supabase query if not found in cache
-        if (!article && (0, supabase_1.isSupabaseConfigured)()) {
+        // 3. Direct query for full published article row
+        let article = null;
+        if ((0, supabase_1.isSupabaseConfigured)()) {
             try {
                 const { data, error } = await supabase_1.supabase
                     .from('railway_news')
@@ -253,11 +287,15 @@ exports.railwayNewsService = {
                 logger_1.winstonLogger.warn('[NEWS_SLUG_FETCH_FAIL]', { error: err.message, slug: cleanSlug });
             }
         }
-        // 3. Strict published gate check
+        // 4. Fallback: if Supabase query missed (e.g. offline/mock environment), search in allPublished
+        if (!article) {
+            article = allPublished.find(a => (a.slug && a.slug.toLowerCase() === cleanSlug) || a.id === cleanSlug) || null;
+        }
+        // 5. Strict published gate check
         if (!article || article.status !== 'PUBLISHED') {
             return null;
         }
-        // 4. Calculate deterministic related articles
+        // 6. Calculate deterministic related articles
         const candidates = allPublished.filter(other => other.id !== article.id && other.slug !== article.slug && other.status === 'PUBLISHED');
         const scored = candidates.map(candidate => ({
             article: candidate,
@@ -269,12 +307,45 @@ exports.railwayNewsService = {
             return new Date(b.article.publishedAt).getTime() - new Date(a.article.publishedAt).getTime();
         });
         const related = scored.slice(0, 4).map(s => s.article);
-        return { article, related };
+        const result = { article, related };
+        // 7. Store in isolated single-article cache
+        cacheService_1.cacheService.set(detailCacheKey, result, exports.NEWS_CACHE_TTL);
+        if (article.id && article.id.toLowerCase() !== cleanSlug) {
+            cacheService_1.cacheService.set(`${exports.NEWS_DETAIL_CACHE_PREFIX}${article.id.toLowerCase()}`, result, exports.NEWS_CACHE_TTL);
+        }
+        if (article.slug && article.slug.toLowerCase() !== cleanSlug) {
+            cacheService_1.cacheService.set(`${exports.NEWS_DETAIL_CACHE_PREFIX}${article.slug.toLowerCase()}`, result, exports.NEWS_CACHE_TTL);
+        }
+        return result;
     },
     /**
      * Returns list of published article slugs and timestamps for dynamic sitemap generation.
+     * Directly queries all published slugs and timestamps (uncapped).
      */
     getSitemapEntries: async () => {
+        if ((0, supabase_1.isSupabaseConfigured)()) {
+            try {
+                const { data, error } = await supabase_1.supabase
+                    .from('railway_news')
+                    .select('slug, published_at, updated_at')
+                    .eq('status', 'PUBLISHED')
+                    .not('slug', 'is', null)
+                    .order('published_at', { ascending: false });
+                if (!error && data && Array.isArray(data)) {
+                    return data
+                        .filter((row) => row.slug && typeof row.slug === 'string' && row.slug.trim() !== '')
+                        .map((row) => ({
+                        slug: row.slug.trim(),
+                        publishedAt: row.published_at || new Date().toISOString(),
+                        updatedAt: row.updated_at || row.published_at || new Date().toISOString(),
+                    }));
+                }
+            }
+            catch (err) {
+                logger_1.winstonLogger.warn('[NEWS_SITEMAP_FETCH_FAIL]', { error: err.message });
+            }
+        }
+        // Fallback if Supabase is offline or unconfigured
         const articles = await exports.railwayNewsService.getLatestNews({ limit: 100 });
         return articles
             .filter(a => a.slug && a.status === 'PUBLISHED')
@@ -330,6 +401,9 @@ exports.railwayNewsService = {
                                 image_url: row.image_url || null,
                                 status: row.status || 'READY_FOR_AI',
                                 ingestion_status: row.ingestion_status || 'PENDING_AI',
+                                content: row.content || null,
+                                passenger_advice: row.passenger_advice || null,
+                                faq: Array.isArray(row.faq) ? row.faq : null,
                                 first_seen_at: row.first_seen_at || new Date().toISOString(),
                                 last_seen_at: row.last_seen_at || new Date().toISOString(),
                                 published_at: row.published_at,
@@ -377,7 +451,7 @@ exports.railwayNewsService = {
                 // If all sources failed and returned 0, return cached or fallback
                 if (processedCanonical.length === 0 && existingArticles.length === 0) {
                     logger_1.winstonLogger.warn('[NEWS_REFRESH_EMPTY] Zero articles ingested; serving memory or local fallback.');
-                    const cached = cacheService_1.cacheService.get(NEWS_CACHE_KEY);
+                    const cached = cacheService_1.cacheService.get(exports.NEWS_CACHE_KEY);
                     return cached || readLocalNewsFallback();
                 }
                 // Non-destructive DB persistence (additive upsert with legacy schema fallback)
@@ -441,7 +515,7 @@ exports.railwayNewsService = {
                     .slice(0, MAX_TOTAL_ARTICLES)
                     .map(canonicalToLegacyArticle);
                 // Update in-process cache and local storage
-                cacheService_1.cacheService.set(NEWS_CACHE_KEY, finalArticles, NEWS_CACHE_TTL);
+                cacheService_1.cacheService.set(exports.NEWS_CACHE_KEY, finalArticles, exports.NEWS_CACHE_TTL);
                 writeLocalNewsFallback(finalArticles);
                 logger_1.winstonLogger.info('[NEWS_REFRESH_COMPLETE]', { count: finalArticles.length });
                 return finalArticles;

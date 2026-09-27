@@ -20,7 +20,10 @@ export class StationController {
 
     // Cache hit
     const cached = cacheService.get(cacheKey);
-    if (cached) return res.json(cached);
+    if (cached) {
+      res.setHeader?.('Cache-Control', 'public, max-age=3600');
+      return res.json(cached);
+    }
 
     try {
       const upper = query.toUpperCase();
@@ -188,6 +191,7 @@ export class StationController {
       if (majorCities[upper]) {
         const data = majorCities[upper];
         cacheService.set(cacheKey, data, 3600);
+        res.setHeader?.('Cache-Control', 'public, max-age=3600');
         return res.json(data);
       }
 
@@ -292,6 +296,7 @@ export class StationController {
         });
       }
 
+      res.setHeader?.('Cache-Control', 'public, max-age=3600');
       return res.json(finalResults);
 
     } catch (err: any) {

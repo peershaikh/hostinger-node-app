@@ -26,6 +26,7 @@ const alarms_1 = __importDefault(require("./routes/alarms"));
 const analytics_1 = __importDefault(require("./routes/analytics"));
 const auth_1 = __importDefault(require("./routes/auth"));
 const beta_1 = __importDefault(require("./routes/beta"));
+const contact_1 = __importDefault(require("./routes/contact"));
 const contentRoutes_1 = __importDefault(require("./routes/contentRoutes"));
 const feedback_1 = __importDefault(require("./routes/feedback"));
 const news_1 = __importDefault(require("./routes/news"));
@@ -64,7 +65,7 @@ app.use((0, helmet_1.default)({
         directives: {
             defaultSrc: ["'self'"],
             scriptSrc: ["'self'", "'unsafe-inline'", "https://sdk.cashfree.com", "https://www.gstatic.com"],
-            connectSrc: ["'self'", "https://api.trayago.in", "https://*.supabase.co", "https://*.cashfree.com"],
+            connectSrc: ["'self'", "https://app.trayago.in", "https://api.trayago.in", "https://*.supabase.co", "https://*.cashfree.com"],
             imgSrc: ["'self'", "data:", "https:", "http:"],
             styleSrc: ["'self'", "'unsafe-inline'"],
             fontSrc: ["'self'", "https:", "data:"]
@@ -189,6 +190,7 @@ app.use('/api/admin', admin_1.default);
 app.use('/api/referrals', referrals_1.default);
 app.use('/api/news', news_1.default);
 app.use('/api/feedback', feedback_1.default);
+app.use('/api/contact', contact_1.default);
 app.use('/api/payments', payment_1.default);
 app.use('/api/notifications', notifications_1.default);
 app.use('/api/content', contentRoutes_1.default);
@@ -207,6 +209,7 @@ app.use('/admin', admin_1.default);
 app.use('/referrals', referrals_1.default);
 app.use('/news', news_1.default);
 app.use('/feedback', feedback_1.default);
+app.use('/contact', contact_1.default);
 app.use('/payments', payment_1.default);
 app.use('/notifications', notifications_1.default);
 app.use('/content', contentRoutes_1.default);
