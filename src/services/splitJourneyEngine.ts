@@ -1548,7 +1548,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "madurai-mumbai": ["SA", "SC", "NGP", "BSL"],
   "madurai-delhi": ["SA", "SC", "NGP", "ET", "BPL"],
   "coimbatore-mumbai": ["SA", "SC", "NGP", "BSL"],
-  "coimbatore-delhi": ["SA", "SC", "NGP", "ET", "BPL", "NDLS"],
+  "coimbatore-delhi": ["SA", "SC", "NGP", "ET", "BPL"],
 
   // —— Pan-India High-Traffic Corridors (Phase 087N57) ——
   // Western / Rajasthan
