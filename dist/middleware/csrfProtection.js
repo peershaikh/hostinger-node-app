@@ -106,6 +106,10 @@ const conditionalCsrf = (req, res, next) => {
     if (req.path.endsWith('/trains/same-train-rescue')) {
         return next();
     }
+    // Public, read-only station autocomplete queries (allows edge CDN caching)
+    if (req.method === 'GET' && (req.path.startsWith('/api/stations/') || req.path.startsWith('/stations/'))) {
+        return next();
+    }
     // PHASE_087N84: Anonymous analytics telemetry endpoints (no auth required).
     // These are write-only event logging designed for unauthenticated client tracking.
     // Explicitly exclude /referrals/claim which may affect account rewards.
@@ -116,6 +120,10 @@ const conditionalCsrf = (req, res, next) => {
         '/api/analytics/split-click',
         '/analytics/feedback',
         '/api/analytics/feedback',
+        '/feedback',
+        '/api/feedback',
+        '/contact',
+        '/api/contact',
         '/analytics/complaint',
         '/api/analytics/complaint'
     ];
