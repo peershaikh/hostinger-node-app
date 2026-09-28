@@ -1544,7 +1544,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "ernakulam-delhi": ["SA", "SC", "NGP", "ET", "BPL"],
   "ernakulam-mumbai": ["MAJN", "MAO", "PUNE"],
   "trivandrum-mumbai": ["ERS", "MAJN", "MAO", "PUNE"],
-  "trivandrum-delhi": ["ERS", "CBE", "SC", "NGP", "BPL", "NDLS"],
+  "trivandrum-delhi": ["ERS", "CBE", "SC", "NGP", "BPL"],
   "madurai-mumbai": ["SA", "SC", "NGP", "BSL"],
   "madurai-delhi": ["SA", "SC", "NGP", "ET", "BPL", "NDLS"],
   "coimbatore-mumbai": ["SA", "SC", "NGP", "BSL"],
