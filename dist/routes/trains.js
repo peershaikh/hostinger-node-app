@@ -42,6 +42,9 @@ router.get('/delay-history/:trainNo', trainController_1.trainController.getTrain
 // @route   GET /api/trains/cancellations/today
 // @desc    Return today's pan-India fully & partially cancelled trains with regional highlights
 router.get('/cancellations/today', trainController_1.trainController.getDailyCancellations);
+// @route   GET /api/trains/special-trains/today
+// @desc    Return today's verified newly launched & festival special trains with article link
+router.get('/special-trains/today', trainController_1.trainController.getDailySpecialTrains);
 // @route   GET /api/trains/station-timetable/:stationCode
 // @desc    Return full scheduled timetable of trains crossing a station
 router.get('/station-timetable/:stationCode', trainController_1.trainController.getStationTimetable);

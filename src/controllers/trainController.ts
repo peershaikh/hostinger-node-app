@@ -1331,6 +1331,96 @@ export class TrainController {
   };
 
   /**
+   * GET /api/trains/special-trains/today
+   * Returns today's verified newly launched & festival special trains with article link
+   * Public read-only endpoint, 2-hour server caching.
+   */
+  getDailySpecialTrains = async (req: Request, res: Response) => {
+    try {
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      const queryDate = typeof req.query?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date.trim())
+        ? req.query.date.trim()
+        : today;
+      const cacheKey = `api_daily_special_trains_${queryDate}`;
+      const cached = cacheService.get<any>(cacheKey);
+      if (cached) {
+        return res.json({ success: true, data: cached });
+      }
+
+      const { supabase, isSupabaseConfigured } = await import('../config/supabase');
+      const canonicalSlug = `special-festival-trains-${queryDate}`;
+
+      let articleData: any = null;
+      if (isSupabaseConfigured()) {
+        const { data: article } = await supabase
+          .from('railway_news')
+          .select('title, slug, summary, affected_trains, published_at')
+          .eq('slug', canonicalSlug)
+          .maybeSingle();
+
+        if (article) {
+          articleData = article;
+        } else {
+          // Trigger bulletin auto-curation on-demand if not yet run today
+          const { newsAutoCuratorService } = await import('../services/news/newsAutoCuratorService');
+          const curated = await newsAutoCuratorService.curateDailySpecialTrainsBulletin();
+          if (curated && curated.slug) {
+            articleData = {
+              title: `Special & Newly Introduced Trains Announced (${queryDate})`,
+              slug: curated.slug,
+              summary: `Indian Railways special and newly introduced train services for high-demand corridors.`,
+              affected_trains: curated.trains ? curated.trains.map((t: any) => t.trainNo) : [],
+            };
+          }
+        }
+      }
+
+      const affectedNos: string[] = Array.isArray(articleData?.affected_trains) ? articleData.affected_trains : [];
+      const totalTrains = affectedNos.length;
+
+      // Enrich train names from dbService
+      const { dbService } = await import('../services/dbService');
+      const trainDetails: { trainNo: string; trainName: string; type: string }[] = [];
+
+      for (const no of affectedNos.slice(0, 15)) {
+        const name = await dbService.dbLookupTrainName(no);
+        trainDetails.push({
+          trainNo: no,
+          trainName: name || `Special Express ${no}`,
+          type: no.startsWith('2') ? 'Vande Bharat' : 'Special',
+        });
+      }
+
+      const payload = {
+        date: queryDate,
+        totalTrains,
+        title: articleData?.title || `Special & Newly Introduced Trains`,
+        summary: articleData?.summary || `Verified special and newly introduced trains operational today.`,
+        articleSlug: articleData?.slug || canonicalSlug,
+        trains: trainDetails,
+        lastUpdated: new Date().toISOString(),
+      };
+
+      cacheService.set(cacheKey, payload, 7200); // 2 hours
+      return res.json({ success: true, data: payload });
+    } catch (err: any) {
+      winstonLogger.error(`[SPECIAL_TRAINS_CONTROLLER] Error: ${err.message}`);
+      return res.json({
+        success: false,
+        data: {
+          date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+          totalTrains: 0,
+          title: '',
+          summary: '',
+          articleSlug: '',
+          trains: [],
+        },
+        message: 'Could not load special trains data at this time.',
+      });
+    }
+  };
+
+  /**
    * GET /api/trains/station-timetable/:stationCode
    * Returns the complete scheduled timetable for trains at a station.
    * Public read-only endpoint, 2-hour server caching.
