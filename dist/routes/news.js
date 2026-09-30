@@ -9,12 +9,15 @@ const errorHandler_1 = require("../middleware/errorHandler");
 const router = express_1.default.Router();
 /**
  * GET /api/news
- * Returns latest railway news articles (served from 30-min cache).
+ * Returns latest railway news articles.
  * STRICT PUBLISHED GATE: Exposes only status === 'PUBLISHED'.
- * Optional: ?category=Delays&limit=20&offset=0
+ * Optional: ?category=Special Trains&limit=20&offset=0&fresh=true
  */
 router.get('/', (0, errorHandler_1.asyncHandler)(async (req, res) => {
-    const { category, limit, offset } = req.query;
+    const { category, limit, offset, fresh } = req.query;
+    if (fresh === 'true') {
+        (0, railwayNewsService_1.invalidateNewsCache)();
+    }
     const articles = await railwayNewsService_1.railwayNewsService.getLatestNews({
         category: typeof category === 'string' ? category : undefined,
         limit: limit ? parseInt(limit, 10) : undefined,

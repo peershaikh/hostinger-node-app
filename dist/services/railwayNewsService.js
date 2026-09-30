@@ -15,7 +15,7 @@ const newsIngestionEngine_1 = require("./news/newsIngestionEngine");
 // ─── Constants & Cache Management ─────────────────────────────────────────────
 exports.NEWS_CACHE_KEY = 'railway_news_v2';
 exports.NEWS_DETAIL_CACHE_PREFIX = 'NEWS_DETAIL_';
-exports.NEWS_CACHE_TTL = 30 * 60; // 30 minutes
+exports.NEWS_CACHE_TTL = 3 * 60; // 3 minutes for high responsiveness on live news bulletins
 exports.NEWS_LISTING_PROJECTION = 'id, title, summary, category, source_name, source_url, source_id, source_tier, published_at, updated_at, image_url, slug, seo_title, meta_description, affected_trains, affected_stations, status';
 const MAX_TOTAL_ARTICLES = 40;
 const LOCAL_FALLBACK_FILE = path_1.default.join(process.cwd(), 'data', 'railway_news_cache.json');
@@ -25,6 +25,9 @@ const LOCAL_FALLBACK_FILE = path_1.default.join(process.cwd(), 'data', 'railway_
 function invalidateNewsCache(slug, id) {
     try {
         cacheService_1.cacheService.del(exports.NEWS_CACHE_KEY);
+        cacheService_1.cacheService.del('railway_news_v2');
+        cacheService_1.cacheService.del('latest_railway_news_cache_v3');
+        cacheService_1.cacheService.del('railway_news_latest');
         if (slug && typeof slug === 'string' && slug.trim() !== '') {
             cacheService_1.cacheService.del(`${exports.NEWS_DETAIL_CACHE_PREFIX}${slug.trim().toLowerCase()}`);
         }

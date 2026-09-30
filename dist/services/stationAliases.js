@@ -1,13 +1,20 @@
 "use strict";
-/**
- * PHASE_4C862 — Shared station alias definitions for schedule matching and IRCTC API mapping.
- * Train-aware resolution lives in trainStationResolver.ts (does NOT blindly map DR→CSMT).
- */
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.IRCTC_CANONICAL = exports.TERMINAL_ALIASES = exports.PAN_INDIA_CLUSTERS = void 0;
 exports.areStationsCompatible = areStationsCompatible;
 exports.isCompatibleWithRequestedDestinations = isCompatibleWithRequestedDestinations;
 exports.normalizeForAPILegacy = normalizeForAPILegacy;
+exports.getKnownStationCodes = getKnownStationCodes;
+exports.isValidStationCode = isValidStationCode;
+const fs_1 = __importDefault(require("fs"));
+const path_1 = __importDefault(require("path"));
+/**
+ * PHASE_4C862 — Shared station alias definitions for schedule matching and IRCTC API mapping.
+ * Train-aware resolution lives in trainStationResolver.ts (does NOT blindly map DR→CSMT).
+ */
 exports.PAN_INDIA_CLUSTERS = [
     ['CSMT', 'CSTM', 'DR', 'DDR', 'BDTS', 'MMCT', 'BCT', 'LTT', 'BVI', 'PNVL', 'KYN', 'TNA'],
     ['NDLS', 'DLI', 'NZM', 'ANVT', 'DEC', 'GZB', 'DEE'],
@@ -106,4 +113,57 @@ function normalizeForAPILegacy(code) {
     if (clean === 'KSR')
         return 'SBC';
     return clean;
+}
+let KNOWN_STATION_CODES_SET = null;
+function getKnownStationCodes() {
+    if (KNOWN_STATION_CODES_SET)
+        return KNOWN_STATION_CODES_SET;
+    KNOWN_STATION_CODES_SET = new Set();
+    try {
+        const stationsPath = path_1.default.join(__dirname, '../data/full_stations.json');
+        if (fs_1.default.existsSync(stationsPath)) {
+            const rawData = JSON.parse(fs_1.default.readFileSync(stationsPath, 'utf8'));
+            if (rawData?.features && Array.isArray(rawData.features)) {
+                for (const f of rawData.features) {
+                    if (f?.properties?.code) {
+                        KNOWN_STATION_CODES_SET.add(String(f.properties.code).toUpperCase().trim());
+                    }
+                }
+            }
+        }
+    }
+    catch (e) {
+        // Graceful fallback if full_stations.json cannot be read
+    }
+    // Ensure major operational stations and single-letter codes are present
+    KNOWN_STATION_CODES_SET.add('R'); // Raipur
+    KNOWN_STATION_CODES_SET.add('G'); // Gondia
+    KNOWN_STATION_CODES_SET.add('J'); // Jalna
+    KNOWN_STATION_CODES_SET.add('SV'); // Siwan
+    KNOWN_STATION_CODES_SET.add('MRDW'); // Murdeshwar
+    KNOWN_STATION_CODES_SET.add('SNSI'); // Sainagar Shirdi
+    KNOWN_STATION_CODES_SET.add('AY'); // Ayodhya Dham
+    KNOWN_STATION_CODES_SET.add('AYC'); // Ayodhya Cantt
+    return KNOWN_STATION_CODES_SET;
+}
+/**
+ * Strict check if a string is an authentic Indian Railways station code.
+ * Rules:
+ * 1. Must be 1 to 5 uppercase alphanumeric characters (e.g. 'R', 'G', 'NDLS', 'CSMT', 'SVDK').
+ * 2. If the known station codes registry is loaded (~9,740 stations), it MUST exist in the registry.
+ * 3. Never accepts full city/station names (e.g. 'SIWAN', 'MURUDESHWAR', 'SHIRDI', 'GONDIA').
+ */
+function isValidStationCode(code) {
+    if (!code || typeof code !== 'string')
+        return false;
+    const clean = code.toUpperCase().trim();
+    if (clean.length < 1 || clean.length > 5)
+        return false;
+    if (!/^[A-Z0-9]{1,5}$/.test(clean))
+        return false;
+    const known = getKnownStationCodes();
+    if (known && known.size > 0) {
+        return known.has(clean);
+    }
+    return /^[A-Z]{1,4}$/.test(clean);
 }

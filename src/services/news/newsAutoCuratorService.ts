@@ -18,8 +18,7 @@ import { supabase, isSupabaseConfigured } from '../../config/supabase';
 import { cacheService } from '../cacheService';
 import { IngestionStatus } from './newsTypes';
 import { NewsFactValidator } from './newsDistillationService';
-
-const NEWS_CACHE_KEY = 'latest_railway_news_cache_v3';
+import { invalidateNewsCache } from '../railwayNewsService';
 
 // Noise patterns that must NEVER be published to passenger travel news
 const NOISE_TITLE_PATTERNS = [
@@ -674,7 +673,7 @@ export class NewsAutoCuratorService {
 
       // 6. Invalidate memory cache so public /api/news immediately returns fresh articles
       try {
-        cacheService.del(NEWS_CACHE_KEY);
+        invalidateNewsCache();
       } catch {
         // Non-fatal
       }
@@ -1097,6 +1096,11 @@ If seats on direct special trains are waitlisted, commuters can use **Trayago Sp
       }
 
       winstonLogger.info(`[SPECIAL_TRAINS_BULLETIN_SUCCESS] Published daily special trains article ${inserted.slug}`);
+      try {
+        invalidateNewsCache(inserted.slug, inserted.id);
+      } catch {
+        // Non-fatal
+      }
       return {
         success: true,
         articleId: inserted.id,

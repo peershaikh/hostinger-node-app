@@ -154,6 +154,43 @@ class AdminController {
                     // ignore
                 }
             }
+            // 1D. Fetch Voice Analytics safely
+            const voiceStats = {
+                total: 0,
+                hindi: 0,
+                english: 0,
+                male: 0,
+                female: 0,
+                waitlist_callouts: 0
+            };
+            try {
+                if ((0, supabase_1.isSupabaseConfigured)()) {
+                    const { data: voiceEvents } = await supabase_1.supabase
+                        .from('analytics_events')
+                        .select('metadata')
+                        .eq('event_type', 'pnr_voice_played')
+                        .limit(1000);
+                    if (voiceEvents && voiceEvents.length > 0) {
+                        voiceStats.total = voiceEvents.length;
+                        voiceEvents.forEach((row) => {
+                            const meta = row.metadata || {};
+                            if (meta.lang === 'hi')
+                                voiceStats.hindi++;
+                            else if (meta.lang === 'en')
+                                voiceStats.english++;
+                            if (meta.gender === 'male')
+                                voiceStats.male++;
+                            else if (meta.gender === 'female')
+                                voiceStats.female++;
+                            if (meta.hasRescueCallout || meta.isWaitlist)
+                                voiceStats.waitlist_callouts++;
+                        });
+                    }
+                }
+            }
+            catch (err) {
+                logger_1.winstonLogger.warn(`[ADMIN_VOICE_STATS_FAIL] ${err.message}`);
+            }
             // 2. Fetch AI learning metrics safely
             let aiMetrics = {};
             try {
@@ -396,6 +433,7 @@ class AdminController {
                         active_pnr_trackers: activePnrTrackers,
                         active_station_alarms: activeStationAlarms,
                         delivered_alerts: deliveredNotifs,
+                        voice_plays: voiceStats,
                         all_time: aiMetrics.all_time || null
                     },
                     cost: {

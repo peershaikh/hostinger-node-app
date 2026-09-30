@@ -160,7 +160,7 @@ class StationService {
     isCode(input) {
         if (!input)
             return false;
-        return /^[A-Z]{2,6}$/.test(input.toUpperCase().trim());
+        return (0, stationAliases_1.isValidStationCode)(input);
     }
     /**
      * Synchronous reverse city lookup using pre-compiled memory map.
@@ -287,8 +287,8 @@ class StationService {
                 logger_1.winstonLogger.error(`[STATION] Step 4.5 Legacy fallback getStations failed: ${legacyErr.message}`);
             }
             const mapped = resolveStationsWithShadow(cleanCity, legacyMapped);
-            // Ensure we don't just blindly accept the fallback if it's the exact same non-code string
-            const validMapped = mapped.filter(m => m !== cleanCity || this.isCode(m));
+            // Ensure we only accept verified station codes, preventing unmapped city names from short-circuiting
+            const validMapped = mapped.filter(m => this.isCode(m));
             if (validMapped.length > 0) {
                 logger_1.winstonLogger.info(`[STATION_RESOLVE] Step 4.5 (JSON Fallback) hit for "${cleanCity}" → [${validMapped.join(', ')}]`);
                 cacheService_1.cacheService.set(cacheKey, validMapped, 3600);

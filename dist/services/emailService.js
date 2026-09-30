@@ -7,23 +7,114 @@ exports.emailService = exports.EmailService = void 0;
 const resend_1 = require("resend");
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const logger_1 = require("../middleware/logger");
-// Initialize Resend with the provided API key if present
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const resend = RESEND_API_KEY ? new resend_1.Resend(RESEND_API_KEY) : null;
-const SENDER_EMAIL = process.env.SENDER_EMAIL || 'support@trayago.in';
-// Initialize Nodemailer for Brevo SMTP (Fallback)
-const brevoTransporter = nodemailer_1.default.createTransport({
-    host: 'smtp-relay.brevo.com',
-    port: 587,
-    auth: {
-        user: process.env.BREVO_SMTP_LOGIN,
-        pass: process.env.BREVO_SMTP_PASSWORD,
-    },
-});
+// Helper to parse multiple Resend API keys from RESEND_API_KEYS or RESEND_API_KEY
+function getResendClients() {
+    const rawKeys = process.env.RESEND_API_KEYS || process.env.RESEND_API_KEY || '';
+    const keys = rawKeys
+        .split(',')
+        .map(k => k.trim())
+        .filter(k => k.length > 0);
+    return keys.map(k => ({
+        client: new resend_1.Resend(k),
+        keyHint: k.length > 12 ? `${k.substring(0, 8)}...${k.substring(k.length - 4)}` : 'key_hidden',
+    }));
+}
+// Helper to parse comma-separated sender emails (e.g. "noreply@trayago.in,noreply@trayago.com")
+function getSenderEmails() {
+    const raw = process.env.SENDER_EMAIL || 'noreply@trayago.com,support@trayago.in';
+    const parts = raw
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+    const comSender = parts.find(s => s.toLowerCase().endsWith('@trayago.com')) || 'noreply@trayago.com';
+    const inSender = parts.find(s => s.toLowerCase().endsWith('@trayago.in')) || 'support@trayago.in';
+    const defaultSender = parts[0] || comSender;
+    return { defaultSender, comSender, inSender };
+}
+// Nodemailer transporter for Brevo SMTP (Emergency Fallback)
+function getBrevoTransporter() {
+    const login = process.env.BREVO_SMTP_LOGIN;
+    const pass = process.env.BREVO_SMTP_PASSWORD;
+    if (!login || !pass)
+        return null;
+    return nodemailer_1.default.createTransport({
+        host: 'smtp-relay.brevo.com',
+        port: 587,
+        auth: {
+            user: login,
+            pass: pass,
+        },
+    });
+}
 class EmailService {
+    /**
+     * Smart multi-key failover pipeline:
+     * 1. Try each Resend API key in order (Key 1: 50k quota -> Key 2: 3k quota)
+     * 2. If all Resend keys fail (or coupon expired/401/403/account closed), silently failover to Brevo SMTP
+     * 3. If running in local dev without keys, log to winston and succeed
+     */
+    async sendWithFailover(options) {
+        const clients = getResendClients();
+        const brevoTransporter = getBrevoTransporter();
+        const { defaultSender, comSender, inSender } = getSenderEmails();
+        const tag = options.tag || 'EMAIL';
+        const senderName = options.senderName || 'Trayago';
+        // Local dev mode when no email providers are configured
+        if (clients.length === 0 && !brevoTransporter) {
+            logger_1.winstonLogger.info(`[DEV_${tag}] Email to ${JSON.stringify(options.to)}: ${options.subject}`);
+            return true;
+        }
+        let lastError = null;
+        // 1. Try Resend keys in order
+        for (let i = 0; i < clients.length; i++) {
+            const { client, keyHint } = clients[i];
+            // For Resend, use comSender (verified trayago.com domain), falling back to default
+            const resendSender = comSender || defaultSender;
+            try {
+                const { error } = await client.emails.send({
+                    from: `${senderName} <${resendSender}>`,
+                    to: options.to,
+                    subject: options.subject,
+                    html: options.html,
+                    replyTo: inSender,
+                });
+                if (error) {
+                    throw new Error(error.message || JSON.stringify(error));
+                }
+                logger_1.winstonLogger.info(`[EMAIL_SUCCESS] ${tag} sent to ${JSON.stringify(options.to)} via Resend (Key #${i + 1}: ${keyHint})`);
+                return true;
+            }
+            catch (err) {
+                lastError = err;
+                logger_1.winstonLogger.warn(`[EMAIL_WARN] Resend Key #${i + 1} (${keyHint}) failed for ${JSON.stringify(options.to)}: ${err.message}. Trying next provider...`);
+            }
+        }
+        // 2. Emergency fallback to Brevo SMTP
+        if (brevoTransporter) {
+            try {
+                const brevoSender = inSender || defaultSender;
+                await brevoTransporter.sendMail({
+                    from: `"${senderName}" <${brevoSender}>`,
+                    to: options.to,
+                    subject: options.subject,
+                    html: options.html,
+                    replyTo: inSender,
+                });
+                logger_1.winstonLogger.info(`[EMAIL_SUCCESS] ${tag} sent to ${JSON.stringify(options.to)} via Brevo SMTP (Fallback)`);
+                return true;
+            }
+            catch (brevoErr) {
+                logger_1.winstonLogger.error(`[EMAIL_ERROR] Both Resend (all keys) and Brevo SMTP failed for ${JSON.stringify(options.to)}`, brevoErr);
+                throw new Error(`All email providers failed to send ${tag}: ${brevoErr.message}`);
+            }
+        }
+        // If Resend failed and no Brevo configured
+        logger_1.winstonLogger.error(`[EMAIL_ERROR] All Resend keys failed and Brevo is not configured for ${JSON.stringify(options.to)}`, lastError);
+        throw new Error(`All email providers failed to send ${tag}: ${lastError?.message || 'Unknown error'}`);
+    }
     async sendOtpEmail(toEmail, otpCode) {
         const subject = 'Your Trayago Verification Code';
-        const htmlContent = `
+        const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
         <div style="text-align: center; margin-bottom: 20px;">
           <h1 style="color: #6b21a8; margin: 0;">Trayago</h1>
@@ -52,47 +143,17 @@ class EmailService {
         </div>
       </div>
     `;
-        if (!resend && !process.env.BREVO_SMTP_LOGIN) {
-            logger_1.winstonLogger.info(`[DEV_OTP] Verification code for ${toEmail}: ${otpCode}`);
-            return true;
-        }
-        try {
-            if (resend) {
-                const { error } = await resend.emails.send({
-                    from: `Trayago <${SENDER_EMAIL}>`,
-                    to: toEmail,
-                    subject,
-                    html: htmlContent,
-                });
-                if (error) {
-                    throw new Error(error.message);
-                }
-                logger_1.winstonLogger.info(`[EMAIL_SUCCESS] OTP sent to ${toEmail} via Resend`);
-                return true;
-            }
-            throw new Error('Resend not configured');
-        }
-        catch (err) {
-            logger_1.winstonLogger.warn(`[EMAIL_WARN] Resend failed for ${toEmail}: ${err.message}. Falling back to Brevo SMTP...`);
-            try {
-                await brevoTransporter.sendMail({
-                    from: `"Trayago" <${SENDER_EMAIL}>`,
-                    to: toEmail,
-                    subject,
-                    html: htmlContent,
-                });
-                logger_1.winstonLogger.info(`[EMAIL_SUCCESS] OTP sent to ${toEmail} via Brevo SMTP (Fallback)`);
-                return true;
-            }
-            catch (brevoErr) {
-                logger_1.winstonLogger.error(`[EMAIL_ERROR] Both Resend and Brevo failed to send OTP to ${toEmail}`, brevoErr);
-                throw new Error('All email providers failed to send OTP.');
-            }
-        }
+        return this.sendWithFailover({
+            to: toEmail,
+            subject,
+            html,
+            senderName: 'Trayago',
+            tag: 'OTP',
+        });
     }
     async sendPasswordResetEmail(toEmail, otpCode) {
         const subject = 'Reset Your Trayago Password';
-        const htmlContent = `
+        const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
         <div style="text-align: center; margin-bottom: 20px;">
           <h1 style="color: #6b21a8; margin: 0;">Trayago</h1>
@@ -121,102 +182,110 @@ class EmailService {
         </div>
       </div>
     `;
-        if (!resend && !process.env.BREVO_SMTP_LOGIN) {
-            logger_1.winstonLogger.info(`[DEV_PASSWORD_RESET_OTP] Reset code for ${toEmail}: ${otpCode}`);
-            return true;
-        }
-        try {
-            if (resend) {
-                const { error } = await resend.emails.send({
-                    from: `Trayago <${SENDER_EMAIL}>`,
-                    to: toEmail,
-                    subject,
-                    html: htmlContent,
-                });
-                if (error) {
-                    throw new Error(error.message);
-                }
-                logger_1.winstonLogger.info(`[EMAIL_SUCCESS] Password reset OTP sent to ${toEmail} via Resend`);
-                return true;
-            }
-            throw new Error('Resend not configured');
-        }
-        catch (err) {
-            logger_1.winstonLogger.warn(`[EMAIL_WARN] Resend failed for ${toEmail}: ${err.message}. Falling back to Brevo SMTP...`);
-            try {
-                await brevoTransporter.sendMail({
-                    from: `"Trayago" <${SENDER_EMAIL}>`,
-                    to: toEmail,
-                    subject,
-                    html: htmlContent,
-                });
-                logger_1.winstonLogger.info(`[EMAIL_SUCCESS] Password reset OTP sent to ${toEmail} via Brevo SMTP (Fallback)`);
-                return true;
-            }
-            catch (brevoErr) {
-                logger_1.winstonLogger.error(`[EMAIL_ERROR] Both Resend and Brevo failed to send password reset OTP to ${toEmail}`, brevoErr);
-                throw new Error('All email providers failed to send password reset email.');
-            }
-        }
+        return this.sendWithFailover({
+            to: toEmail,
+            subject,
+            html,
+            senderName: 'Trayago',
+            tag: 'PASSWORD_RESET',
+        });
     }
     async sendAlertEmail(toEmail, alertTitle, alertMessage) {
-        if (!resend && !process.env.BREVO_SMTP_LOGIN) {
-            logger_1.winstonLogger.info(`[DEV_ALERT] Alert for ${toEmail}: ${alertTitle}`);
-            return true;
-        }
-        try {
-            if (resend) {
-                const { error } = await resend.emails.send({
-                    from: `Trayago Alerts <${SENDER_EMAIL}>`,
-                    to: toEmail,
-                    subject: alertTitle,
-                    html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
-              <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-                <h2 style="color: #ef4444; margin-top: 0;">${alertTitle}</h2>
-                <p style="color: #555; font-size: 16px; line-height: 1.5;">
-                  ${alertMessage}
-                </p>
-              </div>
-            </div>
-          `,
-                });
-                if (error) {
-                    throw new Error(error.message);
-                }
-                return true;
-            }
-            return true;
-        }
-        catch (err) {
-            logger_1.winstonLogger.error(`[EMAIL_EXCEPTION] Exception while sending alert to ${toEmail}`, err);
-            throw new Error(err.message || 'Failed to send alert email');
-        }
+        const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
+        <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+          <h2 style="color: #ef4444; margin-top: 0;">${alertTitle}</h2>
+          <p style="color: #555; font-size: 16px; line-height: 1.5;">
+            ${alertMessage}
+          </p>
+        </div>
+      </div>
+    `;
+        return this.sendWithFailover({
+            to: toEmail,
+            subject: alertTitle,
+            html,
+            senderName: 'Trayago Alerts',
+            tag: 'ALERT',
+        });
     }
     async sendHealthReportEmail(toEmail, subject, htmlContent) {
-        if (!resend && !process.env.BREVO_SMTP_LOGIN) {
-            logger_1.winstonLogger.info(`[DEV_HEALTH_REPORT] Health report for ${toEmail}: ${subject}`);
-            return true;
-        }
-        try {
-            if (resend) {
-                const { error } = await resend.emails.send({
-                    from: `Trayago Monitor <${SENDER_EMAIL}>`,
-                    to: toEmail,
-                    subject: subject,
-                    html: htmlContent,
-                });
-                if (error) {
-                    throw new Error(error.message);
-                }
-                return true;
-            }
-            return true;
-        }
-        catch (err) {
-            logger_1.winstonLogger.error(`[EMAIL_EXCEPTION] Exception while sending health report to ${toEmail}`, err);
-            throw new Error(err.message || 'Failed to send health report email');
-        }
+        return this.sendWithFailover({
+            to: toEmail,
+            subject,
+            html: htmlContent,
+            senderName: 'Trayago Monitor',
+            tag: 'HEALTH_REPORT',
+        });
+    }
+    async sendContactInquiryEmail(options) {
+        const { adminEmails, userName, userEmail, userPhone, subject, message, category } = options;
+        const catBadge = category ? `[${category.toUpperCase()}] ` : '';
+        const emailSubject = `[Trayago Contact] ${catBadge}${subject || 'New Contact Inquiry'}`;
+        const safeName = String(userName || 'User').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const safeEmail = String(userEmail || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const safePhone = userPhone ? String(userPhone).replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
+        const safeCategory = category ? String(category).replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
+        const safeSubject = String(subject || 'Inquiry').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const safeMessage = String(message || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const html = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background-color: #f8fafc; border-radius: 12px; color: #1e293b;">
+        <div style="background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); padding: 24px; border-radius: 10px 10px 0 0; text-align: center; color: white;">
+          <h2 style="margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.5px;">Trayago Contact Inquiry</h2>
+          <p style="margin: 6px 0 0; font-size: 13px; opacity: 0.9;">New message submitted via www.trayago.in/contact</p>
+        </div>
+        
+        <div style="background-color: #ffffff; padding: 28px; border-radius: 0 0 10px 10px; border: 1px solid #e2e8f0; border-top: none;">
+          <div style="margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #f1f5f9;">
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 6px 0; color: #64748b; font-size: 13px; width: 100px; font-weight: 600;">FROM:</td>
+                <td style="padding: 6px 0; color: #0f172a; font-size: 14px; font-weight: 600;">${safeName}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b; font-size: 13px; font-weight: 600;">EMAIL:</td>
+                <td style="padding: 6px 0; color: #2563eb; font-size: 14px;"><a href="mailto:${safeEmail}" style="color: #2563eb; text-decoration: none;">${safeEmail}</a></td>
+              </tr>
+              ${safePhone ? `
+              <tr>
+                <td style="padding: 6px 0; color: #64748b; font-size: 13px; font-weight: 600;">PHONE:</td>
+                <td style="padding: 6px 0; color: #0f172a; font-size: 14px;">${safePhone}</td>
+              </tr>
+              ` : ''}
+              ${safeCategory ? `
+              <tr>
+                <td style="padding: 6px 0; color: #64748b; font-size: 13px; font-weight: 600;">CATEGORY:</td>
+                <td style="padding: 6px 0; color: #7c3aed; font-size: 13px; font-weight: 600;">${safeCategory.toUpperCase()}</td>
+              </tr>
+              ` : ''}
+            </table>
+          </div>
+
+          <div style="margin-bottom: 20px;">
+            <p style="margin: 0 0 8px; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Subject</p>
+            <div style="font-size: 15px; font-weight: 600; color: #0f172a; margin-bottom: 16px;">${safeSubject}</div>
+            
+            <p style="margin: 0 0 8px; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Message</p>
+            <div style="background-color: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 14px; line-height: 1.6; color: #334155; white-space: pre-wrap;">${safeMessage}</div>
+          </div>
+
+          <div style="text-align: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid #f1f5f9;">
+            <a href="mailto:${safeEmail}?subject=Re: ${encodeURIComponent(subject)}" style="display: inline-block; background-color: #4f46e5; color: #ffffff; padding: 10px 20px; border-radius: 6px; font-size: 13px; font-weight: 600; text-decoration: none;">Reply Directly to User</a>
+          </div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 16px; font-size: 11px; color: #94a3b8;">
+          Sent by Trayago Platform Notification System &bull; IST
+        </div>
+      </div>
+    `;
+        return this.sendWithFailover({
+            to: adminEmails,
+            subject: emailSubject,
+            html,
+            senderName: 'Trayago Contact',
+            tag: 'CONTACT_INQUIRY',
+        });
     }
 }
 exports.EmailService = EmailService;

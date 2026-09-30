@@ -53,9 +53,8 @@ exports.newsAutoCuratorService = exports.NewsAutoCuratorService = void 0;
 const crypto_1 = __importDefault(require("crypto"));
 const logger_1 = require("../../middleware/logger");
 const supabase_1 = require("../../config/supabase");
-const cacheService_1 = require("../cacheService");
 const newsDistillationService_1 = require("./newsDistillationService");
-const NEWS_CACHE_KEY = 'latest_railway_news_cache_v3';
+const railwayNewsService_1 = require("../railwayNewsService");
 // Noise patterns that must NEVER be published to passenger travel news
 const NOISE_TITLE_PATTERNS = [
     /rrb\b/i,
@@ -593,7 +592,7 @@ class NewsAutoCuratorService {
             }
             // 6. Invalidate memory cache so public /api/news immediately returns fresh articles
             try {
-                cacheService_1.cacheService.del(NEWS_CACHE_KEY);
+                (0, railwayNewsService_1.invalidateNewsCache)();
             }
             catch {
                 // Non-fatal
@@ -949,6 +948,12 @@ If seats on direct special trains are waitlisted, commuters can use **Trayago Sp
                 return { success: false, error: error.message };
             }
             logger_1.winstonLogger.info(`[SPECIAL_TRAINS_BULLETIN_SUCCESS] Published daily special trains article ${inserted.slug}`);
+            try {
+                (0, railwayNewsService_1.invalidateNewsCache)(inserted.slug, inserted.id);
+            }
+            catch {
+                // Non-fatal
+            }
             return {
                 success: true,
                 articleId: inserted.id,

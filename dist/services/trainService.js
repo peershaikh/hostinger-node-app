@@ -57,8 +57,22 @@ function withTimeout(promise, ms = 5000) {
 class TrainService {
     async getTrainData(source, destination, date) {
         const searchDate = date || new Date().toISOString().split('T')[0];
-        const sCode = (await stationService_1.stationService.getStationsForCity(source))[0] || source.toUpperCase();
-        const dCode = (await stationService_1.stationService.getStationsForCity(destination))[0] || destination.toUpperCase();
+        const sCodes = await stationService_1.stationService.getStationsForCity(source);
+        const dCodes = await stationService_1.stationService.getStationsForCity(destination);
+        const sCode = sCodes[0] || (stationService_1.stationService.isCode(source) ? source.toUpperCase().trim() : '');
+        const dCode = dCodes[0] || (stationService_1.stationService.isCode(destination) ? destination.toUpperCase().trim() : '');
+        if (!sCode || !dCode) {
+            logger_1.winstonLogger.warn(`[TRAIN_SERVICE] Unresolvable station: source='${source}' -> '${sCode}', dest='${destination}' -> '${dCode}'`);
+            return {
+                direct: [],
+                success: false,
+                status: 'INVALID_ROUTE',
+                source: 'NONE',
+                api_used: 'NONE',
+                data_source: 'NONE',
+                warning: `Could not resolve station code for "${!sCode ? source : destination}". Please select from station suggestions.`,
+            };
+        }
         const cachedSearch = cacheService_1.cacheService.getCachedSearch(sCode, dCode, searchDate);
         if (Array.isArray(cachedSearch) && cachedSearch.length > 0) {
             const direct = this.normalizeAndDeduplicate(cachedSearch, searchDate, sCode, dCode);
@@ -440,8 +454,18 @@ class TrainService {
             stationService_1.stationService.getStationsForCity(source),
             stationService_1.stationService.getStationsForCity(destination),
         ]);
-        const sCode = sResolved[0] || source.toUpperCase();
-        const dCode = dResolved[0] || destination.toUpperCase();
+        const sCode = sResolved[0] || (stationService_1.stationService.isCode(source) ? source.toUpperCase().trim() : '');
+        const dCode = dResolved[0] || (stationService_1.stationService.isCode(destination) ? destination.toUpperCase().trim() : '');
+        if (!sCode || !dCode) {
+            return {
+                direct: [],
+                trains: [],
+                split: [],
+                success: false,
+                status: 'INVALID_ROUTE',
+                warning: `Could not resolve station code for "${!sCode ? source : destination}". Please select from station suggestions.`,
+            };
+        }
         const trainData = await this.getTrainData(source, destination, searchDate);
         const normalizedDirect = trainData.direct;
         const best = normalizedDirect.slice(0, 3);

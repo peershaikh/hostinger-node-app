@@ -7,6 +7,7 @@ exports.OfflineStationProvider = void 0;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const logger_1 = require("../middleware/logger");
+const stationAliases_1 = require("./stationAliases");
 class OfflineStationProvider {
     /**
      * Recursively freezes an object to guarantee immutability.
@@ -121,8 +122,11 @@ class OfflineStationProvider {
         if (this.cityMap[key]) {
             return this.cityMap[key];
         }
-        // 3. Fallback: treat input as station code itself
-        return [key];
+        // 3. Fallback: treat input as station code only if it is a valid station code
+        if ((0, stationAliases_1.isValidStationCode)(key)) {
+            return [key];
+        }
+        return [];
     }
     /**
      * Checks if the alias key exists offline.

@@ -1199,22 +1199,10 @@ class AuthService {
             throw new Error('Account has been blocked');
         const currentVersion = user.tokenVersion || 1;
         const decodedVersion = decoded.tokenVersion || 1;
-        // PERMANENT LOGIN GUARANTEE: Sliding tolerance window (±5 versions).
-        // In multi-tab browsing or across server reboots, tokenVersion can drift slightly.
-        // A tolerance of up to 5 versions guarantees that concurrent requests and deployment reboots
-        // never invalidate a legitimate user session.
-        const versionDiff = Math.abs(currentVersion - decodedVersion);
-        if (versionDiff > 5) {
-            logger_1.winstonLogger.warn(`[AUTH] Rejecting refresh token: version diff too large (${decodedVersion} vs ${currentVersion}) for user ${userId}`);
-            throw new Error('Invalid refresh token');
-        }
-        // Align version smoothly:
-        if (decodedVersion >= currentVersion) {
-            user.tokenVersion = decodedVersion + 1;
-        }
-        else {
-            user.tokenVersion = currentVersion + 1;
-        }
+        // PERMANENT LOGIN GUARANTEE: Smooth auto-sync on version drift.
+        // As long as the refresh JWT is cryptographically valid and signed by REFRESH_TOKEN_SECRET,
+        // we advance tokenVersion without ever rejecting or logging out a legitimate user.
+        user.tokenVersion = Math.max(currentVersion, decodedVersion) + 1;
         if ((0, supabase_1.isSupabaseConfigured)()) {
             try {
                 await userRepository_1.userRepository.update(userId, { tokenVersion: user.tokenVersion });
@@ -1732,23 +1720,38 @@ class AuthService {
             const user = await this.getUserById(userId);
             if (!user)
                 return { success: false, message: "Account not found", minutesGranted: 0 };
-            await this.upgradeToPro(userId, 'safar_pro_30m', 30, 'admin');
+            if (user.reviewRewardClaimed) {
+                return { success: false, message: "Review reward already claimed on this account.", minutesGranted: 0 };
+            }
+            user.dailySearchCount = Math.max(0, (user.dailySearchCount || 0) - 2);
+            user.reviewRewardClaimed = true;
+            this.updateLocalUser(user);
+            if ((0, supabase_1.isSupabaseConfigured)()) {
+                userRepository_1.userRepository.update(userId, { dailySearchCount: user.dailySearchCount }).catch(err => logger_1.winstonLogger.error(`[AUTH] Failed to sync dailySearchCount to Supabase: ${err.message}`));
+            }
+            this.saveUsers();
             return {
                 success: true,
-                message: "🎉 Thank you for rating Trayago! 30 Minutes Free Pro Access Unlocked!",
-                minutesGranted: 30
+                message: "🎉 Thank you for rating Trayago! +2 Extra Searches Unlocked!",
+                minutesGranted: 0,
+                extraSearchesGranted: 2
             };
         }
         else {
             const guest = this.getOrCreateGuest(deviceId);
             if (!guest)
                 return { success: false, message: "Device not recognized", minutesGranted: 0 };
-            guest.dailySearchCount = Math.max(0, (guest.dailySearchCount || 0) - 5);
+            if (guest.reviewRewardClaimed) {
+                return { success: false, message: "Review reward already claimed on this device.", minutesGranted: 0 };
+            }
+            guest.dailySearchCount = Math.max(0, (guest.dailySearchCount || 0) - 2);
+            guest.reviewRewardClaimed = true;
             this.saveGuests();
             return {
                 success: true,
-                message: "🎉 Thank you for rating Trayago! 5 Extra Searches Unlocked!",
-                minutesGranted: 30
+                message: "🎉 Thank you for rating Trayago! +2 Extra Searches Unlocked!",
+                minutesGranted: 0,
+                extraSearchesGranted: 2
             };
         }
     }

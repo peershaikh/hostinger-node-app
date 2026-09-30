@@ -1,17 +1,21 @@
 import express from 'express';
-import { railwayNewsService } from '../services/railwayNewsService';
+import { railwayNewsService, invalidateNewsCache } from '../services/railwayNewsService';
 import { asyncHandler } from '../middleware/errorHandler';
 
 const router = express.Router();
 
 /**
  * GET /api/news
- * Returns latest railway news articles (served from 30-min cache).
+ * Returns latest railway news articles.
  * STRICT PUBLISHED GATE: Exposes only status === 'PUBLISHED'.
- * Optional: ?category=Delays&limit=20&offset=0
+ * Optional: ?category=Special Trains&limit=20&offset=0&fresh=true
  */
 router.get('/', asyncHandler(async (req: express.Request, res: express.Response) => {
-  const { category, limit, offset } = req.query;
+  const { category, limit, offset, fresh } = req.query;
+
+  if (fresh === 'true') {
+    invalidateNewsCache();
+  }
 
   const articles = await railwayNewsService.getLatestNews({
     category: typeof category === 'string' ? category : undefined,
