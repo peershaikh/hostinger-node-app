@@ -16,6 +16,73 @@ import { productionIncidentService } from '../services/productionIncidentService
 import { signupIntelligenceService } from '../services/signupIntelligenceService';
 import { learningObservabilityService } from '../services/learningObservabilityService';
 
+export function normalizeRouteStation(stn: string): string {
+  if (!stn) return '';
+  const clean = stn.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const aliasMap: Record<string, string> = {
+    // Mumbai
+    CSTM: 'CSMT',
+    BOMBAY: 'CSMT',
+    MUMBAI: 'CSMT',
+    CST: 'CSMT',
+    BCT: 'MMCT',
+    // Delhi
+    DELHI: 'NDLS',
+    NEWDELHI: 'NDLS',
+    DLI: 'DLI',
+    // Gadag
+    GADAG: 'GDG',
+    // Bangalore
+    BANGALORE: 'SBC',
+    BENGALURU: 'SBC',
+    // Kolkata
+    CALCUTTA: 'HWH',
+    KOLKATA: 'HWH',
+    HOWRAH: 'HWH',
+    // Chennai
+    MADRAS: 'MAS',
+    CHENNAI: 'MAS',
+    // Hyderabad / Secunderabad
+    HYDERABAD: 'HYB',
+    SECUNDERABAD: 'SC',
+    // Goa
+    GOA: 'MAO',
+    MADGAON: 'MAO',
+    // Varanasi
+    VARANASI: 'BSB',
+    BANARAS: 'BSBS',
+    // Patna
+    PATNA: 'PNBE',
+    // Ahmedabad
+    AHMEDABAD: 'ADI',
+    // Lucknow
+    LUCKNOW: 'LKO',
+    // Jaipur
+    JAIPUR: 'JP',
+    // Gorakhpur
+    GORAKHPUR: 'GKP',
+    // Guwahati
+    GUWAHATI: 'GHY',
+    // Jammu
+    JAMMU: 'JAT',
+    JAMMUTAWI: 'JAT',
+    // Amritsar
+    AMRITSAR: 'ASR',
+    // Kanpur
+    KANPUR: 'CNB',
+    // Bhopal
+    BHOPAL: 'BPL',
+    // Nagpur
+    NAGPUR: 'NGP',
+    // Surat
+    SURAT: 'ST',
+    // Vadodara
+    VADODARA: 'BRC',
+    BARODA: 'BRC'
+  };
+  return aliasMap[clean] || clean;
+}
+
 export class AdminController {
 
 
@@ -299,14 +366,15 @@ export class AdminController {
           .from('search_history')
           .select('source, destination')
           .order('searched_at', { ascending: false })
-          .limit(500);
+          .limit(1000);
 
         if (recentHistory && recentHistory.length > 0) {
           const map = new Map<string, { source: string; destination: string; search_count: number }>();
           for (const row of recentHistory) {
             if (!row.source || !row.destination) continue;
-            const src = row.source.trim().toUpperCase();
-            const dst = row.destination.trim().toUpperCase();
+            const src = normalizeRouteStation(row.source);
+            const dst = normalizeRouteStation(row.destination);
+            if (!src || !dst || src === dst) continue;
             const key = `${src}->${dst}`;
             const existing = map.get(key);
             if (existing) {
@@ -317,7 +385,7 @@ export class AdminController {
           }
           topSearched = Array.from(map.values())
             .sort((a, b) => b.search_count - a.search_count)
-            .slice(0, 5);
+            .slice(0, 10);
         }
       } catch (err: any) { winstonLogger.warn(`[INSIGHT_SEARCH_FAIL] ${err.message}`); }
 
@@ -327,7 +395,12 @@ export class AdminController {
       } catch (err: any) { winstonLogger.warn(`[INSIGHT_SPLITS_FAIL] ${err.message}`); }
 
       try {
-        const { data } = await supabase.from('live_learning').select('train_no, delay_mins').order('delay_mins', { ascending: false }).limit(50);
+        const { data } = await supabase
+          .from('live_learning')
+          .select('train_no, delay_mins')
+          .gt('delay_mins', 0)
+          .order('delay_mins', { ascending: false })
+          .limit(100);
         if (data) {
           const map = new Map<string, number>();
           for (const row of data) {
@@ -341,7 +414,7 @@ export class AdminController {
           topDelayed = Array.from(map.entries())
             .map(([train_no, delay_mins]) => ({ train_no, delay_mins }))
             .sort((a, b) => b.delay_mins - a.delay_mins)
-            .slice(0, 5);
+            .slice(0, 10);
         } else {
           topDelayed = [];
         }
@@ -1557,8 +1630,9 @@ export class AdminController {
             const routeCounts = new Map<string, { source: string; destination: string; count: number }>();
             for (const s of todaySearches) {
               if (!s.source || !s.destination) continue;
-              const src = s.source.trim().toUpperCase();
-              const dst = s.destination.trim().toUpperCase();
+              const src = normalizeRouteStation(s.source);
+              const dst = normalizeRouteStation(s.destination);
+              if (!src || !dst || src === dst) continue;
               const key = `${src}->${dst}`;
               const curr = routeCounts.get(key);
               if (curr) {
@@ -1589,8 +1663,9 @@ export class AdminController {
               const routeCounts = new Map<string, { source: string; destination: string; count: number }>();
               for (const s of fallbackSearches) {
                 if (!s.source || !s.destination) continue;
-                const src = s.source.trim().toUpperCase();
-                const dst = s.destination.trim().toUpperCase();
+                const src = normalizeRouteStation(s.source);
+                const dst = normalizeRouteStation(s.destination);
+                if (!src || !dst || src === dst) continue;
                 const key = `${src}->${dst}`;
                 const curr = routeCounts.get(key);
                 if (curr) {
@@ -1720,8 +1795,9 @@ export class AdminController {
               const routeMap = new Map<string, { source: string; destination: string; count: number; last_searched_at: string }>();
               for (const r of histData) {
                 if (!r.source || !r.destination) continue;
-                const src = r.source.trim().toUpperCase();
-                const dst = r.destination.trim().toUpperCase();
+                const src = normalizeRouteStation(r.source);
+                const dst = normalizeRouteStation(r.destination);
+                if (!src || !dst || src === dst) continue;
                 const key = `${src}->${dst}`;
                 const existing = routeMap.get(key);
                 if (existing) {

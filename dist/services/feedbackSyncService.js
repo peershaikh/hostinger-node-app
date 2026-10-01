@@ -162,7 +162,8 @@ class FeedbackSyncService {
             user_id: item.user_id || null,
             search_count: Math.max(1, Math.min(10000, parseInt(String(item.search_count || 1), 10) || 1)),
             results_shown: Math.max(0, Math.min(10000, parseInt(String(item.results_shown || 0), 10) || 0)),
-            time_taken_ms: Math.max(0, Math.min(3600000, parseInt(String(item.time_taken_ms || 0), 10) || 0))
+            time_taken_ms: Math.max(0, Math.min(3600000, parseInt(String(item.time_taken_ms || 0), 10) || 0)),
+            searched_at: item.searched_at || item._created_at || item.timestamp || new Date().toISOString()
         }));
     }
     // ─── 5. live_learning_fallback.jsonl ────────────────────────────────────────
@@ -173,7 +174,8 @@ class FeedbackSyncService {
             delay_mins: Math.max(-1440, Math.min(1440, parseInt(String(item.delay_mins || 0), 10) || 0)),
             speed_kmh: Math.max(0, Math.min(500, parseInt(String(item.speed_kmh || 0), 10) || 0)),
             actual_arrival: item.actual_arrival ? String(item.actual_arrival).slice(0, 50) : null,
-            actual_departure: item.actual_departure ? String(item.actual_departure).slice(0, 50) : null
+            actual_departure: item.actual_departure ? String(item.actual_departure).slice(0, 50) : null,
+            created_at: item.created_at || item._created_at || item.timestamp || new Date().toISOString()
         }));
     }
     // ─── 6. split_learning_fallback.jsonl ───────────────────────────────────────
@@ -187,7 +189,8 @@ class FeedbackSyncService {
                 total_duration_mins: Math.max(0, Math.min(10000, parseInt(String(item.total_duration_mins || 0), 10) || 0)),
                 success_probability: Math.max(0, Math.min(1, parseFloat(String(item.success_probability || 0)) || 0)),
                 user_clicked: !!item.user_clicked,
-                user_refreshed: !!item.user_refreshed
+                user_refreshed: !!item.user_refreshed,
+                created_at: item.created_at || item._created_at || item.timestamp || new Date().toISOString()
             };
             if (item.transferType)
                 payload.transferType = item.transferType;

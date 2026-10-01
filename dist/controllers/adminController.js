@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.adminController = exports.AdminController = void 0;
+exports.normalizeRouteStation = normalizeRouteStation;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const supabase_1 = require("../config/supabase");
@@ -20,6 +21,73 @@ const adminIntelligenceV2Service_1 = require("../services/adminIntelligenceV2Ser
 const productionIncidentService_1 = require("../services/productionIncidentService");
 const signupIntelligenceService_1 = require("../services/signupIntelligenceService");
 const learningObservabilityService_1 = require("../services/learningObservabilityService");
+function normalizeRouteStation(stn) {
+    if (!stn)
+        return '';
+    const clean = stn.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const aliasMap = {
+        // Mumbai
+        CSTM: 'CSMT',
+        BOMBAY: 'CSMT',
+        MUMBAI: 'CSMT',
+        CST: 'CSMT',
+        BCT: 'MMCT',
+        // Delhi
+        DELHI: 'NDLS',
+        NEWDELHI: 'NDLS',
+        DLI: 'DLI',
+        // Gadag
+        GADAG: 'GDG',
+        // Bangalore
+        BANGALORE: 'SBC',
+        BENGALURU: 'SBC',
+        // Kolkata
+        CALCUTTA: 'HWH',
+        KOLKATA: 'HWH',
+        HOWRAH: 'HWH',
+        // Chennai
+        MADRAS: 'MAS',
+        CHENNAI: 'MAS',
+        // Hyderabad / Secunderabad
+        HYDERABAD: 'HYB',
+        SECUNDERABAD: 'SC',
+        // Goa
+        GOA: 'MAO',
+        MADGAON: 'MAO',
+        // Varanasi
+        VARANASI: 'BSB',
+        BANARAS: 'BSBS',
+        // Patna
+        PATNA: 'PNBE',
+        // Ahmedabad
+        AHMEDABAD: 'ADI',
+        // Lucknow
+        LUCKNOW: 'LKO',
+        // Jaipur
+        JAIPUR: 'JP',
+        // Gorakhpur
+        GORAKHPUR: 'GKP',
+        // Guwahati
+        GUWAHATI: 'GHY',
+        // Jammu
+        JAMMU: 'JAT',
+        JAMMUTAWI: 'JAT',
+        // Amritsar
+        AMRITSAR: 'ASR',
+        // Kanpur
+        KANPUR: 'CNB',
+        // Bhopal
+        BHOPAL: 'BPL',
+        // Nagpur
+        NAGPUR: 'NGP',
+        // Surat
+        SURAT: 'ST',
+        // Vadodara
+        VADODARA: 'BRC',
+        BARODA: 'BRC'
+    };
+    return aliasMap[clean] || clean;
+}
 class AdminController {
     async getAdminAnalytics(req, res) {
         try {
@@ -282,14 +350,16 @@ class AdminController {
                     .from('search_history')
                     .select('source, destination')
                     .order('searched_at', { ascending: false })
-                    .limit(500);
+                    .limit(1000);
                 if (recentHistory && recentHistory.length > 0) {
                     const map = new Map();
                     for (const row of recentHistory) {
                         if (!row.source || !row.destination)
                             continue;
-                        const src = row.source.trim().toUpperCase();
-                        const dst = row.destination.trim().toUpperCase();
+                        const src = normalizeRouteStation(row.source);
+                        const dst = normalizeRouteStation(row.destination);
+                        if (!src || !dst || src === dst)
+                            continue;
                         const key = `${src}->${dst}`;
                         const existing = map.get(key);
                         if (existing) {
@@ -301,7 +371,7 @@ class AdminController {
                     }
                     topSearched = Array.from(map.values())
                         .sort((a, b) => b.search_count - a.search_count)
-                        .slice(0, 5);
+                        .slice(0, 10);
                 }
             }
             catch (err) {
@@ -315,7 +385,12 @@ class AdminController {
                 logger_1.winstonLogger.warn(`[INSIGHT_SPLITS_FAIL] ${err.message}`);
             }
             try {
-                const { data } = await supabase_1.supabase.from('live_learning').select('train_no, delay_mins').order('delay_mins', { ascending: false }).limit(50);
+                const { data } = await supabase_1.supabase
+                    .from('live_learning')
+                    .select('train_no, delay_mins')
+                    .gt('delay_mins', 0)
+                    .order('delay_mins', { ascending: false })
+                    .limit(100);
                 if (data) {
                     const map = new Map();
                     for (const row of data) {
@@ -329,7 +404,7 @@ class AdminController {
                     topDelayed = Array.from(map.entries())
                         .map(([train_no, delay_mins]) => ({ train_no, delay_mins }))
                         .sort((a, b) => b.delay_mins - a.delay_mins)
-                        .slice(0, 5);
+                        .slice(0, 10);
                 }
                 else {
                     topDelayed = [];
@@ -1475,8 +1550,10 @@ class AdminController {
                         for (const s of todaySearches) {
                             if (!s.source || !s.destination)
                                 continue;
-                            const src = s.source.trim().toUpperCase();
-                            const dst = s.destination.trim().toUpperCase();
+                            const src = normalizeRouteStation(s.source);
+                            const dst = normalizeRouteStation(s.destination);
+                            if (!src || !dst || src === dst)
+                                continue;
                             const key = `${src}->${dst}`;
                             const curr = routeCounts.get(key);
                             if (curr) {
@@ -1508,8 +1585,10 @@ class AdminController {
                             for (const s of fallbackSearches) {
                                 if (!s.source || !s.destination)
                                     continue;
-                                const src = s.source.trim().toUpperCase();
-                                const dst = s.destination.trim().toUpperCase();
+                                const src = normalizeRouteStation(s.source);
+                                const dst = normalizeRouteStation(s.destination);
+                                if (!src || !dst || src === dst)
+                                    continue;
                                 const key = `${src}->${dst}`;
                                 const curr = routeCounts.get(key);
                                 if (curr) {
@@ -1633,8 +1712,10 @@ class AdminController {
                             for (const r of histData) {
                                 if (!r.source || !r.destination)
                                     continue;
-                                const src = r.source.trim().toUpperCase();
-                                const dst = r.destination.trim().toUpperCase();
+                                const src = normalizeRouteStation(r.source);
+                                const dst = normalizeRouteStation(r.destination);
+                                if (!src || !dst || src === dst)
+                                    continue;
                                 const key = `${src}->${dst}`;
                                 const existing = routeMap.get(key);
                                 if (existing) {
