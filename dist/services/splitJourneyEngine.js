@@ -915,8 +915,15 @@ const DETERMINISTIC_CORRIDORS = {
     "delhi-varanasi": ["AGC", "CNB", "PRYJ", "DDU", "BSB"],
     "varanasi-delhi": ["DDU", "PRYJ", "CNB", "AGC"],
     "delhi-patna": ["CNB", "PRYJ", "DDU", "GAYA"],
-    "delhi-gorakhpur": ["CNB", "LKO", "GKP"],
-    "gorakhpur-delhi": ["LKO", "CNB", "BE", "MB", "GZB"],
+    // —— Delhi ↔ Gorakhpur deterministic corridor ——
+    "delhi-gorakhpur": ["CNB", "LKO", "GD", "BST", "BE", "MB"],
+    "delhi-gkp": ["CNB", "LKO", "GD", "BST", "BE", "MB"],
+    "ndls-gorakhpur": ["CNB", "LKO", "GD", "BST", "BE", "MB"],
+    "ndls-gkp": ["CNB", "LKO", "GD", "BST", "BE", "MB"],
+    "gorakhpur-delhi": ["LKO", "CNB", "GD", "BST", "BE", "MB"],
+    "gkp-delhi": ["LKO", "CNB", "GD", "BST", "BE", "MB"],
+    "gorakhpur-ndls": ["LKO", "CNB", "GD", "BST", "BE", "MB"],
+    "gkp-ndls": ["LKO", "CNB", "GD", "BST", "BE", "MB"],
     // —— Delhi ↔ Guwahati / Assam deterministic corridor ——
     "delhi-guwahati": ["NJP", "CNB", "DDU", "KIR", "PNBE", "PRYJ", "NBQ", "BJU", "GKP", "MLDT", "MFP", "RNY"],
     "guwahati-delhi": ["NJP", "CNB", "DDU", "KIR", "PNBE", "PRYJ", "NBQ", "BJU", "GKP", "MLDT", "MFP", "RNY"],
