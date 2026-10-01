@@ -1207,9 +1207,10 @@ class TrainController {
                 const queryDate = typeof req.query?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date.trim())
                     ? req.query.date.trim()
                     : today;
+                const forceFresh = req.query?.fresh === 'true';
                 const cacheKey = `api_daily_special_trains_${queryDate}`;
                 const cached = cacheService_1.cacheService.get(cacheKey);
-                if (cached) {
+                if (cached && !forceFresh) {
                     return res.json({ success: true, data: cached });
                 }
                 const { supabase, isSupabaseConfigured } = await Promise.resolve().then(() => __importStar(require('../config/supabase')));
@@ -1221,13 +1222,13 @@ class TrainController {
                         .select('title, slug, summary, affected_trains, published_at')
                         .eq('slug', canonicalSlug)
                         .maybeSingle();
-                    if (article) {
+                    if (article && !forceFresh) {
                         articleData = article;
                     }
                     else {
-                        // Trigger bulletin auto-curation on-demand if not yet run today
+                        // Trigger bulletin auto-curation on-demand if not yet run today or if forceFresh requested
                         const { newsAutoCuratorService } = await Promise.resolve().then(() => __importStar(require('../services/news/newsAutoCuratorService')));
-                        const curated = await newsAutoCuratorService.curateDailySpecialTrainsBulletin();
+                        const curated = await newsAutoCuratorService.curateDailySpecialTrainsBulletin(forceFresh);
                         if (curated && curated.slug) {
                             articleData = {
                                 title: `Special & Newly Introduced Trains Announced (${queryDate})`,
@@ -1238,7 +1239,15 @@ class TrainController {
                         }
                     }
                 }
-                const affectedNos = Array.isArray(articleData?.affected_trains) ? articleData.affected_trains : [];
+                const rawAffectedNos = Array.isArray(articleData?.affected_trains) ? articleData.affected_trains : [];
+                // Fetch today's cancellation list to guarantee NO cancelled trains leak into special trains banner
+                const { irctcService } = await Promise.resolve().then(() => __importStar(require('../services/irctcService')));
+                const cancelRaw = await irctcService.getCancelList();
+                const fullyCancelled = Array.isArray(cancelRaw?.fullyCancelledTrains) ? cancelRaw.fullyCancelledTrains : [];
+                const partiallyCancelled = Array.isArray(cancelRaw?.partiallyCancelledTrains) ? cancelRaw.partiallyCancelledTrains : [];
+                const cancelledSet = new Set([...fullyCancelled, ...partiallyCancelled].map(t => String(t.trainNo || t.trainNumber || '')).filter(Boolean));
+                // Filter out any cancelled trains dynamically
+                const affectedNos = rawAffectedNos.filter(no => !cancelledSet.has(no));
                 const totalTrains = affectedNos.length;
                 // Enrich train names from dbService
                 const { dbService } = await Promise.resolve().then(() => __importStar(require('../services/dbService')));
@@ -1255,7 +1264,9 @@ class TrainController {
                     date: queryDate,
                     totalTrains,
                     title: articleData?.title || `Special & Newly Introduced Trains`,
-                    summary: articleData?.summary || `Verified special and newly introduced trains operational today.`,
+                    summary: totalTrains > 0
+                        ? articleData?.summary || `Verified special and newly introduced trains operational today.`
+                        : `No newly announced festival special trains scheduled to operate on ${queryDate}. Regular scheduled services remain operational.`,
                     articleSlug: articleData?.slug || canonicalSlug,
                     trains: trainDetails,
                     lastUpdated: new Date().toISOString(),

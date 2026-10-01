@@ -863,7 +863,16 @@ export class NewsAutoCuratorService {
    * upserts verified trains to Supabase 'trains' table for future search discovery,
    * and saves a comprehensive, AdSense-ready article with full timetable markdown table to railway_news.
    */
-  public async curateDailySpecialTrainsBulletin(): Promise<{
+  /**
+   * Curates and publishes the daily pan-India Special & Newly Introduced Trains SEO News Bulletin.
+   * Scans official circulars, validates candidate train numbers against:
+   * 1. Official DB lookup (valid name)
+   * 2. Real-time Pan-India Cancellation feed (never includes cancelled trains)
+   * 3. Day/Date operational status (guarantees train actually departs/operates today)
+   * Upserts verified trains to Supabase 'trains' table for future search discovery,
+   * and saves a comprehensive, AdSense-ready article with full timetable markdown table to railway_news.
+   */
+  public async curateDailySpecialTrainsBulletin(forceRefresh: boolean = false): Promise<{
     success: boolean;
     articleId?: string;
     slug?: string;
@@ -879,23 +888,40 @@ export class NewsAutoCuratorService {
     try {
       const todayIst = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
       const canonicalSlug = `special-festival-trains-${todayIst}`;
+      const [year, month, day] = todayIst.split('-');
+      const formattedDateDisplay = `${day}-${month}-${year}`;
 
       // Check if already published today
       const { data: existing } = await supabase
         .from('railway_news')
-        .select('id, slug, title, summary, affected_trains')
+        .select('id, slug, title, summary, affected_trains, published_at')
         .eq('slug', canonicalSlug)
         .maybeSingle();
 
-      if (existing) {
-        winstonLogger.info(`[SPECIAL_TRAINS_BULLETIN] Daily article already exists: ${existing.slug}`);
-        return {
-          success: true,
-          articleId: existing.id,
-          slug: existing.slug,
-          alreadyPublished: true,
-          totalTrains: Array.isArray(existing.affected_trains) ? existing.affected_trains.length : 0,
-        };
+      const { irctcService } = await import('../irctcService');
+      const cancelRaw = await irctcService.getCancelList();
+      const fullyCancelled = Array.isArray(cancelRaw?.fullyCancelledTrains) ? cancelRaw.fullyCancelledTrains : [];
+      const partiallyCancelled = Array.isArray(cancelRaw?.partiallyCancelledTrains) ? cancelRaw.partiallyCancelledTrains : [];
+      const cancelledTrainNos = new Set<string>(
+        [...fullyCancelled, ...partiallyCancelled].map(t => String(t.trainNo || t.trainNumber || '')).filter(Boolean)
+      );
+
+      if (existing && !forceRefresh) {
+        // Self-healing check: If existing article contains any train now marked cancelled, auto-trigger forceRefresh
+        const existingNos: string[] = Array.isArray(existing.affected_trains) ? existing.affected_trains : [];
+        const hasContaminatedCancelledTrains = existingNos.some(no => cancelledTrainNos.has(no));
+
+        if (!hasContaminatedCancelledTrains) {
+          winstonLogger.info(`[SPECIAL_TRAINS_BULLETIN] Daily article already exists and verified clean: ${existing.slug}`);
+          return {
+            success: true,
+            articleId: existing.id,
+            slug: existing.slug,
+            alreadyPublished: true,
+            totalTrains: existingNos.length,
+          };
+        }
+        winstonLogger.warn(`[SPECIAL_TRAINS_BULLETIN] Existing article ${existing.slug} contains cancelled trains — re-curating with strict gates.`);
       }
 
       // Discover candidate train numbers from recent circulars and festival corridors
@@ -924,7 +950,7 @@ export class NewsAutoCuratorService {
       const seasonalPairs = [
         '09001', '09002', // Mumbai Central - Gorakhpur Special
         '04005', '04006', // Delhi - Patna Superfast Festival Special
-        '02245', '02246', // Bikaner - Howrah Superfast Special
+        '02245', '02246', // Bikaner - Howrah Superfast Special / Patna Special
         '07220', '07221', // Tiruvannamalai - Narasapur Special
         '01675', '01676', // New Delhi - Darbhanga Special
         '20677', '20678', // Chennai - Vijayawada Vande Bharat
@@ -932,51 +958,80 @@ export class NewsAutoCuratorService {
       ];
       seasonalPairs.forEach(no => candidateTrainNos.add(no));
 
-      // 3. Strict Verification Filter: ONLY include trains that exist in official DB / RailKit
+      // 3. Strict Multi-Gate Verification Filter:
+      // Gate A: Must NOT be present in today's cancellation feed
+      // Gate B: Must have valid official name in DB
+      // Gate C: Must have active operational running status for TODAY (not returning not_running / not available for date)
       const { dbService } = await import('../dbService');
       const verifiedTrains: { trainNo: string; trainName: string; type: string }[] = [];
 
       for (const num of candidateTrainNos) {
-        if (verifiedTrains.length >= 15) break; // Limit to top 15 verified trains for clean readability
+        if (verifiedTrains.length >= 15) break;
+
+        // Gate A: Cancellation check
+        if (cancelledTrainNos.has(num)) {
+          winstonLogger.info(`[SPECIAL_TRAINS_EXCLUDE_CANCELLED] ${num} is in today's cancellation list. Skipping.`);
+          continue;
+        }
+
         try {
+          // Gate B: Official DB name check
           const officialName = await dbService.dbLookupTrainName(num);
           if (
-            officialName &&
-            typeof officialName === 'string' &&
-            !/^(Passenger|Unknown Express|Unknown Train|Train)\s*\d*/i.test(officialName) &&
-            officialName.length >= 3
+            !officialName ||
+            typeof officialName !== 'string' ||
+            /^(Passenger|Unknown Express|Unknown Train|Train)\s*\d*/i.test(officialName) ||
+            officialName.length < 3
           ) {
-            const trainType = num.startsWith('2') ? 'Vande Bharat' : num.startsWith('0') ? 'Special' : 'Superfast';
-            verifiedTrains.push({
-              trainNo: num,
-              trainName: officialName,
-              type: trainType,
-            });
-
-            // Upsert into Supabase 'trains' table so Trayago search immediately recognizes it
-            await supabase.from('trains').upsert([
-              {
-                number: String(num),
-                name: String(officialName),
-                type: trainType,
-              },
-            ], { onConflict: 'number' });
+            continue;
           }
+
+          // Gate C: Day/Date operational verification
+          const liveCheck = await irctcService.getLiveStatus(num, formattedDateDisplay);
+          if (
+            !liveCheck ||
+            liveCheck.not_running === true ||
+            (liveCheck.error && /not available for date|not running|does not run|cancelled/i.test(String(liveCheck.error)))
+          ) {
+            winstonLogger.info(`[SPECIAL_TRAINS_EXCLUDE_NON_RUNNING] ${num} (${officialName}) does not operate on ${formattedDateDisplay}. Skipping.`);
+            continue;
+          }
+
+          const trainType = num.startsWith('2') ? 'Vande Bharat' : num.startsWith('0') ? 'Special' : 'Superfast';
+          verifiedTrains.push({
+            trainNo: num,
+            trainName: officialName,
+            type: trainType,
+          });
+
+          // Upsert into Supabase 'trains' table so Trayago search immediately recognizes it
+          await supabase.from('trains').upsert([
+            {
+              number: String(num),
+              name: String(officialName),
+              type: trainType,
+            },
+          ], { onConflict: 'number' });
         } catch (vErr: any) {
           winstonLogger.warn(`[SPECIAL_TRAINS_VERIFY_SKIP] ${num}: ${vErr.message}`);
         }
       }
 
       if (verifiedTrains.length === 0) {
-        winstonLogger.info('[SPECIAL_TRAINS_BULLETIN] No verified special trains found. Skipping article.');
-        return { success: true, alreadyPublished: false, totalTrains: 0 };
+        winstonLogger.info(`[SPECIAL_TRAINS_BULLETIN] No verified operational special trains found for ${formattedDateDisplay}.`);
+        if (existing) {
+          await supabase.from('railway_news').update({
+            title: `Indian Railways Notice: Special Trains Status (${formattedDateDisplay})`,
+            summary: `No special or festival trains are scheduled to operate on ${formattedDateDisplay}. All regular scheduled trains can be checked via live station timetables.`,
+            affected_trains: [],
+            updated_at: new Date().toISOString(),
+          }).eq('id', existing.id);
+        }
+        return { success: true, alreadyPublished: false, totalTrains: 0, trains: [] };
       }
 
-      const [year, month, day] = todayIst.split('-');
-      const formattedDateDisplay = `${day}-${month}-${year}`;
-
       const title = `Indian Railways Notice: ${verifiedTrains.length} Special & Newly Introduced Trains Announced (${formattedDateDisplay})`;
-      const summary = `Indian Railways has announced ${verifiedTrains.length} special and newly introduced train services for ${formattedDateDisplay} to manage heavy festival and seasonal passenger rush across high-demand corridors including Delhi, Mumbai, Bihar, Uttar Pradesh, and Rajasthan. Check verified route timetables and IRCTC booking details.`;
+      const summary = `Indian Railways has verified ${verifiedTrains.length} special and newly introduced train services operational for ${formattedDateDisplay} to manage heavy festival and seasonal passenger rush across high-demand corridors including Delhi, Mumbai, Bihar, Uttar Pradesh, and Rajasthan. Check verified route timetables and IRCTC booking details.`;
 
       const keyTakeaways = [
         `Total ${verifiedTrains.length} special & newly introduced train services verified and operational on ${formattedDateDisplay}.`,
@@ -1064,7 +1119,6 @@ If seats on direct special trains are waitlisted, commuters can use **Trayago Sp
       const affectedTrainNos = verifiedTrains.map(t => t.trainNo);
 
       const payload = {
-        id: crypto.randomUUID(),
         title,
         slug: canonicalSlug,
         seo_title: `${title} | Full Timetable & Booking Details`,
@@ -1076,7 +1130,7 @@ If seats on direct special trains are waitlisted, commuters can use **Trayago Sp
         passenger_advice: 'Passengers planning festival or holiday travel are advised to book special train berths early. If direct berths are full, use Trayago Split Journey to find confirmed seats via midpoint hubs.',
         faq: faqs,
         status: 'PUBLISHED',
-        published_at: new Date().toISOString(),
+        published_at: existing?.published_at || new Date().toISOString(),
         updated_at: new Date().toISOString(),
         source_name: 'Indian Railways / Trayago Rail Ops',
         source_url: 'https://www.trayago.in/news',
@@ -1084,27 +1138,53 @@ If seats on direct special trains are waitlisted, commuters can use **Trayago Sp
         affected_stations: ['NDLS', 'BCT', 'MMCT', 'PNBE', 'GKP', 'HWH', 'MAS'],
       };
 
-      const { data: inserted, error } = await supabase
-        .from('railway_news')
-        .insert(payload)
-        .select('id, slug')
-        .single();
+      let recordId = existing?.id;
+      let recordSlug = canonicalSlug;
 
-      if (error) {
-        winstonLogger.error(`[SPECIAL_TRAINS_BULLETIN_FAIL] ${error.message}`);
-        return { success: false, error: error.message };
+      if (existing) {
+        const { data: updated, error } = await supabase
+          .from('railway_news')
+          .update(payload)
+          .eq('id', existing.id)
+          .select('id, slug')
+          .single();
+
+        if (error) {
+          winstonLogger.error(`[SPECIAL_TRAINS_BULLETIN_UPDATE_FAIL] ${error.message}`);
+          return { success: false, error: error.message };
+        }
+        recordId = updated.id;
+        recordSlug = updated.slug;
+      } else {
+        const { data: inserted, error } = await supabase
+          .from('railway_news')
+          .insert({
+            id: crypto.randomUUID(),
+            ...payload,
+          })
+          .select('id, slug')
+          .single();
+
+        if (error) {
+          winstonLogger.error(`[SPECIAL_TRAINS_BULLETIN_FAIL] ${error.message}`);
+          return { success: false, error: error.message };
+        }
+        recordId = inserted.id;
+        recordSlug = inserted.slug;
       }
 
-      winstonLogger.info(`[SPECIAL_TRAINS_BULLETIN_SUCCESS] Published daily special trains article ${inserted.slug}`);
+      winstonLogger.info(`[SPECIAL_TRAINS_BULLETIN_SUCCESS] Published/Updated daily special trains article ${recordSlug} with ${verifiedTrains.length} verified trains.`);
       try {
-        invalidateNewsCache(inserted.slug, inserted.id);
+        invalidateNewsCache(recordSlug, recordId);
+        const { cacheService } = await import('../cacheService');
+        cacheService.del(`api_daily_special_trains_${todayIst}`);
       } catch {
         // Non-fatal
       }
       return {
         success: true,
-        articleId: inserted.id,
-        slug: inserted.slug,
+        articleId: recordId,
+        slug: recordSlug,
         alreadyPublished: false,
         totalTrains: verifiedTrains.length,
         trains: verifiedTrains,
