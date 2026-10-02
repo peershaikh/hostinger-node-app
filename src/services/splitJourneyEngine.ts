@@ -1228,7 +1228,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "chennai-patna": ["BZA", "KGP", "HWH", "PNBE"],
   "chennai-lucknow": ["BZA", "NGP", "ET", "CNB", "LKO"],
   "chennai-ahmedabad": ["BZA", "NGP", "ET", "RTM", "ADI"],
-  "chennai-bhubaneswar": ["BZA", "VSKP", "KGP", "BBS"],
+  "chennai-bhubaneswar": ["BZA", "VSKP", "KGP"],
   // Reverse corridor: Bhubaneswar -> Chennai via coastal and central junction hubs
   "bhubaneswar-chennai": ["VSKP", "BZA", "RJY", "GDR", "RU"],
   "chennai-madurai": ["SA", "MDU"],
