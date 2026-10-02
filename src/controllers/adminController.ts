@@ -1537,8 +1537,7 @@ export class AdminController {
   // ─── Real-time Live Pulse & Pulse Activity Ticker (Phase 1) ───────────────
   async getAdminLivePulse(req: Request, res: Response) {
     try {
-      const now = new Date();
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+      const startOfDay = learningService.getStartOfTodayIso('Asia/Kolkata');
 
       let todayPaidCount = 0;
       let todayRevenue = 0;
@@ -1780,10 +1779,35 @@ export class AdminController {
             .from('search_popularity')
             .select('source, destination, count, last_searched_at')
             .order('count', { ascending: false })
-            .limit(20);
+            .limit(100);
 
           if (popData && popData.length > 0) {
-            topRoutes = popData;
+            const routeMap = new Map<string, { source: string; destination: string; count: number; last_searched_at: string }>();
+            for (const r of popData) {
+              if (!r.source || !r.destination) continue;
+              const src = normalizeRouteStation(r.source);
+              const dst = normalizeRouteStation(r.destination);
+              if (!src || !dst || src === dst) continue;
+              const key = `${src}->${dst}`;
+              const countVal = Number(r.count) || 1;
+              const existing = routeMap.get(key);
+              if (existing) {
+                existing.count += countVal;
+                if (r.last_searched_at && (!existing.last_searched_at || new Date(r.last_searched_at) > new Date(existing.last_searched_at))) {
+                  existing.last_searched_at = r.last_searched_at;
+                }
+              } else {
+                routeMap.set(key, {
+                  source: src,
+                  destination: dst,
+                  count: countVal,
+                  last_searched_at: r.last_searched_at || new Date().toISOString()
+                });
+              }
+            }
+            topRoutes = Array.from(routeMap.values())
+              .sort((a, b) => b.count - a.count)
+              .slice(0, 20);
           } else {
             const { data: histData } = await supabase
               .from('search_history')
