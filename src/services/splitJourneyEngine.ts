@@ -2863,6 +2863,17 @@ export class SplitJourneyEngine {
     const sCode = sCodes[0];
     const dCode = dCodes[0];
 
+    if (!sCode || !dCode) {
+      winstonLogger.warn(`[SPLIT_ENGINE] Station code resolution failed: source="${source}" (${sCodes.length} stations), destination="${destination}" (${dCodes.length} stations)`);
+      return {
+        direct: directTrainsRef || [],
+        split: [],
+        smart_routes: [],
+        split_recommended: false,
+        message: 'Could not resolve station codes for source or destination'
+      };
+    }
+
     const [sNameResolved, dNameResolved] = await Promise.all([
       stationService.getStationName(sCode),
       stationService.getStationName(dCode),
@@ -3594,8 +3605,12 @@ export class SplitJourneyEngine {
     this.engineStartMs = startTime;  // API budget clock starts here
     this.apiCallCount = 0;
     this.legSearchStats = { hits: 0, misses: 0 };
-    const sCode = sCodes[0];  // primary code for filtering
-    const dCode = dCodes[0];
+    const sCode = sCodes?.[0];  // primary code for filtering
+    const dCode = dCodes?.[0];
+    if (!sCode || !dCode) {
+      winstonLogger.warn(`[SPLIT_TRACE] findSplitJourneys aborted: missing sCode (${sCode}) or dCode (${dCode})`);
+      return [];
+    }
     winstonLogger.debug(`[SPLIT_TRACE] ▶ findSplitJourneys: src=${sCode} dst=${dCode} date=${date}`);
     winstonLogger.info(`[SPLIT_TRACE] Source codes: ${sCodes.join(',')}, Dest codes: ${dCodes.join(',')}`);
 
@@ -3729,7 +3744,7 @@ export class SplitJourneyEngine {
     }
 
     // —— Fix B & C: Preload coordinates in batch to resolve N+1 queries ——
-    const allPreloadCodes = [...new Set([...sCodes, ...hubs, ...dCodes])].map(c => c.toUpperCase().trim());
+    const allPreloadCodes = [...new Set([...(sCodes || []), ...(hubs || []), ...(dCodes || [])])].filter((c): c is string => Boolean(c) && typeof c === 'string').map(c => c.toUpperCase().trim());
     const preloadedCoords = new Map<string, { lat: number, lon: number }>();
     const missingCodes: string[] = [];
 
@@ -3773,8 +3788,10 @@ export class SplitJourneyEngine {
       }
     }
 
-    const getCoordsFallbackLocal = (code: string) => {
+    const getCoordsFallbackLocal = (code: string | undefined | null) => {
+      if (!code || typeof code !== 'string') return null;
       const clean = code.toUpperCase().trim();
+      if (!clean) return null;
       const preloaded = preloadedCoords.get(clean);
       if (preloaded) return preloaded;
       const re = ROUTE_STATIONS[clean];
@@ -3787,9 +3804,11 @@ export class SplitJourneyEngine {
       destCodes: string[],
       thresholdKm: number
     ): boolean => {
+      if (!via || !destCodes || !Array.isArray(destCodes)) return false;
       const cVia = getCoordsFallbackLocal(via);
       if (!cVia) return false;
       for (const dCode of destCodes) {
+        if (!dCode) continue;
         const cDest = getCoordsFallbackLocal(dCode);
         if (!cDest) continue;
         const dist = this._calculateHaversine(cVia.lat, cVia.lon, cDest.lat, cDest.lon);
@@ -3800,7 +3819,7 @@ export class SplitJourneyEngine {
 
     // —— Step 5: Enforce minimum hub distance (250km from source) ——————————
     const srcCoords = getCoordsFallbackLocal(sCode);
-    if (srcCoords) {
+    if (srcCoords && sCode && dCode) {
       const distFiltered: string[] = [];
       for (const h of hubs) {
         const hCoords = getCoordsFallbackLocal(h);

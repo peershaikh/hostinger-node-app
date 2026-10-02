@@ -193,8 +193,12 @@ class SelfLearningService {
             logger_1.winstonLogger.debug(`[SELF_LEARNING] Missing query duplicate suppressed: ${key}`);
             return;
         }
-        const cleanSource = source.toUpperCase().trim();
-        const cleanDestination = destination.toUpperCase().trim();
+        const rawSrc = String(source || '').trim();
+        const rawDst = String(destination || '').trim();
+        if (!rawSrc || !rawDst)
+            return;
+        const cleanSource = rawSrc.toUpperCase();
+        const cleanDestination = rawDst.toUpperCase();
         // Look for existing pending query in local array
         let existing = this.missingQueries.find(q => q.source === cleanSource && q.destination === cleanDestination && q.status === 'pending');
         let dbId;
@@ -296,8 +300,12 @@ class SelfLearningService {
         }
     }
     async logMissingRoute(source, destination, userId, meta) {
-        const cleanSource = source.toUpperCase().trim();
-        const cleanDestination = destination.toUpperCase().trim();
+        const rawSrc = String(source || '').trim();
+        const rawDst = String(destination || '').trim();
+        if (!rawSrc || !rawDst)
+            return;
+        const cleanSource = rawSrc.toUpperCase();
+        const cleanDestination = rawDst.toUpperCase();
         const category = meta?.category || 'SPLIT_ROUTE_MISS';
         const key = `route:${category}:${cleanSource}:${cleanDestination}`;
         if (this.isDuplicate(key))
@@ -416,7 +424,10 @@ class SelfLearningService {
         const key = `train:${trainNo}`;
         if (this.isDuplicate(key))
             return;
-        const cleanTrainNo = trainNo.toUpperCase().trim();
+        const rawTrain = String(trainNo || '').trim();
+        if (!rawTrain)
+            return;
+        const cleanTrainNo = rawTrain.toUpperCase();
         let existing = this.missingTrains.find(t => t.train_no === cleanTrainNo && t.status === 'pending');
         const dbId = existing ? existing.id : crypto_1.default.randomUUID();
         if (existing) {
@@ -573,8 +584,12 @@ class SelfLearningService {
     }
     // --- ROUTE MEMORY METHODS ---
     async getRouteMemory(source, destination) {
-        const cleanSource = source.toUpperCase().trim();
-        const cleanDestination = destination.toUpperCase().trim();
+        const rawSrc = String(source || '').trim();
+        const rawDst = String(destination || '').trim();
+        if (!rawSrc || !rawDst)
+            return [];
+        const cleanSource = rawSrc.toUpperCase();
+        const cleanDestination = rawDst.toUpperCase();
         // Query in-memory/local fallback
         const localMatches = this.routeMemory.filter(r => r.source === cleanSource && r.destination === cleanDestination && r.is_active);
         if ((0, supabase_1.isSupabaseConfigured)()) {
@@ -596,11 +611,17 @@ class SelfLearningService {
         return localMatches;
     }
     async addRouteMemory(routeData) {
+        const rawSrc = String(routeData?.source || '').trim();
+        const rawDst = String(routeData?.destination || '').trim();
+        if (!rawSrc || !rawDst) {
+            logger_1.winstonLogger.warn(`[SELF_LEARNING] addRouteMemory: empty source or destination`);
+            throw new Error('Valid non-empty source and destination are required for route memory');
+        }
         const newRoute = {
             id: crypto_1.default.randomUUID(),
             ...routeData,
-            source: routeData.source.toUpperCase().trim(),
-            destination: routeData.destination.toUpperCase().trim(),
+            source: rawSrc.toUpperCase(),
+            destination: rawDst.toUpperCase(),
             created_at: new Date().toISOString()
         };
         this.routeMemory.push(newRoute);
@@ -680,15 +701,19 @@ class SelfLearningService {
                 if (queryRecord.gpt_suggestion && queryRecord.gpt_suggestion.candidateRoute) {
                     const sug = queryRecord.gpt_suggestion;
                     const trainNos = sug.trainNos || [];
-                    await this.addRouteMemory({
-                        source: queryRecord.source,
-                        destination: queryRecord.destination,
-                        via_hub: sug.candidateHub || undefined,
-                        train_nos: trainNos,
-                        notes: `GPT Suggestion approved: ${sug.reason || ''}`,
-                        approved_by: approvedBy,
-                        is_active: true
-                    });
+                    const rawSrc = String(queryRecord.source || '').trim();
+                    const rawDst = String(queryRecord.destination || '').trim();
+                    if (rawSrc && rawDst) {
+                        await this.addRouteMemory({
+                            source: rawSrc,
+                            destination: rawDst,
+                            via_hub: sug.candidateHub || undefined,
+                            train_nos: trainNos,
+                            notes: `GPT Suggestion approved: ${sug.reason || ''}`,
+                            approved_by: approvedBy,
+                            is_active: true
+                        });
+                    }
                 }
             }
         }
@@ -719,15 +744,19 @@ class SelfLearningService {
                 // Also promote in DB if query and has GPT suggestion
                 if (table === 'missing_queries' && queryRecord?.gpt_suggestion?.candidateRoute) {
                     const sug = queryRecord.gpt_suggestion;
-                    await supabase_1.supabase.from('route_memory').insert({
-                        source: queryRecord.source,
-                        destination: queryRecord.destination,
-                        via_hub: sug.candidateHub || null,
-                        train_nos: sug.trainNos || [],
-                        notes: `GPT Suggestion approved: ${sug.reason || ''}`,
-                        approved_by: approvedBy,
-                        is_active: true
-                    });
+                    const rawSrc = String(queryRecord.source || '').trim();
+                    const rawDst = String(queryRecord.destination || '').trim();
+                    if (rawSrc && rawDst) {
+                        await supabase_1.supabase.from('route_memory').insert({
+                            source: rawSrc.toUpperCase(),
+                            destination: rawDst.toUpperCase(),
+                            via_hub: sug.candidateHub || null,
+                            train_nos: sug.trainNos || [],
+                            notes: `GPT Suggestion approved: ${sug.reason || ''}`,
+                            approved_by: approvedBy,
+                            is_active: true
+                        });
+                    }
                 }
             }
             catch (err) {
@@ -790,24 +819,81 @@ class SelfLearningService {
         else if (source && destination) {
             const cleanSrc = stationService.normalizeInput(source);
             const cleanDst = stationService.normalizeInput(destination);
-            matchingRecords = this.missingRoutes.filter(r => (r.source === source || r.source_code === cleanSrc || stationService.normalizeInput(r.source) === cleanSrc || (cleanSrc === 'CSMT' && stationService.normalizeInput(r.source) === 'CSTM') || (cleanSrc === 'CSTM' && stationService.normalizeInput(r.source) === 'CSMT')) &&
-                (r.destination === destination || r.destination_code === cleanDst || stationService.normalizeInput(r.destination) === cleanDst));
+            matchingRecords = this.missingRoutes.filter(r => {
+                const rSrc = String(r.source || '').trim();
+                const rDst = String(r.destination || '').trim();
+                return ((rSrc === source || r.source_code === cleanSrc || stationService.normalizeInput(rSrc) === cleanSrc || (cleanSrc === 'CSMT' && stationService.normalizeInput(rSrc) === 'CSTM') || (cleanSrc === 'CSTM' && stationService.normalizeInput(rSrc) === 'CSMT')) &&
+                    (rDst === destination || r.destination_code === cleanDst || stationService.normalizeInput(rDst) === cleanDst));
+            });
         }
-        const rawSource = source || matchingRecords[0]?.source;
-        const rawDestination = destination || matchingRecords[0]?.destination;
+        const rawSource = String(source || matchingRecords[0]?.source || '').trim();
+        const rawDestination = String(destination || matchingRecords[0]?.destination || '').trim();
         if (!rawSource || !rawDestination) {
-            throw new Error('Source and destination are required for split route revalidation');
+            return {
+                success: false,
+                error: 'Source and destination are required for split route revalidation',
+                diagnostic: {
+                    directCount: 0,
+                    candidateCount: 0,
+                    validSplitCount: 0,
+                    topRejectionReason: 'MISSING_SOURCE_OR_DESTINATION',
+                    rejectionStats: {},
+                    verificationTimestamp: new Date().toISOString(),
+                    currentState: 'CURRENT_MISS'
+                }
+            };
         }
         const cleanSource = stationService.normalizeInput(rawSource);
         const cleanDestination = stationService.normalizeInput(rawDestination);
+        if (!cleanSource || !cleanDestination) {
+            return {
+                success: false,
+                error: 'Unusable source or destination station after normalization',
+                diagnostic: {
+                    directCount: 0,
+                    candidateCount: 0,
+                    validSplitCount: 0,
+                    topRejectionReason: 'UNRESOLVABLE_STATION_CODE',
+                    rejectionStats: {},
+                    verificationTimestamp: new Date().toISOString(),
+                    currentState: 'CURRENT_MISS'
+                }
+            };
+        }
         const travelDate = date || matchingRecords[0]?.date || '2026-08-28';
         logger_1.winstonLogger.info(`[REVALIDATE_SPLIT] Running read-only diagnostic for ${cleanSource} → ${cleanDestination} on ${travelDate}`);
         // 1. Fetch direct trains
-        const directRes = await trainService.getTrainData(cleanSource, cleanDestination, travelDate);
-        const directTrains = directRes?.direct || [];
-        const directCount = directTrains.length;
+        let directTrains = [];
+        let directCount = 0;
+        try {
+            const directRes = await trainService.getTrainData(cleanSource, cleanDestination, travelDate);
+            directTrains = directRes?.direct || [];
+            directCount = directTrains.length;
+        }
+        catch (e) {
+            logger_1.winstonLogger.warn(`[REVALIDATE_SPLIT] direct trains fetch warning: ${e.message}`);
+        }
         // 2. Run Split Engine in diagnostic mode (read-only)
-        const splitRes = await splitJourneyEngine.findCombinedRoutes(cleanSource, cleanDestination, travelDate, directTrains, undefined, { classType: '3A', quota: 'GN' });
+        let splitRes = null;
+        try {
+            splitRes = await splitJourneyEngine.findCombinedRoutes(cleanSource, cleanDestination, travelDate, directTrains, undefined, { classType: '3A', quota: 'GN' });
+        }
+        catch (err) {
+            logger_1.winstonLogger.error(`[REVALIDATE_SPLIT] splitJourneyEngine.findCombinedRoutes error: ${err.message}`);
+            return {
+                success: false,
+                error: err.message || 'Split search execution failed',
+                diagnostic: {
+                    directCount,
+                    candidateCount: 0,
+                    validSplitCount: 0,
+                    topRejectionReason: 'SPLIT_ENGINE_EXECUTION_ERROR',
+                    rejectionStats: {},
+                    verificationTimestamp: new Date().toISOString(),
+                    currentState: 'CURRENT_MISS'
+                }
+            };
+        }
         const validSplits = splitRes?.split || splitRes?.smart_routes || [];
         const validSplitCount = Array.isArray(validSplits) ? validSplits.length : 0;
         const diag = splitRes?.diagnostic || {};
@@ -823,7 +909,9 @@ class SelfLearningService {
             const dbUnverified = diag.dbUnverifiedStopData || rejectionStats.db_unverified_stop_data || 0;
             const stopNotFound = diag.stopNotFound || rejectionStats.stop_not_found || 0;
             if (candidateCount === 0) {
-                topRejectionReason = 'ROUTE_NOT_FOUND';
+                topRejectionReason = splitRes?.message?.includes('Could not resolve station codes')
+                    ? 'UNRESOLVABLE_STATION_CODE'
+                    : 'ROUTE_NOT_FOUND';
             }
             else if (runningDaysUnknown > 0) {
                 topRejectionReason = 'RUNNING_DAYS_UNKNOWN';

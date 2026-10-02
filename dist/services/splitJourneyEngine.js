@@ -2532,6 +2532,16 @@ class SplitJourneyEngine {
         const dCodes = await this.resolveCityStations(destination);
         const sCode = sCodes[0];
         const dCode = dCodes[0];
+        if (!sCode || !dCode) {
+            logger_1.winstonLogger.warn(`[SPLIT_ENGINE] Station code resolution failed: source="${source}" (${sCodes.length} stations), destination="${destination}" (${dCodes.length} stations)`);
+            return {
+                direct: directTrainsRef || [],
+                split: [],
+                smart_routes: [],
+                split_recommended: false,
+                message: 'Could not resolve station codes for source or destination'
+            };
+        }
         const [sNameResolved, dNameResolved] = await Promise.all([
             stationService_1.stationService.getStationName(sCode),
             stationService_1.stationService.getStationName(dCode),
@@ -3179,8 +3189,12 @@ class SplitJourneyEngine {
         this.engineStartMs = startTime; // API budget clock starts here
         this.apiCallCount = 0;
         this.legSearchStats = { hits: 0, misses: 0 };
-        const sCode = sCodes[0]; // primary code for filtering
-        const dCode = dCodes[0];
+        const sCode = sCodes?.[0]; // primary code for filtering
+        const dCode = dCodes?.[0];
+        if (!sCode || !dCode) {
+            logger_1.winstonLogger.warn(`[SPLIT_TRACE] findSplitJourneys aborted: missing sCode (${sCode}) or dCode (${dCode})`);
+            return [];
+        }
         logger_1.winstonLogger.debug(`[SPLIT_TRACE] ▶ findSplitJourneys: src=${sCode} dst=${dCode} date=${date}`);
         logger_1.winstonLogger.info(`[SPLIT_TRACE] Source codes: ${sCodes.join(',')}, Dest codes: ${dCodes.join(',')}`);
         // —— Step 1: Corridor-first hub pool ———————————————————————————————————
@@ -3304,7 +3318,7 @@ class SplitJourneyEngine {
             }
         }
         // —— Fix B & C: Preload coordinates in batch to resolve N+1 queries ——
-        const allPreloadCodes = [...new Set([...sCodes, ...hubs, ...dCodes])].map(c => c.toUpperCase().trim());
+        const allPreloadCodes = [...new Set([...(sCodes || []), ...(hubs || []), ...(dCodes || [])])].filter((c) => Boolean(c) && typeof c === 'string').map(c => c.toUpperCase().trim());
         const preloadedCoords = new Map();
         const missingCodes = [];
         for (const code of allPreloadCodes) {
@@ -3347,7 +3361,11 @@ class SplitJourneyEngine {
             }
         }
         const getCoordsFallbackLocal = (code) => {
+            if (!code || typeof code !== 'string')
+                return null;
             const clean = code.toUpperCase().trim();
+            if (!clean)
+                return null;
             const preloaded = preloadedCoords.get(clean);
             if (preloaded)
                 return preloaded;
@@ -3357,10 +3375,14 @@ class SplitJourneyEngine {
             return null;
         };
         const isNearAnyDestStationLocal = (via, destCodes, thresholdKm) => {
+            if (!via || !destCodes || !Array.isArray(destCodes))
+                return false;
             const cVia = getCoordsFallbackLocal(via);
             if (!cVia)
                 return false;
             for (const dCode of destCodes) {
+                if (!dCode)
+                    continue;
                 const cDest = getCoordsFallbackLocal(dCode);
                 if (!cDest)
                     continue;
@@ -3372,7 +3394,7 @@ class SplitJourneyEngine {
         };
         // —— Step 5: Enforce minimum hub distance (250km from source) ——————————
         const srcCoords = getCoordsFallbackLocal(sCode);
-        if (srcCoords) {
+        if (srcCoords && sCode && dCode) {
             const distFiltered = [];
             for (const h of hubs) {
                 const hCoords = getCoordsFallbackLocal(h);
