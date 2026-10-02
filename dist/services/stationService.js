@@ -144,16 +144,124 @@ function resolveStationsWithShadow(input, legacyResult) {
     }
     return legacyResult;
 }
+// Common colloquial aliases already known in codebase (adminController / IRCTC aliases)
+const COMMON_COLLOQUIAL_ALIASES = {
+    'MUMBAI CST': 'CSMT',
+    'MUMBAI CSMT': 'CSMT',
+    'BOMBAY CST': 'CSMT',
+    'BOMBAY': 'CSMT',
+    'MUMBAI': 'CSMT',
+    'CST': 'CSMT',
+    'CSTM': 'CSMT',
+    'VT': 'CSMT',
+    'VICTORIA TERMINUS': 'CSMT',
+    'MUMBAI CENTRAL': 'MMCT',
+    'BCT': 'MMCT',
+    'CALCUTTA': 'HWH',
+    'KOLKATA': 'HWH',
+    'HOWRAH': 'HWH',
+    'MADRAS': 'MAS',
+    'CHENNAI': 'MAS',
+    'BANGALORE': 'SBC',
+    'BENGALURU': 'SBC',
+    'DELHI': 'NDLS',
+    'NEW DELHI': 'NDLS',
+    'NEWDELHI': 'NDLS',
+    'DELHI CANTT': 'DEC',
+    'SECUNDERABAD': 'SC',
+    'HYDERABAD': 'HYB',
+    'VARANASI': 'BSB',
+    'BANARAS': 'BSBS',
+    'AHMEDABAD': 'ADI',
+    'BARODA': 'BRC',
+    'VADODARA': 'BRC',
+    'JAIPUR': 'JP',
+    'LUCKNOW': 'LKO',
+    'PATNA': 'PNBE',
+    'BHOPAL': 'BPL',
+    'NAGPUR': 'NGP',
+    'KANPUR': 'CNB',
+    'SURAT': 'ST',
+    'GORAKHPUR': 'GKP',
+    'GUWAHATI': 'GHY',
+};
+const RAILWAY_SUFFIX_WORDS = new Set([
+    'JN', 'JUNCTION', 'CANTT', 'CITY', 'TERMINUS', 'TERM', 'CENTRAL'
+]);
 class StationService {
     /**
-     * Helper: Normalize input string to clean uppercase station/city code/name
+     * Helper: Normalize input string to clean uppercase station code or primary station.
+     * Handles freeform station labels (e.g. "MUMBAI CSMT", "AJMER JN", "MUMBAI CST (CSTM)")
+     * while preserving valid raw station codes as-is.
      */
     normalizeInput(input) {
-        if (!input)
+        if (!input || typeof input !== 'string')
             return '';
-        const match = input.match(/\(([^)]+)\)/);
-        const raw = match ? match[1] : input;
-        const result = raw.trim().toUpperCase();
+        const raw = input.trim().toUpperCase();
+        if (!raw)
+            return '';
+        // 1. If input already isValidStationCode → return as-is (CSMT, AII, NDLS untouched)
+        if ((0, stationAliases_1.isValidStationCode)(raw)) {
+            return stationAliases_1.IRCTC_CANONICAL[raw] || raw;
+        }
+        // 2. Parentheses extract: "NAME (CODE)" → CODE (existing)
+        const match = raw.match(/\(([^)]+)\)/);
+        if (match && match[1]) {
+            const inside = match[1].trim().toUpperCase();
+            if ((0, stationAliases_1.isValidStationCode)(inside)) {
+                return stationAliases_1.IRCTC_CANONICAL[inside] || inside;
+            }
+            if (COMMON_COLLOQUIAL_ALIASES[inside]) {
+                const aliased = COMMON_COLLOQUIAL_ALIASES[inside];
+                return stationAliases_1.IRCTC_CANONICAL[aliased] || aliased;
+            }
+        }
+        // 3. Trailing token: multi-word and last word isValidStationCode → last word
+        // e.g. "MUMBAI CSMT" → CSMT, "DELHI NDLS" → NDLS
+        const tokens = raw.replace(/[(),]/g, ' ').trim().split(/\s+/);
+        if (tokens.length > 1) {
+            const lastToken = tokens[tokens.length - 1];
+            if (!RAILWAY_SUFFIX_WORDS.has(lastToken)) {
+                if ((0, stationAliases_1.isValidStationCode)(lastToken)) {
+                    const code = stationAliases_1.IRCTC_CANONICAL[lastToken] || lastToken;
+                    logger_1.winstonLogger.debug(`[STATION_RESOLVE] Trailing token match for "${input}" → "${code}"`);
+                    return code;
+                }
+                if (COMMON_COLLOQUIAL_ALIASES[lastToken]) {
+                    const aliased = COMMON_COLLOQUIAL_ALIASES[lastToken];
+                    return stationAliases_1.IRCTC_CANONICAL[aliased] || aliased;
+                }
+            }
+        }
+        // 4. Strip railway suffixes (JN/JUNCTION/CANTT/CITY/TERMINUS) then match CITY_MAP / cityStations
+        // e.g. "AJMER JN" → AJMER → AII
+        const stripped = raw.replace(/\s+(?:jn\.?|junction|cantt\.?|city|terminus|term\.?|central)$/i, '').trim();
+        if (stripped !== raw && stripped.length > 0) {
+            if ((0, stationAliases_1.isValidStationCode)(stripped)) {
+                return stationAliases_1.IRCTC_CANONICAL[stripped] || stripped;
+            }
+            if (COMMON_COLLOQUIAL_ALIASES[stripped]) {
+                const aliased = COMMON_COLLOQUIAL_ALIASES[stripped];
+                return stationAliases_1.IRCTC_CANONICAL[aliased] || aliased;
+            }
+            if (CITY_MAP[stripped] && CITY_MAP[stripped].length > 0) {
+                const code = CITY_MAP[stripped][0];
+                logger_1.winstonLogger.debug(`[STATION_RESOLVE] Suffix stripped city match for "${input}" → "${stripped}" → "${code}"`);
+                return stationAliases_1.IRCTC_CANONICAL[code] || code;
+            }
+        }
+        // 5. Small colloquial aliases already known in codebase (BOMBAY/MUMBAI CST → CSMT, etc.)
+        if (COMMON_COLLOQUIAL_ALIASES[raw]) {
+            const aliased = COMMON_COLLOQUIAL_ALIASES[raw];
+            return stationAliases_1.IRCTC_CANONICAL[aliased] || aliased;
+        }
+        // Check CITY_MAP direct match
+        if (CITY_MAP[raw] && CITY_MAP[raw].length > 0) {
+            const code = CITY_MAP[raw][0];
+            return stationAliases_1.IRCTC_CANONICAL[code] || code;
+        }
+        // 6. IRCTC_CANONICAL remap (CSTM→CSMT) or raw fallback
+        const result = stationAliases_1.IRCTC_CANONICAL[raw] || raw;
         logger_1.winstonLogger.debug(`[STATION_RESOLVE] Normalization result for "${input}" → "${result}"`);
         return result;
     }
