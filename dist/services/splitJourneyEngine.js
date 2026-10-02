@@ -980,7 +980,7 @@ const DETERMINISTIC_CORRIDORS = {
     "surat-delhi": ["BRC", "RTM", "KOTA", "MTJ"],
     "delhi-mumbai": ["MTJ", "KOTA", "RTM", "BRC", "ST", "AGC", "GWL", "VGLJ", "BPL", "ET", "BSL", "RE", "JP", "AII", "ADI"],
     "delhi-hyderabad": ["JHS", "ET", "NGP"],
-    "delhi-secunderabad": ["JHS", "ET", "NGP", "SC"],
+    "delhi-secunderabad": ["JHS", "ET", "NGP"],
     "delhi-bangalore": ["AGC", "VGLJ", "BPL", "ET", "NGP", "GWL", "BPQ", "SC", "GTL", "WADI", "MTJ", "BZA"],
     "delhi-bengaluru": ["AGC", "VGLJ", "BPL", "ET", "NGP", "GWL", "BPQ", "SC", "GTL", "WADI", "MTJ", "BZA"],
     "delhi-chennai": ["MTJ", "AGC", "GWL", "VGLJ", "BPL", "ET", "NGP", "BPQ", "KZJ", "WL", "BZA", "SC"],
