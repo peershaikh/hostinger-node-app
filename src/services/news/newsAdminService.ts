@@ -550,21 +550,25 @@ export class NewsAdminService {
     const kpis = this.emptyKpis();
     if (!isSupabaseConfigured()) return kpis;
     try {
-      const { data } = await supabase.from('railway_news').select('status');
-      if (data) {
-        for (const row of data) {
-          switch (row.status) {
-            case 'AI_DRAFTED':      kpis.drafts++;       break;
-            case 'REVIEW_REQUIRED': kpis.review_queue++; break;
-            case 'APPROVED':        kpis.approved++;      break;
-            case 'SCHEDULED':       kpis.scheduled++;     break;
-            case 'PUBLISHED':       kpis.published++;     break;
-            case 'REJECTED':        kpis.rejected++;      break;
-            case 'ARCHIVED':        kpis.archived++;      break;
-            case 'UNPUBLISHED':     kpis.unpublished++;   break;
-          }
-        }
-      }
+      const statusMap: Record<string, keyof NewsKpis> = {
+        'AI_DRAFTED': 'drafts',
+        'REVIEW_REQUIRED': 'review_queue',
+        'APPROVED': 'approved',
+        'SCHEDULED': 'scheduled',
+        'PUBLISHED': 'published',
+        'REJECTED': 'rejected',
+        'ARCHIVED': 'archived',
+        'UNPUBLISHED': 'unpublished',
+      };
+      await Promise.all(
+        Object.entries(statusMap).map(async ([dbStatus, kpiKey]) => {
+          const { count } = await supabase
+            .from('railway_news')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', dbStatus);
+          kpis[kpiKey] = count || 0;
+        })
+      );
     } catch { /* non-fatal */ }
     return kpis;
   }
