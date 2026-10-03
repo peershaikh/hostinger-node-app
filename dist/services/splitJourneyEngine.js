@@ -1112,6 +1112,8 @@ const DETERMINISTIC_CORRIDORS = {
     "indore-chennai": ["UJN", "BPL", "ET", "NGP", "BZA", "BPQ", "WL", "KZJ", "RTM", "SC", "GDR", "NAD"],
     "mas-indb": ["UJN", "BPL", "ET", "NGP", "BZA", "BPQ", "WL", "KZJ", "RTM", "SC", "GDR", "NAD"],
     "indb-mas": ["UJN", "BPL", "ET", "NGP", "BZA", "BPQ", "WL", "KZJ", "RTM", "SC", "GDR", "NAD"],
+    "chennai-indb": ["UJN", "BPL", "ET", "NGP", "BZA", "BPQ", "WL", "KZJ", "RTM", "SC", "GDR", "NAD"],
+    "indb-chennai": ["UJN", "BPL", "ET", "NGP", "BZA", "BPQ", "WL", "KZJ", "RTM", "SC", "GDR", "NAD"],
     "chennai-udaipur": ["COR", "ADI", "KOTA", "RTM", "BPL", "ET", "NGP", "BZA", "BPQ", "WL", "KZJ", "SC"],
     "udaipur-chennai": ["COR", "ADI", "KOTA", "RTM", "BPL", "ET", "NGP", "BZA", "BPQ", "WL", "KZJ", "SC"],
     "mas-udz": ["COR", "ADI", "KOTA", "RTM", "BPL", "ET", "NGP", "BZA", "BPQ", "WL", "KZJ", "SC"],
