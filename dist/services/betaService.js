@@ -239,6 +239,7 @@ class BetaService {
     async upsertPromoCode(codeData) {
         const codeUpper = codeData.code.toUpperCase().trim();
         let existing = this.getCode(codeUpper);
+        let targetCode;
         if (existing) {
             if (codeData.description !== undefined)
                 existing.description = codeData.description;
@@ -249,7 +250,7 @@ class BetaService {
             if (codeData.isActive !== undefined)
                 existing.isActive = codeData.isActive;
             this.saveData();
-            return existing;
+            targetCode = existing;
         }
         else {
             const newCode = {
@@ -269,8 +270,28 @@ class BetaService {
             };
             this.codes.push(newCode);
             this.saveData();
-            return newCode;
+            targetCode = newCode;
         }
+        if ((0, supabase_1.isSupabaseConfigured)() && supabase_1.supabase) {
+            try {
+                await supabase_1.supabase.from('beta_codes').upsert({
+                    code: targetCode.code,
+                    description: targetCode.description,
+                    max_redemptions: targetCode.maxRedemptions,
+                    current_redemptions: targetCode.currentRedemptions,
+                    expires_at: targetCode.expiresAt,
+                    unlimited_search: targetCode.unlimitedSearch,
+                    unlimited_pnr: targetCode.unlimitedPnr,
+                    unlimited_live_tracking: targetCode.unlimitedLiveTracking,
+                    unlimited_split_search: targetCode.unlimitedSplitSearch,
+                    is_active: targetCode.isActive
+                }, { onConflict: 'code' });
+            }
+            catch (dbErr) {
+                logger_1.winstonLogger.warn(`[BETA_SERVICE] Failed to sync promo code to Supabase: ${dbErr.message}`);
+            }
+        }
+        return targetCode;
     }
     async disableCode(code) {
         const existing = this.getCode(code);

@@ -389,6 +389,22 @@ class ContentService {
                 "High Priority Support & Auto-Refresh"
             ]
         };
+        // 1. Primary: load from Supabase system_config table (survives deploys and container restarts)
+        if (supabase) {
+            try {
+                const { data, error } = await supabase.from('system_config')
+                    .select('value')
+                    .eq('key', 'popup_offer')
+                    .limit(1);
+                if (!error && data && data.length > 0 && data[0]?.value) {
+                    return { ...defaultOffer, ...data[0].value };
+                }
+            }
+            catch (dbErr) {
+                logger_1.winstonLogger.warn(`[POPUP_OFFER] DB fetch fallback to local file: ${dbErr.message}`);
+            }
+        }
+        // 2. Secondary fallback: local file
         const filePath = path_1.default.join(__dirname, '../../data/popup_offer.json');
         if (fs_1.default.existsSync(filePath)) {
             try {
@@ -402,13 +418,48 @@ class ContentService {
         return defaultOffer;
     }
     async updatePopupOffer(payload) {
-        const filePath = path_1.default.join(__dirname, '../../data/popup_offer.json');
         const current = await this.getPopupOffer();
         const updated = {
             ...current,
             ...payload,
             updatedAt: new Date().toISOString()
         };
+        // 1. Primary: persist into Supabase system_config table
+        if (supabase) {
+            try {
+                const { data: existing, error: fetchErr } = await supabase.from('system_config')
+                    .select('id')
+                    .eq('key', 'popup_offer')
+                    .limit(1);
+                if (!fetchErr && existing && existing.length > 0) {
+                    const { error: updateErr } = await supabase.from('system_config')
+                        .update({
+                        value: updated,
+                        updated_at: new Date().toISOString()
+                    })
+                        .eq('id', existing[0].id);
+                    if (updateErr) {
+                        logger_1.winstonLogger.error(`[POPUP_OFFER_DB_UPDATE_ERROR] ${updateErr.message}`);
+                    }
+                }
+                else {
+                    const { error: insertErr } = await supabase.from('system_config')
+                        .insert({
+                        key: 'popup_offer',
+                        value: updated,
+                        description: 'Dynamic in-app promotional popup offer'
+                    });
+                    if (insertErr) {
+                        logger_1.winstonLogger.error(`[POPUP_OFFER_DB_INSERT_ERROR] ${insertErr.message}`);
+                    }
+                }
+            }
+            catch (dbErr) {
+                logger_1.winstonLogger.warn(`[POPUP_OFFER_DB_SAVE_FAIL] ${dbErr.message}`);
+            }
+        }
+        // 2. Secondary backup: write to local file
+        const filePath = path_1.default.join(__dirname, '../../data/popup_offer.json');
         try {
             const dataDir = path_1.default.dirname(filePath);
             if (!fs_1.default.existsSync(dataDir)) {
@@ -419,7 +470,7 @@ class ContentService {
         catch (err) {
             logger_1.winstonLogger.warn(`[POPUP_OFFER] Error saving local offer file: ${err.message}`);
         }
-        // Auto-register/sync coupon code with betaService
+        // 3. Auto-register/sync coupon code with betaService
         if (updated.couponCode) {
             try {
                 await betaService_1.betaService.upsertPromoCode({

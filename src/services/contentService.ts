@@ -376,6 +376,23 @@ export class ContentService {
       ]
     };
 
+    // 1. Primary: load from Supabase system_config table (survives deploys and container restarts)
+    if (supabase) {
+      try {
+        const { data, error } = await (supabase.from('system_config') as any)
+          .select('value')
+          .eq('key', 'popup_offer')
+          .limit(1);
+
+        if (!error && data && data.length > 0 && data[0]?.value) {
+          return { ...defaultOffer, ...data[0].value };
+        }
+      } catch (dbErr: any) {
+        winstonLogger.warn(`[POPUP_OFFER] DB fetch fallback to local file: ${dbErr.message}`);
+      }
+    }
+
+    // 2. Secondary fallback: local file
     const filePath = path.join(__dirname, '../../data/popup_offer.json');
     if (fs.existsSync(filePath)) {
       try {
@@ -389,7 +406,6 @@ export class ContentService {
   }
 
   public async updatePopupOffer(payload: any) {
-    const filePath = path.join(__dirname, '../../data/popup_offer.json');
     const current = await this.getPopupOffer();
     const updated = {
       ...current,
@@ -397,6 +413,44 @@ export class ContentService {
       updatedAt: new Date().toISOString()
     };
 
+    // 1. Primary: persist into Supabase system_config table
+    if (supabase) {
+      try {
+        const { data: existing, error: fetchErr } = await (supabase.from('system_config') as any)
+          .select('id')
+          .eq('key', 'popup_offer')
+          .limit(1);
+
+        if (!fetchErr && existing && existing.length > 0) {
+          const { error: updateErr } = await (supabase.from('system_config') as any)
+            .update({
+              value: updated,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', existing[0].id);
+
+          if (updateErr) {
+            winstonLogger.error(`[POPUP_OFFER_DB_UPDATE_ERROR] ${updateErr.message}`);
+          }
+        } else {
+          const { error: insertErr } = await (supabase.from('system_config') as any)
+            .insert({
+              key: 'popup_offer',
+              value: updated,
+              description: 'Dynamic in-app promotional popup offer'
+            });
+
+          if (insertErr) {
+            winstonLogger.error(`[POPUP_OFFER_DB_INSERT_ERROR] ${insertErr.message}`);
+          }
+        }
+      } catch (dbErr: any) {
+        winstonLogger.warn(`[POPUP_OFFER_DB_SAVE_FAIL] ${dbErr.message}`);
+      }
+    }
+
+    // 2. Secondary backup: write to local file
+    const filePath = path.join(__dirname, '../../data/popup_offer.json');
     try {
       const dataDir = path.dirname(filePath);
       if (!fs.existsSync(dataDir)) {
@@ -407,7 +461,7 @@ export class ContentService {
       winstonLogger.warn(`[POPUP_OFFER] Error saving local offer file: ${err.message}`);
     }
 
-    // Auto-register/sync coupon code with betaService
+    // 3. Auto-register/sync coupon code with betaService
     if (updated.couponCode) {
       try {
         await betaService.upsertPromoCode({
