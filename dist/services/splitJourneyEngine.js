@@ -1100,6 +1100,8 @@ const DETERMINISTIC_CORRIDORS = {
     "jabalpur-chennai": ["ET", "NGP", "BZA", "BPQ", "WL", "BPL", "KZJ", "SC", "GDR", "G", "KTE"],
     "mas-jbp": ["ET", "NGP", "BZA", "BPQ", "WL", "BPL", "KZJ", "SC", "GDR", "G", "KTE"],
     "jbp-mas": ["ET", "NGP", "BZA", "BPQ", "WL", "BPL", "KZJ", "SC", "GDR", "G", "KTE"],
+    "chennai-jbp": ["ET", "NGP", "BZA", "BPQ", "WL", "BPL", "KZJ", "SC", "GDR", "G", "KTE"],
+    "jbp-chennai": ["ET", "NGP", "BZA", "BPQ", "WL", "BPL", "KZJ", "SC", "GDR", "G", "KTE"],
     "chennai-kanpur": ["VGLJ", "ET", "NGP", "BZA", "BPL", "BPQ", "PRYJ", "WL", "KZJ", "BINA", "LKO", "SC"],
     "kanpur-chennai": ["VGLJ", "ET", "NGP", "BZA", "BPL", "BPQ", "PRYJ", "WL", "KZJ", "BINA", "LKO", "SC"],
     "mas-cnb": ["VGLJ", "ET", "NGP", "BZA", "BPL", "BPQ", "PRYJ", "WL", "KZJ", "BINA", "LKO", "SC"],
