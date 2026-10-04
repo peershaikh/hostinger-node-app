@@ -1302,12 +1302,12 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "ddn-chennai":        ["HW", "SRE", "NDLS", "AGC", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
   "mas-ddn":            ["HW", "SRE", "NDLS", "AGC", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
   "ddn-mas":            ["HW", "SRE", "NDLS", "AGC", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
-  "chennai-haridwar":   ["SRE", "AGC", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
-  "haridwar-chennai":   ["SRE", "AGC", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
-  "chennai-hw":         ["SRE", "AGC", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
-  "hw-chennai":         ["SRE", "AGC", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
-  "mas-hw":             ["SRE", "AGC", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
-  "hw-mas":             ["SRE", "AGC", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
+  "chennai-haridwar":   ["SRE", "NDLS", "AGC", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
+  "haridwar-chennai":   ["SRE", "NDLS", "AGC", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
+  "chennai-hw":         ["SRE", "NDLS", "AGC", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
+  "hw-chennai":         ["SRE", "NDLS", "AGC", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
+  "mas-hw":             ["SRE", "NDLS", "AGC", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
+  "hw-mas":             ["SRE", "NDLS", "AGC", "VGLJ", "BPL", "ET", "NGP", "BPQ", "WL", "BZA", "SC"],
 
   // —— Bangalore/Bengaluru corridors ——
   "bengaluru-trivandrum": ["CBE", "ERS"],
