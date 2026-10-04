@@ -1266,6 +1266,8 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "udaipur-chennai":  ["COR", "ADI", "KOTA", "RTM", "BPL", "ET", "NGP", "BZA", "BPQ", "WL", "KZJ", "SC"],
   "mas-udz":          ["COR", "ADI", "KOTA", "RTM", "BPL", "ET", "NGP", "BZA", "BPQ", "WL", "KZJ", "SC"],
   "udz-mas":          ["COR", "ADI", "KOTA", "RTM", "BPL", "ET", "NGP", "BZA", "BPQ", "WL", "KZJ", "SC"],
+  "chennai-udz":      ["COR", "ADI", "KOTA", "RTM", "BPL", "ET", "NGP", "BZA", "BPQ", "WL", "KZJ", "SC"],
+  "udz-chennai":      ["COR", "ADI", "KOTA", "RTM", "BPL", "ET", "NGP", "BZA", "BPQ", "WL", "KZJ", "SC"],
   "chennai-jodhpur":  ["MJ", "ABR", "ADI", "JP", "KOTA", "RTM", "BPL", "ET", "NGP", "BZA", "BPQ", "SC"],
   "jodhpur-chennai":  ["MJ", "ABR", "ADI", "JP", "KOTA", "RTM", "BPL", "ET", "NGP", "BZA", "BPQ", "SC"],
   "mas-ju":           ["MJ", "ABR", "ADI", "JP", "KOTA", "RTM", "BPL", "ET", "NGP", "BZA", "BPQ", "SC"],
