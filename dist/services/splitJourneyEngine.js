@@ -1001,6 +1001,7 @@ const DETERMINISTIC_CORRIDORS = {
     "delhi-chennai": ["MTJ", "AGC", "GWL", "VGLJ", "BPL", "ET", "NGP", "BPQ", "KZJ", "WL", "BZA", "SC"],
     "delhi-madurai": ["BPL", "NGP", "SC", "SA"],
     "delhi-ernakulam": ["BPL", "NGP", "SC"],
+    "delhi-coimbatore": ["BPL", "ET", "NGP", "SC", "SA"],
     "delhi-bhubaneswar": ["CNB", "PRYJ", "HWH", "KGP"],
     "delhi-visakhapatnam": ["CNB", "DDU", "BZA"],
     "delhi-nagpur": ["BPL", "ET"],
