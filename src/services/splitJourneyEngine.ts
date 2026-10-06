@@ -1227,20 +1227,20 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "koaa-kyq":          ["MLDT", "NJP", "NBQ", "RNY", "KIR"],
   "kyq-koaa":          ["NJP", "MLDT", "RPH", "BWN"],
 
-  "kolkata-dibrugarh": ["MLDT", "NJP", "GHY", "DBRG"],
+  "kolkata-dibrugarh": ["MLDT", "NJP", "GHY"],
   "kolkata-mumbai": ["KGP", "ASN", "TATA", "GAYA", "ROU", "DDU", "BSP", "JBP", "NGP", "ET", "BSL", "PCOI"],
   "kolkata-delhi": ["ASN", "DHN", "MGS", "CNB"],
   "kolkata-chennai": ["KGP", "BLS", "BHC", "CTC", "BBS", "KUR", "BAM", "VZM", "VSKP", "RJY", "BZA", "GDR"],
   "kolkata-hyderabad": ["KGP", "VSKP", "BZA"],
-  "kolkata-secunderabad": ["KGP", "BBS", "VSKP", "BZA", "SC"],
-  "kolkata-patna": ["ASN", "DHN", "GAYA", "PNBE"],
+  "kolkata-secunderabad": ["KGP", "BBS", "VSKP", "BZA"],
+  "kolkata-patna": ["ASN", "DHN", "GAYA"],
   "patna-kolkata": ["GAYA", "DHN", "ASN"],
-  "kolkata-lucknow": ["ASN", "MGS", "PRYJ", "CNB", "LKO"],
-  "kolkata-varanasi": ["ASN", "MGS", "BSB"],
-  "kolkata-ahmedabad": ["KGP", "TATA", "NGP", "BPL", "RTM", "ADI"],
-  "kolkata-ernakulam": ["KGP", "BBS", "VSKP", "BZA", "MAS", "ERS"],
-  "kolkata-trivandrum": ["KGP", "BBS", "BZA", "MAS", "ERS", "TVC"],
-  "kolkata-nagpur": ["KGP", "TATA", "NGP"],
+  "kolkata-lucknow": ["ASN", "MGS", "PRYJ", "CNB"],
+  "kolkata-varanasi": ["ASN", "MGS"],
+  "kolkata-ahmedabad": ["KGP", "TATA", "NGP", "BPL", "RTM"],
+  "kolkata-ernakulam": ["KGP", "BBS", "VSKP", "BZA", "MAS"],
+  "kolkata-trivandrum": ["KGP", "BBS", "BZA", "MAS", "ERS"],
+  "kolkata-nagpur": ["KGP", "TATA"],
   "kolkata-raipur": ["KGP", "TATA", "BSP"],
 
   // —— Chennai corridors ——
@@ -1696,7 +1696,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
 
   // —— Lucknow corridors ——
   "lucknow-mumbai": ["CNB", "VGLJ", "BPL", "ET", "BSL", "JHS", "BINA", "ORAI", "ST", "KOTA"],
-  "lucknow-kolkata": ["PRYJ", "DDU", "GAYA", "ASN", "HWH"],
+  "lucknow-kolkata": ["PRYJ", "DDU", "GAYA", "ASN"],
   "lucknow-chennai": ["CNB", "PRYJ", "BSB", "HWH", "BZA", "MAS"],
   "lucknow-hyderabad": ["CNB", "ET", "NGP", "SC"],
   "lucknow-patna": ["PRYJ", "DDU", "GAYA", "PNBE"],
@@ -1707,7 +1707,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   // —— Jaipur corridors ——
   "jaipur-mumbai": ["SWM", "KOTA", "RTM", "BRC", "ST", "AII", "ABR", "NAD", "FL", "ADI"],
   "jaipur-chennai": ["KOTA", "BPL", "NGP", "SC", "MAS"],
-  "jaipur-kolkata": ["AGC", "CNB", "PRYJ", "DDU", "HWH"],
+  "jaipur-kolkata": ["AGC", "CNB", "PRYJ", "DDU"],
   "jaipur-bangalore": ["KOTA", "BPL", "ET", "NGP", "SC", "SBC"],
   "jaipur-hyderabad": ["KOTA", "BPL", "NGP", "SC"],
   "jaipur-lucknow": ["AGC", "CNB", "LKO"],
@@ -1715,7 +1715,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
 
   // —— Ahmedabad/Gujarat corridors ——
   "ahmedabad-chennai": ["RTM", "ET", "NGP", "BZA", "MAS"],
-  "ahmedabad-kolkata": ["RTM", "BPL", "ET", "NGP", "HWH"],
+  "ahmedabad-kolkata": ["RTM", "BPL", "ET", "NGP"],
   "ahmedabad-hyderabad": ["RTM", "BRC", "NGP", "SC"],
   "ahmedabad-bangalore": ["RTM", "BRC", "NGP", "SC", "SBC"],
   "ahmedabad-patna": ["RTM", "BPL", "ET", "PRYJ", "PNBE"],
@@ -1800,10 +1800,10 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "goa-hyderabad": ["MAO", "UBL", "GTL", "WADI", "SC"],
 
   // Eastern & Central
-  "kolkata-ajmer": ["ASN", "GAYA", "DDU", "PRYJ", "CNB", "AGC", "AII"],
-  "ajmer-kolkata": ["AII", "AGC", "CNB", "PRYJ", "DDU", "GAYA", "ASN", "HWH"],
-  "kolkata-ranchi": ["KGP", "TATA", "PRR", "MURI", "RNC"],
-  "ranchi-kolkata": ["RNC", "MURI", "PRR", "TATA", "KGP", "HWH"],
+  "kolkata-ajmer": ["ASN", "GAYA", "DDU", "PRYJ", "CNB", "AGC"],
+  "ajmer-kolkata": ["AII", "AGC", "CNB", "PRYJ", "DDU", "GAYA", "ASN"],
+  "kolkata-ranchi": ["KGP", "TATA", "PRR", "MURI"],
+  "ranchi-kolkata": ["RNC", "MURI", "PRR", "TATA", "KGP"],
   "patna-delhi": ["DDU", "PRYJ", "CNB"],
 };
 
