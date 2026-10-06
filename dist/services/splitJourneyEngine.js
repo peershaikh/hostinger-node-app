@@ -1095,6 +1095,13 @@ const DETERMINISTIC_CORRIDORS = {
     "kolkata-trivandrum": ["KGP", "BBS", "BZA", "MAS", "ERS"],
     "kolkata-nagpur": ["KGP", "TATA"],
     "kolkata-raipur": ["KGP", "TATA", "BSP"],
+    "nagpur-kolkata": ["TATA", "KGP"],
+    "raipur-kolkata": ["BSP", "TATA", "KGP"],
+    "secunderabad-kolkata": ["BZA", "VSKP", "BBS", "KGP"],
+    "ernakulam-kolkata": ["MAS", "BZA", "VSKP", "BBS", "KGP"],
+    "trivandrum-kolkata": ["ERS", "MAS", "BZA", "BBS", "KGP"],
+    "dibrugarh-kolkata": ["GHY", "NJP", "MLDT"],
+    "kolkata-jaipur": ["DDU", "PRYJ", "CNB", "AGC"],
     // —— Chennai corridors ——
     "chennai-bangalore": ["KPD", "JTJ", "BWT"],
     "chennai-bengaluru": ["KPD", "JTJ", "BWT"],
