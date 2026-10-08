@@ -3,6 +3,36 @@ import { featureFlags } from '../config/featureFlags';
 import { cacheService } from './cacheService';
 import { providerConfigService } from './providerConfigService';
 import { isValidStationCode } from './stationAliases';
+import { ledgerTransport, CanonicalEventType } from './ledger/ledgerTransport';
+import { getContextUserId, getContextCallerFeature } from '../middleware/requestContext';
+
+function recordIrctcTelemetry(
+  eventType: CanonicalEventType,
+  startMs: number,
+  success: boolean,
+  httpStatus: number | null = null,
+  isRetry: boolean = false,
+  isFallback: boolean = false
+): void {
+  try {
+    const latencyMs = Math.max(0, Date.now() - startMs);
+    ledgerTransport.enqueue({
+      provider_name: 'IRCTC',
+      event_type: eventType,
+      user_id: getContextUserId(),
+      caller_feature: getContextCallerFeature(),
+      applied_rate: 0.000000,
+      currency: 'USD',
+      success,
+      http_status: httpStatus,
+      latency_ms: latencyMs,
+      is_retry: isRetry,
+      is_fallback: isFallback
+    });
+  } catch (err: any) {
+    winstonLogger.warn(`[TELEMETRY_RECORD_FAIL] IRCTC: ${err?.message}`);
+  }
+}
 
 // ── PHASE_087N49 — Sync-specific classified result type ───────────────────────
 // Used ONLY by getTrainInfoForSync(). All existing public methods are unchanged.
@@ -169,11 +199,16 @@ export class IrctcService {
     const cached = cacheService.get(cacheKey);
     if (cached) return cached;
 
+    const startMs = Date.now();
+    let teleSuccess = false;
+    let teleStatus: number | null = null;
     try {
       winstonLogger.info(`[IRCTC_PNR] Fetching PNR ${pnr}`);
       const data = await irctc.checkPNRStatus(pnr.trim());
+      teleStatus = 200;
 
       if (data && (data.success === false || data.error)) {
+        teleSuccess = false;
         const errStr = data.error || 'API reported failure';
         if (errStr.toLowerCase().includes('api key') || errStr.toLowerCase().includes('invalid key')) {
           winstonLogger.error(`[PROVIDER_INVALID_KEY] IRCTC: ${errStr}`);
@@ -182,16 +217,21 @@ export class IrctcService {
         return null;
       }
 
+      teleSuccess = true;
       cacheService.set(cacheKey, data, 300); // 5 min
       winstonLogger.info(`[IRCTC_PNR_SUCCESS] ${pnr}`);
       return data;
     } catch (e: any) {
+      teleSuccess = false;
+      teleStatus = e?.response?.status || e?.status || null;
       const errStr = e.message || '';
       if (errStr.toLowerCase().includes('api key') || errStr.toLowerCase().includes('invalid key')) {
         winstonLogger.error(`[PROVIDER_INVALID_KEY] IRCTC: ${errStr}`);
       }
       winstonLogger.error(`[IRCTC_PNR_FAILED] ${pnr}: ${errStr}`);
       return null;
+    } finally {
+      recordIrctcTelemetry('pnr', startMs, teleSuccess, teleStatus);
     }
   }
 
@@ -204,6 +244,9 @@ export class IrctcService {
     const cached = cacheService.get(cacheKey);
     if (cached) return cached;
 
+    const startMs = Date.now();
+    let teleSuccess = false;
+    let teleStatus: number | null = null;
     try {
       winstonLogger.info(`[IRCTC_LIVE] Fetching train ${trainNo}`);
       // P0.2 (PHASE_4C811): 8s timeout guard — mirrors the pattern in getAvailability().
@@ -216,10 +259,12 @@ export class IrctcService {
       const data = await Promise.race([infoPromise, infoTimeout]).finally(() => {
         if (infoTimer) clearTimeout(infoTimer);
       }) as any;
+      teleStatus = 200;
 
       const result = data?.data || data;
       if (result) {
         if (result.success === false || result.error) {
+          teleSuccess = false;
           const errStr = result.error || 'API reported failure';
           if (errStr.toLowerCase().includes('api key') || errStr.toLowerCase().includes('invalid key')) {
             winstonLogger.error(`[PROVIDER_INVALID_KEY] IRCTC: ${errStr}`);
@@ -227,18 +272,24 @@ export class IrctcService {
           winstonLogger.error(`[IRCTC_LIVE_FAILED] ${trainNo}: ${errStr}`);
           return null;
         }
+        teleSuccess = true;
         cacheService.set(cacheKey, result, 7200); // 2 hours
         winstonLogger.info(`[IRCTC_LIVE_SUCCESS] ${trainNo}`);
         return result;
       }
+      teleSuccess = false;
       return null;
     } catch (e: any) {
+      teleSuccess = false;
+      teleStatus = e?.response?.status || e?.status || null;
       const errStr = e.message || '';
       if (errStr.toLowerCase().includes('api key') || errStr.toLowerCase().includes('invalid key')) {
         winstonLogger.error(`[PROVIDER_INVALID_KEY] IRCTC: ${errStr}`);
       }
       winstonLogger.error(`[IRCTC_LIVE_FAILED] ${trainNo}: ${errStr}`);
       return null;
+    } finally {
+      recordIrctcTelemetry('schedule', startMs, teleSuccess, teleStatus);
     }
   }
 
@@ -274,14 +325,19 @@ export class IrctcService {
     const cached = cacheService.get(cacheKey);
     if (cached) return cached;
 
+    const startMs = Date.now();
+    let teleSuccess = false;
+    let teleStatus: number | null = null;
     try {
       winstonLogger.info(`[IRCTC_TRACK] Fetching live status for ${trainNo} on date ${dateStr}`);
 
       const data = await irctc.trackTrain(trainNo.trim(), dateStr);
+      teleStatus = 200;
       const result = data?.data || data;
 
       if (result) {
         if (result.success === false || result.error) {
+          teleSuccess = false;
           const errStr = String(result.error || 'API reported failure');
           const isNotRunning =
             errStr.toLowerCase().includes('not available for date') ||
@@ -299,12 +355,16 @@ export class IrctcService {
           winstonLogger.error(`[IRCTC_TRACK_FAILED] ${trainNo}: ${errStr}`);
           return null;
         }
+        teleSuccess = true;
         cacheService.set(cacheKey, result, 60); // 60s — live data, short TTL
         winstonLogger.info(`[IRCTC_TRACK_SUCCESS] ${trainNo}`);
         return result;
       }
+      teleSuccess = false;
       return null;
     } catch (e: any) {
+      teleSuccess = false;
+      teleStatus = e?.response?.status || e?.status || null;
       const errStr = String(e.message || '');
       const isNotRunning =
         errStr.toLowerCase().includes('not available for date') ||
@@ -321,6 +381,8 @@ export class IrctcService {
       }
       winstonLogger.error(`[IRCTC_TRACK_FAILED] ${trainNo}: ${errStr}`);
       return null;
+    } finally {
+      recordIrctcTelemetry('live', startMs, teleSuccess, teleStatus);
     }
   }
 
@@ -349,19 +411,24 @@ export class IrctcService {
     const cached = cacheService.get(cacheKey);
     if (cached) return cached;
 
+    if (typeof irctc.trackTrainV2 !== 'function') {
+      winstonLogger.warn('[RAILKIT_TRACK_V2] trackTrainV2 is not available in loaded SDK instance');
+      return null;
+    }
+
+    const startMs = Date.now();
+    let teleSuccess = false;
+    let teleStatus: number | null = null;
     try {
       winstonLogger.info(`[RAILKIT_TRACK_V2] Fetching WIMT live status for ${trainNo} on date ${dateStr}`);
 
-      if (typeof irctc.trackTrainV2 !== 'function') {
-        winstonLogger.warn('[RAILKIT_TRACK_V2] trackTrainV2 is not available in loaded SDK instance');
-        return null;
-      }
-
       const data = await irctc.trackTrainV2(trainNo.trim(), dateStr);
+      teleStatus = 200;
       const result = data?.data || data;
 
       if (result) {
         if (result.success === false || result.error) {
+          teleSuccess = false;
           const errStr = String(result.error || 'API reported failure');
           const isNotRunning =
             errStr.toLowerCase().includes('not available for date') ||
@@ -381,12 +448,16 @@ export class IrctcService {
           return null;
         }
 
+        teleSuccess = true;
         cacheService.set(cacheKey, result, 60); // 60s live TTL
         winstonLogger.info(`[RAILKIT_V2_TRACK_SUCCESS] ${trainNo}`);
         return result;
       }
+      teleSuccess = false;
       return null;
     } catch (e: any) {
+      teleSuccess = false;
+      teleStatus = e?.response?.status || e?.status || null;
       const errStr = String(e.message || '');
       const isNotRunning =
         errStr.toLowerCase().includes('not available for date') ||
@@ -404,6 +475,8 @@ export class IrctcService {
       }
       winstonLogger.warn(`[RAILKIT_V2_TRACK_FAILED] ${trainNo}: ${errStr}`);
       return null;
+    } finally {
+      recordIrctcTelemetry('live', startMs, teleSuccess, teleStatus);
     }
   }
 
@@ -425,26 +498,35 @@ export class IrctcService {
     const cached = cacheService.get(cacheKey);
     if (cached) return cached;
 
+    if (typeof irctc.getTrainHistory !== 'function') {
+      winstonLogger.warn('[RAILKIT_HISTORY] getTrainHistory is not available in loaded SDK instance');
+      return null;
+    }
+
+    const startMs = Date.now();
+    let teleSuccess = false;
+    let teleStatus: number | null = null;
     try {
       winstonLogger.info(`[RAILKIT_HISTORY] Fetching journey history for ${trainNo} on date ${formattedDate}`);
-
-      if (typeof irctc.getTrainHistory !== 'function') {
-        winstonLogger.warn('[RAILKIT_HISTORY] getTrainHistory is not available in loaded SDK instance');
-        return null;
-      }
-
       const data = await irctc.getTrainHistory(trainNo.trim(), formattedDate);
+      teleStatus = 200;
       const result = data?.data || data;
 
       if (result && result.success !== false && !result.error) {
+        teleSuccess = true;
         cacheService.set(cacheKey, result, 86400); // 24 hours — historical runs are immutable
         winstonLogger.info(`[RAILKIT_HISTORY_SUCCESS] ${trainNo} on ${formattedDate}`);
         return result;
       }
+      teleSuccess = false;
       return null;
     } catch (e: any) {
+      teleSuccess = false;
+      teleStatus = e?.response?.status || e?.status || null;
       winstonLogger.warn(`[RAILKIT_HISTORY_FAILED] ${trainNo}: ${e.message}`);
       return null;
+    } finally {
+      recordIrctcTelemetry('schedule', startMs, teleSuccess, teleStatus);
     }
   }
 
@@ -461,22 +543,33 @@ export class IrctcService {
     const cached = cacheService.get<any>(cacheKey);
     if (cached) return cached;
 
+    if (typeof irctc.cancelList !== 'function') {
+      winstonLogger.warn('[RAILKIT_CANCEL_LIST] cancelList is not available in loaded SDK instance');
+      return null;
+    }
+
+    const startMs = Date.now();
+    let teleSuccess = false;
+    let teleStatus: number | null = null;
     try {
-      if (typeof irctc.cancelList !== 'function') {
-        winstonLogger.warn('[RAILKIT_CANCEL_LIST] cancelList is not available in loaded SDK instance');
-        return null;
-      }
       const data = await irctc.cancelList();
+      teleStatus = 200;
       const result = data?.data || data;
       if (result && result.success !== false && !result.error) {
+        teleSuccess = true;
         cacheService.set(cacheKey, result, 7200); // 2 hours
         winstonLogger.info(`[RAILKIT_CANCEL_LIST_SUCCESS] loaded for ${todayIst}`);
         return result;
       }
+      teleSuccess = false;
       return null;
     } catch (e: any) {
+      teleSuccess = false;
+      teleStatus = e?.response?.status || e?.status || null;
       winstonLogger.warn(`[RAILKIT_CANCEL_LIST_FAILED] ${e.message}`);
       return null;
+    } finally {
+      recordIrctcTelemetry('schedule', startMs, teleSuccess, teleStatus);
     }
   }
 
@@ -507,20 +600,31 @@ export class IrctcService {
     const cached = cacheService.get(cacheKey);
     if (cached) return cached;
 
+    if (typeof irctc.trainTimetableAtStation !== 'function') {
+      return null;
+    }
+
+    const startMs = Date.now();
+    let teleSuccess = false;
+    let teleStatus: number | null = null;
     try {
-      if (typeof irctc.trainTimetableAtStation !== 'function') {
-        return null;
-      }
       const data = await irctc.trainTimetableAtStation(normCode, formattedDate);
+      teleStatus = 200;
       const result = data?.data || data;
       if (result && result.success !== false && !result.error) {
+        teleSuccess = true;
         cacheService.set(cacheKey, result, 7200); // 2 hours
         return result;
       }
+      teleSuccess = false;
       return null;
     } catch (e: any) {
+      teleSuccess = false;
+      teleStatus = e?.response?.status || e?.status || null;
       winstonLogger.warn(`[RAILKIT_STN_TIMETABLE_FAILED] ${normCode}: ${e.message}`);
       return null;
+    } finally {
+      recordIrctcTelemetry('schedule', startMs, teleSuccess, teleStatus);
     }
   }
 
@@ -541,20 +645,31 @@ export class IrctcService {
     const cached = cacheService.get(cacheKey);
     if (cached) return cached;
 
+    if (typeof irctc.liveAtStation !== 'function') {
+      return null;
+    }
+
+    const startMs = Date.now();
+    let teleSuccess = false;
+    let teleStatus: number | null = null;
     try {
-      if (typeof irctc.liveAtStation !== 'function') {
-        return null;
-      }
       const data = await irctc.liveAtStation(normCode, hours);
+      teleStatus = 200;
       const result = data?.data || data;
       if (result && result.success !== false && !result.error) {
+        teleSuccess = true;
         cacheService.set(cacheKey, result, 120); // 2 min
         return result;
       }
+      teleSuccess = false;
       return null;
     } catch (e: any) {
+      teleSuccess = false;
+      teleStatus = e?.response?.status || e?.status || null;
       winstonLogger.warn(`[RAILKIT_LIVE_AT_STATION_FAILED] ${normCode}: ${e.message}`);
       return null;
+    } finally {
+      recordIrctcTelemetry('live', startMs, teleSuccess, teleStatus);
     }
   }
 
@@ -578,6 +693,9 @@ export class IrctcService {
     if (Array.isArray(cached) && cached.length > 0) return cached;
     // (null or empty array from cache → fall through to live call)
 
+    const startMs = Date.now();
+    let teleSuccess = false;
+    let teleStatus: number | null = null;
     try {
       winstonLogger.info(`[API_PRIMARY_ACTIVE] IRCTC Search: ${from} → ${to} | ${date}`);
 
@@ -593,10 +711,12 @@ export class IrctcService {
         to.toUpperCase().trim(),
         formattedDate
       );
+      teleStatus = 200;
 
       const results = data?.data || data?.trains || data || [];
       const finalResults = Array.isArray(results) ? results : (results.trains || results.data || []);
 
+      teleSuccess = true;
       // PHASE_4C931 TASK 1: Never cache empty arrays for 30 minutes.
       // An empty response means IRCTC returned nothing for this query right now —
       // it may succeed on the next request (rate-limit reset, transient error, etc.).
@@ -615,8 +735,12 @@ export class IrctcService {
 
       return finalResults;
     } catch (e: any) {
+      teleSuccess = false;
+      teleStatus = e?.response?.status || e?.status || null;
       winstonLogger.error(`[IRCTC_SEARCH_FAILED] ${from}→${to}: ${e.message}`);
       return [];
+    } finally {
+      recordIrctcTelemetry('search', startMs, teleSuccess, teleStatus);
     }
   }
 
@@ -654,6 +778,9 @@ export class IrctcService {
       if (cached) return cached;
     }
 
+    const startMs = Date.now();
+    let teleSuccess = false;
+    let teleStatus: number | null = null;
     try {
       winstonLogger.info(`[IRCTC_AVAIL_INPUT] train=${trainNo} from=${fromNorm} to=${toNorm} date=${date} cls=${classType} quota=${quota}`);
 
@@ -681,6 +808,7 @@ export class IrctcService {
       const data = await Promise.race([irctcPromise, timeoutPromise]).finally(() => {
         if (availTimer) clearTimeout(availTimer);
       }) as any;
+      teleStatus = 200;
 
       // FIX-4: log which classes the SDK actually returned vs what was requested
       if (data && typeof data === 'object') {
@@ -700,8 +828,11 @@ export class IrctcService {
         );
       }
 
+      teleSuccess = Boolean(data && data.success !== false);
       return data;
     } catch (e: any) {
+      teleSuccess = false;
+      teleStatus = e?.response?.status || e?.status || null;
       const errMsg = (e.message || '').toLowerCase();
       winstonLogger.warn(`[IRCTC_AVAIL_FAIL] ${trainNo}: ${e.message}`);
 
@@ -718,6 +849,8 @@ export class IrctcService {
       }
 
       return null;
+    } finally {
+      recordIrctcTelemetry('availability', startMs, teleSuccess, teleStatus);
     }
   }
 
@@ -737,6 +870,9 @@ export class IrctcService {
     const cached = cacheService.get(cacheKey);
     if (cached) return cached;
 
+    const startMs = Date.now();
+    let teleSuccess = false;
+    let teleStatus: number | null = null;
     try {
       winstonLogger.info(`[IRCTC_FARE] Fetching fare for train=${trainNo} class=${classType} quota=${quota}`);
       
@@ -755,14 +891,22 @@ export class IrctcService {
         classType.toUpperCase(),
         quota.toUpperCase()
       );
+      teleStatus = 200;
 
       if (data && typeof data === 'object' && data.success !== false) {
+        teleSuccess = true;
         cacheService.set(cacheKey, data, 86400); // Cache fare for 24 hours
+      } else {
+        teleSuccess = false;
       }
       return data;
     } catch (err: any) {
+      teleSuccess = false;
+      teleStatus = err?.response?.status || err?.status || null;
       winstonLogger.error(`[IRCTC_FARE_FAILED] train=${trainNo}: ${err.message}`);
       return null;
+    } finally {
+      recordIrctcTelemetry('availability', startMs, teleSuccess, teleStatus);
     }
   }
 
@@ -799,7 +943,7 @@ export class IrctcService {
   //   a misbehaving provider from parking the sync job for an unbounded period.
   //
   // Security: credentials and full HTTP headers are never logged here.
-  public async getTrainInfoForSync(trainNo: string): Promise<TrainInfoResult> {
+  public async getTrainInfoForSync(trainNo: string, attempt: number = 1): Promise<TrainInfoResult> {
     await this.ensureInit();
 
     if (!this.initialized || !irctc) {
@@ -829,6 +973,9 @@ export class IrctcService {
     }
 
     // ── Provider call ──────────────────────────────────────────────────────────
+    const startMs = Date.now();
+    let teleSuccess = false;
+    let teleStatus: number | null = null;
     try {
       const infoPromise = irctc.getTrainInfo(trainNo.trim());
       let infoTimer: NodeJS.Timeout | undefined;
@@ -841,11 +988,13 @@ export class IrctcService {
       const raw = await Promise.race([infoPromise, infoTimeout]).finally(() => {
         if (infoTimer) clearTimeout(infoTimer);
       }) as any;
+      teleStatus = 200;
 
       const result = raw?.data ?? raw;
 
       // Provider returned a structured failure.
       if (result && (result.success === false || result.error)) {
+        teleSuccess = false;
         const errStr = String(result.error || '').toLowerCase();
         if (errStr.includes('api key') || errStr.includes('invalid key') ||
             errStr.includes('unauthorized') || errStr.includes('forbidden')) {
@@ -862,6 +1011,7 @@ export class IrctcService {
 
       // Null/undefined response body.
       if (!result) {
+        teleSuccess = false;
         return { kind: 'EXPECTED_NO_DATA' };
       }
 
@@ -875,6 +1025,7 @@ export class IrctcService {
       );
 
       if (stations.length > 0) {
+        teleSuccess = true;
         // Store in shared 2h cache — same as getTrainInfo() — so user-facing paths
         // benefit from the sync job's fetch.
         cacheService.set(cacheKey, result, 7200);
@@ -882,9 +1033,12 @@ export class IrctcService {
       }
 
       // Response arrived but contained no station data.
+      teleSuccess = false;
       return { kind: 'MALFORMED_RESPONSE' };
 
     } catch (e: any) {
+      teleSuccess = false;
+      teleStatus = e?.response?.status || e?.status || null;
       const msg = String(e?.message || '').toLowerCase();
 
       // Timeout (thrown by our own guard above).
@@ -923,6 +1077,8 @@ export class IrctcService {
       // Catch-all — treat unrecognised errors as network failures so the
       // sync job retries rather than silently skipping the train.
       return { kind: 'NETWORK_FAILURE' };
+    } finally {
+      recordIrctcTelemetry('schedule', startMs, teleSuccess, teleStatus, attempt > 1);
     }
   }
 

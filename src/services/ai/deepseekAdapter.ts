@@ -3,6 +3,9 @@ import { winstonLogger } from '../../middleware/logger';
 import { aiConfig } from './aiConfig';
 import { aiAdminConfigService } from './aiAdminConfigService';
 import { aiObservabilityService } from './aiObservabilityService';
+import { ledgerTransport } from '../ledger/ledgerTransport';
+import { getContextUserId, getContextCallerFeature } from '../../middleware/requestContext';
+import { calculateAiCost } from './aiPricingConfig';
 import {
   AiProvider,
   AiCapabilities,
@@ -154,6 +157,12 @@ export class DeepSeekAdapter implements AiProvider {
       requestBody.response_format = { type: 'json_object' };
     }
 
+    const startMs = Date.now();
+    let teleSuccess = false;
+    let teleStatus: number | null = null;
+    let teleTokensIn: number | null = null;
+    let teleTokensOut: number | null = null;
+    let teleAppliedRate = 0.000000;
     try {
       winstonLogger.info(`[AI_CALL] [DEEPSEEK_ACTIVE] Model: ${model}`);
       const response = await axios.post(
@@ -168,11 +177,13 @@ export class DeepSeekAdapter implements AiProvider {
           }
         }
       );
+      teleStatus = response.status || 200;
 
       const choice = response.data?.choices?.[0];
       const text = choice?.message?.content;
 
       if (!text) {
+        teleSuccess = false;
         aiObservabilityService.recordAiUsage({
           provider: this.providerId,
           model,
@@ -190,10 +201,16 @@ export class DeepSeekAdapter implements AiProvider {
       }
 
       const usage = response.data?.usage;
-      const inputTokens = usage?.prompt_tokens;
-      const outputTokens = usage?.completion_tokens;
+      const inputTokens = typeof usage?.prompt_tokens === 'number' ? usage.prompt_tokens : null;
+      const outputTokens = typeof usage?.completion_tokens === 'number' ? usage.completion_tokens : null;
       const totalTokens = usage?.total_tokens;
       const latencyMs = Date.now() - startTime;
+
+      teleSuccess = true;
+      teleTokensIn = inputTokens;
+      teleTokensOut = outputTokens;
+      const cost = calculateAiCost(model, inputTokens ?? undefined, outputTokens ?? undefined);
+      teleAppliedRate = typeof cost === 'number' ? cost : 0.000000;
 
       aiObservabilityService.recordAiUsage({
         provider: this.providerId,
@@ -201,8 +218,8 @@ export class DeepSeekAdapter implements AiProvider {
         feature: featureName,
         success: true,
         latencyMs,
-        inputTokens,
-        outputTokens,
+        inputTokens: inputTokens ?? undefined,
+        outputTokens: outputTokens ?? undefined,
         totalTokens,
         fallbackUsed: false
       });
@@ -222,6 +239,12 @@ export class DeepSeekAdapter implements AiProvider {
 
       return text;
     } catch (err: any) {
+      teleSuccess = false;
+      teleStatus = err?.response?.status || err?.status || null;
+      teleTokensIn = null;
+      teleTokensOut = null;
+      teleAppliedRate = 0.000000;
+
       const latencyMs = Date.now() - startTime;
       aiObservabilityService.recordAiUsage({
         provider: this.providerId,
@@ -282,6 +305,27 @@ export class DeepSeekAdapter implements AiProvider {
         message: err?.message || 'Unknown error occurred in DeepSeekAdapter',
         provider: this.providerId
       });
+    } finally {
+      try {
+        ledgerTransport.enqueue({
+          provider_name: 'DEEPSEEK',
+          event_type: 'ai',
+          user_id: getContextUserId(),
+          caller_feature: getContextCallerFeature() || featureName,
+          applied_rate: teleAppliedRate,
+          currency: 'USD',
+          success: teleSuccess,
+          http_status: teleStatus,
+          latency_ms: Math.max(0, Date.now() - startMs),
+          is_retry: false,
+          is_fallback: false,
+          tokens_in: teleTokensIn,
+          tokens_out: teleTokensOut,
+          model_name: model
+        });
+      } catch (teleErr: any) {
+        winstonLogger.warn(`[TELEMETRY_RECORD_FAIL] DeepSeek: ${teleErr?.message}`);
+      }
     }
   }
 

@@ -7,8 +7,6 @@ export interface PriorityOperations<T> {
   // Strict Naming (Recommended)
   irctc?: () => Promise<T | null>;
   railradar?: () => Promise<T | null>;
-  railyatri?: () => Promise<T | null>;
-  confirmtkt?: () => Promise<T | null>;
   rapid?: () => Promise<T | null>;
   db?: () => Promise<T | null>;
 
@@ -37,7 +35,7 @@ export async function fetchWithPriority<T>(
     const resolvedProviders = await railProviderResolver.resolveProviderChain(feature);
     chain = resolvedProviders.map(p => p.providerId.toUpperCase());
   } catch {
-    chain = feature === 'pnr' ? ['IRCTC', 'RAILRADAR'] : ['IRCTC', 'RAILRADAR', 'CONFIRMTKT', 'RAILYATRI'];
+    chain = ['IRCTC', 'RAILRADAR'];
   }
 
   // Ensure DB fallback is always at the end if not explicitly present
@@ -50,8 +48,6 @@ export async function fetchWithPriority<T>(
   const fnMap: Record<string, (() => Promise<T | null>) | undefined> = {
     IRCTC: ops.irctc || ops.primary,
     RAILRADAR: ops.railradar,
-    RAILYATRI: ops.railyatri,
-    CONFIRMTKT: ops.confirmtkt || ops.fallback1,
     RAPIDAPI: ops.rapid,
     DATABASE: ops.db || ops.dbFallback,
   };

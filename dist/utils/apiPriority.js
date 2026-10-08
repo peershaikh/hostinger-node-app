@@ -23,7 +23,7 @@ async function fetchWithPriority(ops, feature = 'liveTracking') {
         chain = resolvedProviders.map(p => p.providerId.toUpperCase());
     }
     catch {
-        chain = feature === 'pnr' ? ['IRCTC', 'RAILRADAR'] : ['IRCTC', 'RAILRADAR', 'CONFIRMTKT', 'RAILYATRI'];
+        chain = ['IRCTC', 'RAILRADAR'];
     }
     // Ensure DB fallback is always at the end if not explicitly present
     if (!chain.includes('DATABASE')) {
@@ -33,8 +33,6 @@ async function fetchWithPriority(ops, feature = 'liveTracking') {
     const fnMap = {
         IRCTC: ops.irctc || ops.primary,
         RAILRADAR: ops.railradar,
-        RAILYATRI: ops.railyatri,
-        CONFIRMTKT: ops.confirmtkt || ops.fallback1,
         RAPIDAPI: ops.rapid,
         DATABASE: ops.db || ops.dbFallback,
     };

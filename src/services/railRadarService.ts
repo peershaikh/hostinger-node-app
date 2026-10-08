@@ -4,6 +4,8 @@ import * as path from 'path';
 import { winstonLogger } from '../middleware/logger';
 import { cacheService } from './cacheService';
 import { providerConfigService } from './providerConfigService';
+import { ledgerTransport } from './ledger/ledgerTransport';
+import { getContextUserId, getContextCallerFeature } from '../middleware/requestContext';
 
 const BASE_URL = "https://api.railradar.in/v1";
 const MONTHLY_QUOTA_LIMIT = 900; // 900 calls/month (100 reserve preserved out of 1000 free quota)
@@ -225,6 +227,9 @@ export class RailRadarService {
         return null;
       }
 
+      const startMs = Date.now();
+      let teleSuccess = false;
+      let teleStatus: number | null = null;
       try {
         winstonLogger.info(`[RAILRADAR_CALL] Fetching PNR status for ${pnr}`);
         const url = `${BASE_URL}/pnr/${pnr}`;
@@ -236,6 +241,7 @@ export class RailRadarService {
           },
           timeout: REQUEST_TIMEOUT_MS
         });
+        teleStatus = response.status || 200;
 
         if (!response.data) {
           throw new Error("Empty response from RailRadar");
@@ -245,15 +251,37 @@ export class RailRadarService {
         const mapped = this.mapRailRadarPnr(rawData, pnr);
 
         if (mapped) {
+          teleSuccess = true;
           // 60-second cache for successful PNR response
           cacheService.set(cacheKey, mapped, 60);
           winstonLogger.info(`[RAILRADAR_SUCCESS] PNR ${pnr} resolved successfully.`);
           return mapped;
         }
 
+        teleSuccess = false;
         return null;
       } catch (err: any) {
+        teleSuccess = false;
+        teleStatus = err?.response?.status || err?.status || null;
         return this.handleFailure('PNR', pnr, err);
+      } finally {
+        try {
+          ledgerTransport.enqueue({
+            provider_name: 'RAILRADAR',
+            event_type: 'pnr',
+            user_id: getContextUserId(),
+            caller_feature: getContextCallerFeature(),
+            applied_rate: 0.000000,
+            currency: 'USD',
+            success: teleSuccess,
+            http_status: teleStatus,
+            latency_ms: Math.max(0, Date.now() - startMs),
+            is_retry: false,
+            is_fallback: true
+          });
+        } catch (teleErr: any) {
+          winstonLogger.warn(`[TELEMETRY_RECORD_FAIL] RailRadar: ${teleErr?.message}`);
+        }
       }
     });
   }

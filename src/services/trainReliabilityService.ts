@@ -12,7 +12,7 @@ export interface LiveObservationInput {
   observedAt?: string | Date;
   status?: string;
   journeyDate?: string;
-  source?: 'IRCTC' | 'RAILRADAR' | 'RAILYATRI' | 'CONFIRMTKT' | 'MANUAL' | 'LOCAL';
+  source?: 'IRCTC' | 'RAILRADAR' | 'MANUAL' | 'LOCAL';
 }
 
 export interface ValidatedObservation {

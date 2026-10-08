@@ -19,16 +19,14 @@ class MetricsService {
         this.providerWindows = {
             IRCTC: [],
             RapidAPI: [],
-            RailRadar: [],
-            ConfirmTkt: []
+            RailRadar: []
         };
         this.PROVIDER_WINDOW_LIMIT = 50;
         // Track active consecutive failure counters for circuit breaking
         this.consecutiveFailures = {
             IRCTC: 0,
             RapidAPI: 0,
-            RailRadar: 0,
-            ConfirmTkt: 0
+            RailRadar: 0
         };
         this.snapshotInterval = null;
     }
@@ -361,8 +359,7 @@ class MetricsService {
             const providersReport = {
                 IRCTC: getProviderDetail('IRCTC'),
                 RapidAPI: getProviderDetail('RapidAPI'),
-                RailRadar: getProviderDetail('RailRadar'),
-                ConfirmTkt: getProviderDetail('ConfirmTkt')
+                RailRadar: getProviderDetail('RailRadar')
             };
             const report = {
                 total_trains: totalTrains || 0,
@@ -407,8 +404,7 @@ class MetricsService {
                 providers: {
                     IRCTC: { status: 'UNKNOWN', success_rate_percent: 0, avg_latency_ms: 0, failure_count: 0 },
                     RapidAPI: { status: 'UNKNOWN', success_rate_percent: 0, avg_latency_ms: 0, failure_count: 0 },
-                    RailRadar: { status: 'UNKNOWN', success_rate_percent: 0, avg_latency_ms: 0, failure_count: 0 },
-                    ConfirmTkt: { status: 'UNKNOWN', success_rate_percent: 0, avg_latency_ms: 0, failure_count: 0 }
+                    RailRadar: { status: 'UNKNOWN', success_rate_percent: 0, avg_latency_ms: 0, failure_count: 0 }
                 },
                 last_updated: new Date().toISOString()
             };

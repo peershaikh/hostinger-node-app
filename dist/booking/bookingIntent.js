@@ -33,7 +33,7 @@ const VALID_QUOTAS = new Set([
     'GN', 'TQ', 'SS', 'PH', 'LD', 'YU', 'HP', 'DP', 'HO'
 ]);
 const VALID_PROVIDERS = new Set([
-    'IRCTC', 'CONFIRMTKT', 'IXIGO', 'RAILYATRI', 'OFFICIAL_AGENT',
+    'IRCTC', 'IXIGO', 'OFFICIAL_AGENT',
     'FUTURE_BUS', 'FUTURE_FLIGHT', 'FUTURE_HOTEL'
 ]);
 const DATE_RE = /^\d{8}$/; // YYYYMMDD

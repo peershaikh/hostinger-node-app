@@ -55,22 +55,6 @@ const DEFAULT_BOOKING_CONFIG: BookingSystemConfig = {
       campaignId: 'ai_booking',
       trackingParameter: 'utm_source=trayago'
     },
-    CONFIRMTKT: {
-      providerId: 'CONFIRMTKT',
-      displayName: 'ConfirmTkt Fast Checkout',
-      enabled: false,
-      isOfficial: false,
-      priority: 2,
-      capabilities: {
-        directBooking: true,
-        splitBooking: false,
-        deepLinkGeneration: true,
-        partnerAttribution: true
-      },
-      partnerId: '',
-      campaignId: '',
-      trackingParameter: ''
-    },
     IXIGO: {
       providerId: 'IXIGO',
       displayName: 'Ixigo Trains Affiliate',

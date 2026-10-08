@@ -51,22 +51,6 @@ class IRCTCProvider extends StubProvider {
         };
     }
 }
-class ConfirmTktProvider extends StubProvider {
-    constructor() {
-        super(...arguments);
-        this.id = 'CONFIRMTKT';
-        this.priority = 2;
-        this.capabilities = {
-            supportsRail: true,
-            supportsBus: false,
-            supportsFlight: false,
-            supportsHotel: false,
-            supportsAffiliate: true,
-            supportsDirectBooking: false,
-            supportsPartnerAttrib: true
-        };
-    }
-}
 class IxigoProvider extends StubProvider {
     constructor() {
         super(...arguments);
@@ -76,22 +60,6 @@ class IxigoProvider extends StubProvider {
             supportsRail: true,
             supportsBus: true, // ixigo supports bus
             supportsFlight: true, // ixigo supports flights
-            supportsHotel: false,
-            supportsAffiliate: true,
-            supportsDirectBooking: false,
-            supportsPartnerAttrib: true
-        };
-    }
-}
-class RailYatriProvider extends StubProvider {
-    constructor() {
-        super(...arguments);
-        this.id = 'RAILYATRI';
-        this.priority = 4;
-        this.capabilities = {
-            supportsRail: true,
-            supportsBus: true,
-            supportsFlight: false,
             supportsHotel: false,
             supportsAffiliate: true,
             supportsDirectBooking: false,
@@ -168,9 +136,7 @@ class BookingProviderRegistry {
     constructor() {
         this.providers = [
             new IRCTCProvider(),
-            new ConfirmTktProvider(),
             new IxigoProvider(),
-            new RailYatriProvider(),
             new OfficialAgentProvider(),
             new FutureBusProvider(),
             new FutureFlightProvider(),

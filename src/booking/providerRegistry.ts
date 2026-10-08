@@ -55,20 +55,6 @@ class IRCTCProvider extends StubProvider {
   };
 }
 
-class ConfirmTktProvider extends StubProvider {
-  readonly id       = 'CONFIRMTKT'      as const;
-  readonly priority = 2;
-  readonly capabilities: BookingCapabilities = {
-    supportsRail:          true,
-    supportsBus:           false,
-    supportsFlight:        false,
-    supportsHotel:         false,
-    supportsAffiliate:     true,
-    supportsDirectBooking: false,
-    supportsPartnerAttrib: true
-  };
-}
-
 class IxigoProvider extends StubProvider {
   readonly id       = 'IXIGO'           as const;
   readonly priority = 3;
@@ -76,20 +62,6 @@ class IxigoProvider extends StubProvider {
     supportsRail:          true,
     supportsBus:           true,   // ixigo supports bus
     supportsFlight:        true,   // ixigo supports flights
-    supportsHotel:         false,
-    supportsAffiliate:     true,
-    supportsDirectBooking: false,
-    supportsPartnerAttrib: true
-  };
-}
-
-class RailYatriProvider extends StubProvider {
-  readonly id       = 'RAILYATRI'       as const;
-  readonly priority = 4;
-  readonly capabilities: BookingCapabilities = {
-    supportsRail:          true,
-    supportsBus:           true,
-    supportsFlight:        false,
     supportsHotel:         false,
     supportsAffiliate:     true,
     supportsDirectBooking: false,
@@ -158,9 +130,7 @@ class FutureHotelProvider extends StubProvider {
 class BookingProviderRegistry {
   private readonly providers: ReadonlyArray<BookingProvider> = [
     new IRCTCProvider(),
-    new ConfirmTktProvider(),
     new IxigoProvider(),
-    new RailYatriProvider(),
     new OfficialAgentProvider(),
     new FutureBusProvider(),
     new FutureFlightProvider(),

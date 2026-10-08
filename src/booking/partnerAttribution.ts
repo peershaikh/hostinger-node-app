@@ -21,9 +21,7 @@ import { featureFlags } from '../config/featureFlags';
 // These are advisory defaults; the partner may override via affiliateId config.
 const UTM_SOURCE_MAP: Record<ProviderId, string> = {
   IRCTC:           'irctc',
-  CONFIRMTKT:      'confirmtkt',
   IXIGO:           'ixigo',
-  RAILYATRI:       'railyatri',
   OFFICIAL_AGENT:  'trayago_agent',
   FUTURE_BUS:      'trayago_bus',
   FUTURE_FLIGHT:   'trayago_flight',

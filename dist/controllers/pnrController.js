@@ -19,8 +19,42 @@ class PnrController {
             }
             const cachedResponse = cacheService_1.cacheService.getCachedPNR(pnr);
             if (cachedResponse) {
-                logger_1.winstonLogger.info(`[PNR_CONTROLLER] Cache hit for PNR: ${pnr}`);
-                return res.status(200).json(cachedResponse);
+                const cData = cachedResponse.data || cachedResponse;
+                if (cData && (cData.train_name || cData.train_no) && Array.isArray(cData.passengers) && cData.passengers[0]?.booking_status !== undefined) {
+                    logger_1.winstonLogger.info(`[PNR_CONTROLLER] Cache hit for PNR: ${pnr}`);
+                    return res.status(200).json(cachedResponse.success ? cachedResponse : { success: true, data_source: 'cache', data: cData });
+                }
+                else if (this.isValidPnrResponse(cachedResponse)) {
+                    try {
+                        const { stationService } = require('../services/stationService');
+                        const normalized = (0, pnrNormalizer_1.normalizeRawPnr)(cachedResponse);
+                        const cleanResponse = {
+                            success: true,
+                            data_source: 'cache',
+                            data: {
+                                pnr,
+                                train_name: normalized.train_name,
+                                train_no: normalized.train_no,
+                                journey_date: normalized.journey_date,
+                                source: await stationService.getStationName(normalized.source_code, normalized.source_name || 'N/A'),
+                                destination: await stationService.getStationName(normalized.destination_code, normalized.destination_name || 'N/A'),
+                                chart_status: normalized.chart_status,
+                                boarding_station: normalized.boarding_station || 'N/A',
+                                passengers: normalized.passengers,
+                                class: normalized.class || 'Unknown',
+                                quota: normalized.quota || 'GN',
+                                fare: cachedResponse.data?.booking?.fare || cachedResponse.data?.booking?.ticketFare || cachedResponse.data?.ticket_fare || cachedResponse.data?.fare || null,
+                                twitter_complaint_url: trainService_1.trainService.generateTwitterUrl(normalized.train_no, 'N/A', 'Journey Issue')
+                            }
+                        };
+                        cacheService_1.cacheService.cachePNR(pnr, cleanResponse);
+                        logger_1.winstonLogger.info(`[PNR_CONTROLLER] Normalized legacy cache hit for PNR: ${pnr}`);
+                        return res.status(200).json(cleanResponse);
+                    }
+                    catch (normErr) {
+                        logger_1.winstonLogger.warn(`[PNR_CONTROLLER] Cache normalization failed, proceeding to live lookup for PNR: ${pnr}`);
+                    }
+                }
             }
             try {
                 const userId = req.headers['x-user-id'] || null;
@@ -468,6 +502,9 @@ class PnrController {
                         chart_status: normalized.chart_status,
                         boarding_station: normalized.boarding_station || "N/A",
                         passengers: cleanedPassengers,
+                        class: normalized.class || 'Unknown',
+                        quota: normalized.quota || 'GN',
+                        fare: rawStatus.data?.booking?.fare || rawStatus.data?.booking?.ticketFare || rawStatus.data?.ticket_fare || rawStatus.fare || rawStatus.ticket_fare || null,
                         ...(prediction ? { prediction } : {}),
                         twitter_complaint_url: trainService_1.trainService.generateTwitterUrl(normalized.train_no, "N/A", "Journey Issue")
                     }

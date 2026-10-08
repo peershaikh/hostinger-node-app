@@ -144,6 +144,9 @@ app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 import { authMiddleware } from './middleware/authMiddleware';
 app.use(authMiddleware);
 
+import { requestContextMiddleware } from './middleware/requestContext';
+app.use(requestContextMiddleware);
+
 app.use(universalInstrumentationMiddleware);
 
 app.use(requestTimingMiddleware);     // Lightweight structured timing

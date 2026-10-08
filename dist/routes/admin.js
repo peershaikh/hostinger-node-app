@@ -79,6 +79,8 @@ router.get('/intelligence-v2', rateLimiter_1.adminLimiter, adminAuth_1.requireAd
 router.get('/production-incidents', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getProductionIncidents.bind(adminController_1.adminController));
 // Phase 10.8.42 (T8): morning ops digest summary
 router.get('/last-digest', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getLastDigest.bind(adminController_1.adminController));
+// STEP 2D-PHASE 2.2: FinOps telemetry & aggregation summary
+router.get('/finops/summary', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getFinOpsSummary.bind(adminController_1.adminController));
 // Payment & Revenue API
 router.get('/revenue', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getPaymentRevenue.bind(adminController_1.adminController));
 router.get('/transactions', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.listPaymentTransactions.bind(adminController_1.adminController));

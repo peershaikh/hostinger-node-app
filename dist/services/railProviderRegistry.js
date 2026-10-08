@@ -8,12 +8,10 @@
  * Note: Runtime routing remains untouched in this phase (Phase 044 is abstraction only).
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.railProviderRegistry = exports.RailProviderRegistry = exports.DatabaseScheduleAdapter = exports.RapidApiAdapter = exports.RailYatriAdapter = exports.ConfirmTktAdapter = exports.RailRadarAdapter = exports.IRCTCAdapter = exports.UnsupportedCapabilityError = void 0;
+exports.railProviderRegistry = exports.RailProviderRegistry = exports.DatabaseScheduleAdapter = exports.RapidApiAdapter = exports.RailRadarAdapter = exports.IRCTCAdapter = exports.UnsupportedCapabilityError = void 0;
 const logger_1 = require("../middleware/logger");
 const irctcService_1 = require("./irctcService");
 const railRadarService_1 = require("./railRadarService");
-const confirmtktService_1 = require("./confirmtktService");
-const railyatriService_1 = require("./railyatriService");
 const dbService_1 = require("./dbService");
 const providerConfigService_1 = require("./providerConfigService");
 function mapGuardToHealthStatus(guard, latencyMs) {
@@ -148,97 +146,7 @@ class RailRadarAdapter {
     }
 }
 exports.RailRadarAdapter = RailRadarAdapter;
-// ─── 3. CONFIRMTKT ADAPTER ─────────────────────────────────────────────────────
-class ConfirmTktAdapter {
-    constructor() {
-        this.providerId = 'CONFIRMTKT';
-        this.displayName = 'ConfirmTkt Live Running Status';
-        this.capabilities = {
-            search: false,
-            availability: false,
-            liveTracking: true,
-            pnr: false,
-            schedule: false
-        };
-    }
-    async searchTrains(params) {
-        throw new UnsupportedCapabilityError(this.providerId, 'search');
-    }
-    async checkAvailability(params) {
-        throw new UnsupportedCapabilityError(this.providerId, 'availability');
-    }
-    async getLiveStatus(params) {
-        return confirmtktService_1.confirmtktService.getTrainStatus(params.trainNo, params.date);
-    }
-    async getPNRStatus(params) {
-        throw new UnsupportedCapabilityError(this.providerId, 'pnr');
-    }
-    async getTrainSchedule(params) {
-        throw new UnsupportedCapabilityError(this.providerId, 'schedule');
-    }
-    async healthCheck() {
-        const start = Date.now();
-        try {
-            const guard = await providerConfigService_1.providerConfigService.isProviderEnabled('CONFIRMTKT');
-            return mapGuardToHealthStatus(guard, Date.now() - start);
-        }
-        catch (e) {
-            return {
-                status: 'UNAVAILABLE',
-                latencyMs: Date.now() - start,
-                message: e.message,
-                timestamp: new Date().toISOString()
-            };
-        }
-    }
-}
-exports.ConfirmTktAdapter = ConfirmTktAdapter;
-// ─── 4. RAILYATRI ADAPTER ──────────────────────────────────────────────────────
-class RailYatriAdapter {
-    constructor() {
-        this.providerId = 'RAILYATRI';
-        this.displayName = 'RailYatri Live Running Status';
-        this.capabilities = {
-            search: false,
-            availability: false,
-            liveTracking: true,
-            pnr: false,
-            schedule: false
-        };
-    }
-    async searchTrains(params) {
-        throw new UnsupportedCapabilityError(this.providerId, 'search');
-    }
-    async checkAvailability(params) {
-        throw new UnsupportedCapabilityError(this.providerId, 'availability');
-    }
-    async getLiveStatus(params) {
-        return railyatriService_1.railyatriService.getTrainStatus(params.trainNo, params.date);
-    }
-    async getPNRStatus(params) {
-        throw new UnsupportedCapabilityError(this.providerId, 'pnr');
-    }
-    async getTrainSchedule(params) {
-        throw new UnsupportedCapabilityError(this.providerId, 'schedule');
-    }
-    async healthCheck() {
-        const start = Date.now();
-        try {
-            const guard = await providerConfigService_1.providerConfigService.isProviderEnabled('RAILYATRI');
-            return mapGuardToHealthStatus(guard, Date.now() - start);
-        }
-        catch (e) {
-            return {
-                status: 'UNAVAILABLE',
-                latencyMs: Date.now() - start,
-                message: e.message,
-                timestamp: new Date().toISOString()
-            };
-        }
-    }
-}
-exports.RailYatriAdapter = RailYatriAdapter;
-// ─── 5. RAPIDAPI ADAPTER (Disabled) ────────────────────────────────────────────
+// ─── 3. RAPIDAPI ADAPTER (Disabled) ────────────────────────────────────────────
 class RapidApiAdapter {
     constructor() {
         this.providerId = 'RAPIDAPI';
@@ -333,8 +241,6 @@ class RailProviderRegistry {
         this.providers = new Map();
         this.register(new IRCTCAdapter());
         this.register(new RailRadarAdapter());
-        this.register(new ConfirmTktAdapter());
-        this.register(new RailYatriAdapter());
         this.register(new RapidApiAdapter());
         this.register(new DatabaseScheduleAdapter());
     }

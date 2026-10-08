@@ -49,7 +49,6 @@ export interface SystemStatusReport {
     IRCTC: ProviderHealthDetail;
     RapidAPI: ProviderHealthDetail;
     RailRadar: ProviderHealthDetail;
-    ConfirmTkt: ProviderHealthDetail;
   };
   last_updated?: string;
 }
@@ -67,8 +66,7 @@ export class MetricsService {
   private readonly providerWindows: Record<string, ProviderMetric[]> = {
     IRCTC: [],
     RapidAPI: [],
-    RailRadar: [],
-    ConfirmTkt: []
+    RailRadar: []
   };
   private readonly PROVIDER_WINDOW_LIMIT = 50;
 
@@ -76,8 +74,7 @@ export class MetricsService {
   private readonly consecutiveFailures: Record<string, number> = {
     IRCTC: 0,
     RapidAPI: 0,
-    RailRadar: 0,
-    ConfirmTkt: 0
+    RailRadar: 0
   };
 
   private snapshotInterval: NodeJS.Timeout | null = null;
@@ -465,8 +462,7 @@ export class MetricsService {
       const providersReport = {
         IRCTC: getProviderDetail('IRCTC'),
         RapidAPI: getProviderDetail('RapidAPI'),
-        RailRadar: getProviderDetail('RailRadar'),
-        ConfirmTkt: getProviderDetail('ConfirmTkt')
+        RailRadar: getProviderDetail('RailRadar')
       };
 
       const report: SystemStatusReport = {
@@ -513,8 +509,7 @@ export class MetricsService {
         providers: {
           IRCTC: { status: 'UNKNOWN', success_rate_percent: 0, avg_latency_ms: 0, failure_count: 0 },
           RapidAPI: { status: 'UNKNOWN', success_rate_percent: 0, avg_latency_ms: 0, failure_count: 0 },
-          RailRadar: { status: 'UNKNOWN', success_rate_percent: 0, avg_latency_ms: 0, failure_count: 0 },
-          ConfirmTkt: { status: 'UNKNOWN', success_rate_percent: 0, avg_latency_ms: 0, failure_count: 0 }
+          RailRadar: { status: 'UNKNOWN', success_rate_percent: 0, avg_latency_ms: 0, failure_count: 0 }
         },
         last_updated: new Date().toISOString()
       };

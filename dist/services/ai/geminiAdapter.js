@@ -9,6 +9,9 @@ const logger_1 = require("../../middleware/logger");
 const aiConfig_1 = require("./aiConfig");
 const aiAdminConfigService_1 = require("./aiAdminConfigService");
 const aiObservabilityService_1 = require("./aiObservabilityService");
+const ledgerTransport_1 = require("../ledger/ledgerTransport");
+const requestContext_1 = require("../../middleware/requestContext");
+const aiPricingConfig_1 = require("./aiPricingConfig");
 const aiProvider_1 = require("./aiProvider");
 class GeminiAdapter {
     constructor() {
@@ -121,6 +124,12 @@ class GeminiAdapter {
             ? prompt + '\n\nIMPORTANT: Return ONLY a valid JSON object without markdown formatting, backticks, or extra text.'
             : prompt;
         const timeout = timeoutMs || aiConfig_1.aiConfig.gemini.timeoutMs || 10000;
+        const startMs = Date.now();
+        let teleSuccess = false;
+        let teleStatus = null;
+        let teleTokensIn = null;
+        let teleTokensOut = null;
+        let teleAppliedRate = 0.000000;
         try {
             logger_1.winstonLogger.info(`[AI_CALL] [GEMINI_ACTIVE] Model: ${model}`);
             const response = await axios_1.default.post(url, {
@@ -129,8 +138,10 @@ class GeminiAdapter {
                     responseMimeType: json ? 'application/json' : 'text/plain'
                 }
             }, { timeout });
+            teleStatus = response.status || 200;
             const candidate = response.data?.candidates?.[0];
             if (!candidate || !candidate.content?.parts?.[0]?.text) {
+                teleSuccess = false;
                 aiObservabilityService_1.aiObservabilityService.recordAiUsage({
                     provider: this.providerId,
                     model,
@@ -147,18 +158,23 @@ class GeminiAdapter {
                 });
             }
             const usage = response.data?.usageMetadata;
-            const inputTokens = usage?.promptTokenCount;
-            const outputTokens = usage?.candidatesTokenCount;
+            const inputTokens = typeof usage?.promptTokenCount === 'number' ? usage.promptTokenCount : null;
+            const outputTokens = typeof usage?.candidatesTokenCount === 'number' ? usage.candidatesTokenCount : null;
             const totalTokens = usage?.totalTokenCount;
             const latencyMs = Date.now() - startTime;
+            teleSuccess = true;
+            teleTokensIn = inputTokens;
+            teleTokensOut = outputTokens;
+            const cost = (0, aiPricingConfig_1.calculateAiCost)(model, inputTokens ?? undefined, outputTokens ?? undefined);
+            teleAppliedRate = typeof cost === 'number' ? cost : 0.000000;
             aiObservabilityService_1.aiObservabilityService.recordAiUsage({
                 provider: this.providerId,
                 model,
                 feature: featureName,
                 success: true,
                 latencyMs,
-                inputTokens,
-                outputTokens,
+                inputTokens: inputTokens ?? undefined,
+                outputTokens: outputTokens ?? undefined,
                 totalTokens,
                 fallbackUsed: false
             });
@@ -179,6 +195,11 @@ class GeminiAdapter {
             return text;
         }
         catch (err) {
+            teleSuccess = false;
+            teleStatus = err?.response?.status || err?.status || null;
+            teleTokensIn = null;
+            teleTokensOut = null;
+            teleAppliedRate = 0.000000;
             const latencyMs = Date.now() - startTime;
             aiObservabilityService_1.aiObservabilityService.recordAiUsage({
                 provider: this.providerId,
@@ -230,6 +251,29 @@ class GeminiAdapter {
                 message: err?.message || 'Unknown error occurred in GeminiAdapter',
                 provider: this.providerId
             });
+        }
+        finally {
+            try {
+                ledgerTransport_1.ledgerTransport.enqueue({
+                    provider_name: 'GEMINI',
+                    event_type: 'ai',
+                    user_id: (0, requestContext_1.getContextUserId)(),
+                    caller_feature: (0, requestContext_1.getContextCallerFeature)() || featureName,
+                    applied_rate: teleAppliedRate,
+                    currency: 'USD',
+                    success: teleSuccess,
+                    http_status: teleStatus,
+                    latency_ms: Math.max(0, Date.now() - startMs),
+                    is_retry: false,
+                    is_fallback: false,
+                    tokens_in: teleTokensIn,
+                    tokens_out: teleTokensOut,
+                    model_name: model
+                });
+            }
+            catch (teleErr) {
+                logger_1.winstonLogger.warn(`[TELEMETRY_RECORD_FAIL] Gemini: ${teleErr?.message}`);
+            }
         }
     }
     async generateText(prompt, options) {

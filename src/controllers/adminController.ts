@@ -15,6 +15,7 @@ import { adminIntelligenceV2Service } from '../services/adminIntelligenceV2Servi
 import { productionIncidentService } from '../services/productionIncidentService';
 import { signupIntelligenceService } from '../services/signupIntelligenceService';
 import { learningObservabilityService } from '../services/learningObservabilityService';
+import { ledgerAggregationService } from '../services/ledger/ledgerAggregationService';
 
 export function normalizeRouteStation(stn: string): string {
   if (!stn) return '';
@@ -2845,6 +2846,104 @@ export class AdminController {
       });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  /**
+   * FinOps Summary & Aggregation API
+   * GET /api/admin/finops/summary
+   * Phase: STEP 2D-PHASE 2.2
+   * Queries authoritative PostgreSQL RPC public.get_finops_overview via LedgerAggregationService
+   */
+  public async getFinOpsSummary(req: Request, res: Response): Promise<void> {
+    try {
+      const windowQuery = req.query.window;
+      const startQuery = req.query.start;
+      const endQuery = req.query.end;
+      const forceRefresh = String(req.query.forceRefresh || '').toLowerCase() === 'true';
+
+      // 1. Resolve and validate window parameter (default: '24h')
+      const windowStr = typeof windowQuery === 'string' ? windowQuery.trim().toLowerCase() : (windowQuery ? String(windowQuery) : '24h');
+      const validWindows = new Set(['24h', 'today', 'month', 'custom']);
+
+      if (!validWindows.has(windowStr)) {
+        res.status(400).json({
+          success: false,
+          error: "Invalid window parameter. Allowed values: '24h', 'today', 'month', 'custom'"
+        });
+        return;
+      }
+
+      const window = windowStr as '24h' | 'today' | 'month' | 'custom';
+      let startDateIso: string | undefined;
+      let endDateIso: string | undefined;
+
+      // 2. Validate custom window parameters
+      if (window === 'custom') {
+        if (!startQuery || typeof startQuery !== 'string' || startQuery.trim() === '') {
+          res.status(400).json({
+            success: false,
+            error: "Query parameter 'start' is required when window='custom'"
+          });
+          return;
+        }
+
+        if (!endQuery || typeof endQuery !== 'string' || endQuery.trim() === '') {
+          res.status(400).json({
+            success: false,
+            error: "Query parameter 'end' is required when window='custom'"
+          });
+          return;
+        }
+
+        const parsedStart = new Date(startQuery.trim());
+        if (isNaN(parsedStart.getTime())) {
+          res.status(400).json({
+            success: false,
+            error: "Invalid 'start' date format. Must be a valid ISO 8601 timestamp"
+          });
+          return;
+        }
+
+        const parsedEnd = new Date(endQuery.trim());
+        if (isNaN(parsedEnd.getTime())) {
+          res.status(400).json({
+            success: false,
+            error: "Invalid 'end' date format. Must be a valid ISO 8601 timestamp"
+          });
+          return;
+        }
+
+        if (parsedStart.getTime() >= parsedEnd.getTime()) {
+          res.status(400).json({
+            success: false,
+            error: "'start' timestamp must be strictly before 'end' timestamp"
+          });
+          return;
+        }
+
+        startDateIso = parsedStart.toISOString();
+        endDateIso = parsedEnd.toISOString();
+      }
+
+      // 3. Delegate to authoritative LedgerAggregationService
+      const overview = await ledgerAggregationService.getFinOpsOverview({
+        window,
+        startDate: startDateIso,
+        endDate: endDateIso,
+        forceRefresh
+      });
+
+      res.json({
+        success: true,
+        data: overview
+      });
+    } catch (err: any) {
+      winstonLogger.error(`[ADMIN_FINOPS_SUMMARY_ERROR] ${err.message}`);
+      res.status(500).json({
+        success: false,
+        error: err.message || 'Internal server error aggregating FinOps telemetry'
+      });
     }
   }
 }

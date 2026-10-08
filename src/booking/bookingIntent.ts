@@ -56,7 +56,7 @@ const VALID_QUOTAS: ReadonlySet<string> = new Set<Quota>([
 ]);
 
 const VALID_PROVIDERS: ReadonlySet<string> = new Set<ProviderId>([
-  'IRCTC', 'CONFIRMTKT', 'IXIGO', 'RAILYATRI', 'OFFICIAL_AGENT',
+  'IRCTC', 'IXIGO', 'OFFICIAL_AGENT',
   'FUTURE_BUS', 'FUTURE_FLIGHT', 'FUTURE_HOTEL'
 ]);
 

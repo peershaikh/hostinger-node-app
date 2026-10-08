@@ -345,16 +345,6 @@ class ProviderConfigService {
             if (k)
                 keys.push(k.trim());
         }
-        else if (nameUpper === 'RAILYATRI') {
-            const k = process.env.RAILYATRI_API_KEY || process.env.RAPIDAPI_KEY || '';
-            if (k)
-                keys.push(k.trim());
-        }
-        else if (nameUpper === 'CONFIRMTKT') {
-            const k = process.env.CONFIRMTKT_API_KEY || process.env.RAPIDAPI_KEY || '';
-            if (k)
-                keys.push(k.trim());
-        }
         if (keys.length === 0) {
             logger_1.winstonLogger.warn(`[PROVIDER_MISSING_KEY] No API key found for provider: ${providerName}`);
         }
@@ -381,13 +371,9 @@ class ProviderConfigService {
             cacheService_1.cacheService.del('provider_keys_IRCTC');
             cacheService_1.cacheService.del('provider_keys_RAPIDAPI');
             cacheService_1.cacheService.del('provider_keys_RAILRADAR');
-            cacheService_1.cacheService.del('provider_keys_RAILYATRI');
-            cacheService_1.cacheService.del('provider_keys_CONFIRMTKT');
             cacheService_1.cacheService.del('prov_enabled_IRCTC');
             cacheService_1.cacheService.del('prov_enabled_RAPIDAPI');
             cacheService_1.cacheService.del('prov_enabled_RAILRADAR');
-            cacheService_1.cacheService.del('prov_enabled_RAILYATRI');
-            cacheService_1.cacheService.del('prov_enabled_CONFIRMTKT');
             cacheService_1.cacheService.del('prov_enabled_DATABASE');
         }
     }
@@ -441,8 +427,6 @@ class ProviderConfigService {
         const defaultConfigs = [
             { provider_name: 'IRCTC', priority: 1, enabled: true, health_status: 'ACTIVE' },
             { provider_name: 'RAILRADAR', priority: 2, enabled: true, health_status: 'ACTIVE' },
-            { provider_name: 'CONFIRMTKT', priority: 3, enabled: true, health_status: 'ACTIVE' },
-            { provider_name: 'RAILYATRI', priority: 4, enabled: true, health_status: 'ACTIVE' },
             { provider_name: 'RAPIDAPI', priority: 5, enabled: false, health_status: 'DISABLED' },
             { provider_name: 'DATABASE', priority: 99, enabled: true, health_status: 'ACTIVE' },
         ];

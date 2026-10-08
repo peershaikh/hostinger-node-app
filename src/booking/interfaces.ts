@@ -19,7 +19,7 @@
  * All fields default false until the provider explicitly claims support.
  */
 export interface BookingCapabilities {
-  supportsRail:           boolean; // Train ticket booking (IRCTC, ConfirmTkt, ixigo, etc.)
+  supportsRail:           boolean; // Train ticket booking (IRCTC, ixigo, etc.)
   supportsBus:            boolean; // Bus ticket booking (future)
   supportsFlight:         boolean; // Flight ticket booking (future)
   supportsHotel:          boolean; // Hotel reservation (future)
@@ -49,9 +49,7 @@ export interface ProviderHealth {
 
 export type ProviderId =
   | 'IRCTC'
-  | 'CONFIRMTKT'
   | 'IXIGO'
-  | 'RAILYATRI'
   | 'OFFICIAL_AGENT'
   | 'FUTURE_BUS'
   | 'FUTURE_FLIGHT'

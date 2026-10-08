@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured } from '../config/supabase';
 import { winstonLogger } from '../middleware/logger';
 import { cacheService } from './cacheService';
+import { ledgerTransport } from './ledger/ledgerTransport';
 
 export const FALLBACK_RATES: Record<string, number> = {
   search: 0.005,
@@ -85,35 +86,24 @@ class RateService {
 
   /**
    * Log transaction details to the ledger table in a fail-safe async manner.
+   * Delegated to LedgerTransport for bounded async batching and disk spillover.
    */
   public async logTransaction(providerName: string, eventType: 'search' | 'split' | 'pnr' | 'live', userId: string | null): Promise<void> {
     try {
       const { costPerUnit, currency } = await this.getRate(providerName, eventType);
 
-      if (!isSupabaseConfigured()) {
-        // Local memory fallback log
-        winstonLogger.info(`[TRANSACTION_LEDGER_MOCK] Logged cost for ${providerName}/${eventType}: cost=${costPerUnit} ${currency} user=${userId}`);
-        return;
-      }
-
-      // Sanitization: If userId is not a valid UUID format and is not a test/guest string, format to null
-      const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      const cleanUserId = (userId && (UUID_REGEX.test(userId) || userId.startsWith('test-') || userId.startsWith('guest-'))) ? userId : null;
-
-      const { error } = await supabase.from('api_provider_transaction_ledger').insert({
-        provider_name: providerName.trim().toUpperCase(),
+      ledgerTransport.enqueue({
+        provider_name: providerName,
         event_type: eventType,
-        user_id: cleanUserId,
+        user_id: userId,
         applied_rate: costPerUnit,
-        currency: currency
+        currency: currency,
+        success: true,
+        caller_feature: 'rateService.logTransaction'
       });
-
-      if (error) {
-        throw error;
-      }
     } catch (err: any) {
       // Ledger insert failures can NEVER impact search/split/PNR/live status queries.
-      winstonLogger.error(`[TRANSACTION_LEDGER_ERROR] Failed to write API cost transaction: ${err.message}`);
+      winstonLogger.error(`[TRANSACTION_LEDGER_ERROR] Failed to enqueue API cost transaction: ${err.message}`);
     }
   }
 

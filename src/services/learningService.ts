@@ -2,7 +2,6 @@ import { isNoWriteMode, safeAppendFileSync, safeMkdirSync, safeWriteFileSync, su
 import { winstonLogger } from '../middleware/logger';
 import * as fs from 'fs';
 import * as path from 'path';
-import { rateService } from './rateService';
 
 // Local fallback if Supabase tables don't exist yet
 const DATA_DIR = path.join(__dirname, '../../data');
@@ -57,8 +56,6 @@ export class LearningService {
         winstonLogger.debug(`[SEARCH_LEARNING] Saved search ${source} -> ${destination}`);
       }
 
-      // Log transaction cost dynamically (fail-safe)
-      rateService.logTransaction('IRCTC', 'search', userId).catch(() => {});
     } catch (err: any) {
       winstonLogger.error(`[SEARCH_LEARNING] Error: ${err.message}`);
     }
@@ -99,8 +96,6 @@ export class LearningService {
         payload.bufferSurplusMinutes = transferMeta.bufferSurplusMinutes;
       }
 
-      // Log transaction cost dynamically (fail-safe)
-      rateService.logTransaction('IRCTC', 'split', null).catch(() => {});
 
       const { data, error } = await supabase.from('split_learning').insert([payload]).select('id').single();
       
@@ -149,8 +144,6 @@ export class LearningService {
         time_checked: new Date().toISOString()
       };
 
-      // Log transaction cost dynamically (fail-safe)
-      rateService.logTransaction('IRCTC', 'pnr', null).catch(() => {});
 
       const { error } = await supabase.from('pnr_learning').insert([payload]);
       
@@ -179,11 +172,6 @@ export class LearningService {
         actual_departure: actualDeparture
       };
 
-      // Log transaction cost dynamically (fail-safe)
-      const provider = (providerName || 'RAILRADAR').trim().toUpperCase();
-      if (provider !== 'DATABASE_SCHEDULE') {
-        rateService.logTransaction(provider, 'live', null).catch(() => {});
-      }
 
       const { error } = await supabase.from('live_learning').insert([payload]);
       

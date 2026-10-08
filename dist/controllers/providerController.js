@@ -89,12 +89,6 @@ const enrichProvider = (provider) => {
             else if (nameUpper === 'RAILRADAR') {
                 rawOrEncryptedKey = process.env.RAILRADAR_API_KEY || '';
             }
-            else if (nameUpper === 'CONFIRMTKT') {
-                rawOrEncryptedKey = process.env.CONFIRMTKT_API_KEY || process.env.RAPIDAPI_KEY || '';
-            }
-            else if (nameUpper === 'RAILYATRI') {
-                rawOrEncryptedKey = process.env.RAILYATRI_API_KEY || process.env.RAPIDAPI_KEY || '';
-            }
         }
     }
     const maskedKey = maskSecretKey(rawOrEncryptedKey);

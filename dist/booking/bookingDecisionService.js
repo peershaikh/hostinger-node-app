@@ -22,7 +22,7 @@
  *     • partnerRouter=false + not IRCTC    → excluded (conservative default)
  *
  *   Score factors (additive):
- *     • Priority score:   100 - (priority * 10)   → IRCTC=90, CONFIRMTKT=80, …
+ *     • Priority score:   100 - (priority * 10)   → IRCTC=90, IXIGO=70, …
  *     • Rescue flow:      +20 to IRCTC            → rescue always prefers official source
  *     • Split flow:       +10 to IRCTC            → multi-leg always prefers official source
  *     • Affiliate:        +15 to affiliate-capable → more revenue potential

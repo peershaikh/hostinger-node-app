@@ -5,7 +5,6 @@ import { isDayActive, normalizeRunningDays } from '../utils/dayUtils';
 import { cacheService } from './cacheService';
 import { irctcService } from './irctcService';
 import { railRadarService } from './railRadarService';
-import { confirmtktService } from './confirmtktService';
 import { rapidApiService } from './rapidApiService';
 import { stationService } from './stationService';
 import { geminiTrainScheduleService } from './geminiTrainScheduleService';

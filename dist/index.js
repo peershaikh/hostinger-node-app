@@ -134,6 +134,8 @@ app.use(csrfProtection_1.attachCsrfToken);
 app.use('/uploads', express_1.default.static(path_1.default.join(__dirname, '../public/uploads')));
 const authMiddleware_1 = require("./middleware/authMiddleware");
 app.use(authMiddleware_1.authMiddleware);
+const requestContext_1 = require("./middleware/requestContext");
+app.use(requestContext_1.requestContextMiddleware);
 app.use(universalInstrumentation_1.universalInstrumentationMiddleware);
 app.use(requestTiming_1.requestTimingMiddleware); // Lightweight structured timing
 global.SYSTEM_MODE = 'MODE_C';

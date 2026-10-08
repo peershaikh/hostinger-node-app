@@ -284,7 +284,6 @@ export class PartnerConversionService {
     // Provider Breakdown
     const providerStats: Record<string, { clicks: number; conversions: number; confirmed: number }> = {
       IRCTC: { clicks: 0, conversions: 0, confirmed: 0 },
-      CONFIRMTKT: { clicks: 0, conversions: 0, confirmed: 0 },
       IXIGO: { clicks: 0, conversions: 0, confirmed: 0 },
       MAKEMYTRIP: { clicks: 0, conversions: 0, confirmed: 0 },
     };
@@ -306,7 +305,7 @@ export class PartnerConversionService {
       const rate = stats.clicks > 0 ? Number(((stats.confirmed / stats.clicks) * 100).toFixed(1)) : 0;
       return {
         providerId,
-        displayName: providerId === 'IRCTC' ? 'IRCTC Official' : providerId === 'CONFIRMTKT' ? 'ConfirmTkt Fast' : providerId === 'IXIGO' ? 'Ixigo Trains' : 'MakeMyTrip Rail',
+        displayName: providerId === 'IRCTC' ? 'IRCTC Official' : providerId === 'IXIGO' ? 'Ixigo Trains' : 'MakeMyTrip Rail',
         clicks: stats.clicks,
         conversions: stats.conversions,
         confirmed: stats.confirmed,

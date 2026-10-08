@@ -339,12 +339,6 @@ export class ProviderConfigService {
     } else if (nameUpper === 'RAILRADAR') {
       const k = process.env.RAILRADAR_API_KEY || 'rg_1779d71c5040d3f2fc60f64be806085a';
       if (k) keys.push(k.trim());
-    } else if (nameUpper === 'RAILYATRI') {
-      const k = process.env.RAILYATRI_API_KEY || process.env.RAPIDAPI_KEY || '';
-      if (k) keys.push(k.trim());
-    } else if (nameUpper === 'CONFIRMTKT') {
-      const k = process.env.CONFIRMTKT_API_KEY || process.env.RAPIDAPI_KEY || '';
-      if (k) keys.push(k.trim());
     }
 
     if (keys.length === 0) {
@@ -375,13 +369,9 @@ export class ProviderConfigService {
       cacheService.del('provider_keys_IRCTC');
       cacheService.del('provider_keys_RAPIDAPI');
       cacheService.del('provider_keys_RAILRADAR');
-      cacheService.del('provider_keys_RAILYATRI');
-      cacheService.del('provider_keys_CONFIRMTKT');
       cacheService.del('prov_enabled_IRCTC');
       cacheService.del('prov_enabled_RAPIDAPI');
       cacheService.del('prov_enabled_RAILRADAR');
-      cacheService.del('prov_enabled_RAILYATRI');
-      cacheService.del('prov_enabled_CONFIRMTKT');
       cacheService.del('prov_enabled_DATABASE');
     }
   }
@@ -439,8 +429,6 @@ export class ProviderConfigService {
     const defaultConfigs = [
       { provider_name: 'IRCTC', priority: 1, enabled: true, health_status: 'ACTIVE' },
       { provider_name: 'RAILRADAR', priority: 2, enabled: true, health_status: 'ACTIVE' },
-      { provider_name: 'CONFIRMTKT', priority: 3, enabled: true, health_status: 'ACTIVE' },
-      { provider_name: 'RAILYATRI', priority: 4, enabled: true, health_status: 'ACTIVE' },
       { provider_name: 'RAPIDAPI', priority: 5, enabled: false, health_status: 'DISABLED' },
       { provider_name: 'DATABASE', priority: 99, enabled: true, health_status: 'ACTIVE' },
     ];

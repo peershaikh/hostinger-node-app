@@ -38,7 +38,6 @@ const supabase_1 = require("../config/supabase");
 const logger_1 = require("../middleware/logger");
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
-const rateService_1 = require("./rateService");
 // Local fallback if Supabase tables don't exist yet
 const DATA_DIR = path.join(__dirname, '../../data');
 if (!(0, supabase_1.isNoWriteMode)() && !fs.existsSync(DATA_DIR)) {
@@ -90,8 +89,6 @@ class LearningService {
             else {
                 logger_1.winstonLogger.debug(`[SEARCH_LEARNING] Saved search ${source} -> ${destination}`);
             }
-            // Log transaction cost dynamically (fail-safe)
-            rateService_1.rateService.logTransaction('IRCTC', 'search', userId).catch(() => { });
         }
         catch (err) {
             logger_1.winstonLogger.error(`[SEARCH_LEARNING] Error: ${err.message}`);
@@ -123,8 +120,6 @@ class LearningService {
                 payload.actualBufferMinutes = transferMeta.actualBufferMinutes;
                 payload.bufferSurplusMinutes = transferMeta.bufferSurplusMinutes;
             }
-            // Log transaction cost dynamically (fail-safe)
-            rateService_1.rateService.logTransaction('IRCTC', 'split', null).catch(() => { });
             const { data, error } = await supabase_1.supabase.from('split_learning').insert([payload]).select('id').single();
             if (error) {
                 if (error.code === 'PGRST205' || error.code === '42P01') {
@@ -172,8 +167,6 @@ class LearningService {
                 chart_prepared: chartPrepared,
                 time_checked: new Date().toISOString()
             };
-            // Log transaction cost dynamically (fail-safe)
-            rateService_1.rateService.logTransaction('IRCTC', 'pnr', null).catch(() => { });
             const { error } = await supabase_1.supabase.from('pnr_learning').insert([payload]);
             if (error) {
                 if (error.code === 'PGRST205' || error.code === '42P01') {
@@ -201,11 +194,6 @@ class LearningService {
                 actual_arrival: actualArrival,
                 actual_departure: actualDeparture
             };
-            // Log transaction cost dynamically (fail-safe)
-            const provider = (providerName || 'RAILRADAR').trim().toUpperCase();
-            if (provider !== 'DATABASE_SCHEDULE') {
-                rateService_1.rateService.logTransaction(provider, 'live', null).catch(() => { });
-            }
             const { error } = await supabase_1.supabase.from('live_learning').insert([payload]);
             if (error) {
                 if (error.code === 'PGRST205' || error.code === '42P01') {

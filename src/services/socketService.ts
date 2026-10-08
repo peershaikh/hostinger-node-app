@@ -212,9 +212,33 @@ class SocketService {
                         // Fetch fresh PNR data
                         const pnrData = await this.getPNRStatus(pnr);
                         if (pnrData) {
-                            await this.emitPNRUpdate(pnr, pnrData);
-                            // Cache the updated data
-                            cacheService.cachePNR(pnr, pnrData);
+                            try {
+                                const { normalizeRawPnr } = require('../utils/pnrNormalizer');
+                                const { stationService } = require('./stationService');
+                                const normalized = normalizeRawPnr(pnrData);
+                                const cleanData = {
+                                    pnr,
+                                    train_name: normalized.train_name,
+                                    train_no: normalized.train_no,
+                                    journey_date: normalized.journey_date,
+                                    source: await stationService.getStationName(normalized.source_code, normalized.source_name || 'N/A'),
+                                    destination: await stationService.getStationName(normalized.destination_code, normalized.destination_name || 'N/A'),
+                                    chart_status: normalized.chart_status,
+                                    boarding_station: normalized.boarding_station || 'N/A',
+                                    passengers: normalized.passengers,
+                                    class: normalized.class,
+                                    quota: normalized.quota
+                                };
+                                const cleanResponse = {
+                                    success: true,
+                                    data_source: 'live',
+                                    data: cleanData
+                                };
+                                await this.emitPNRUpdate(pnr, cleanData);
+                                cacheService.cachePNR(pnr, cleanResponse);
+                            } catch (normErr: any) {
+                                winstonLogger.warn(`[SOCKET_PNR_NORM_ERROR] ${pnr}: ${normErr.message}`);
+                            }
                         }
                     } catch (error) {
                         winstonLogger.error(`[SOCKET_PNR_UPDATE_ERROR] ${pnr}: ${error}`);

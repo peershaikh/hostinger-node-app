@@ -10,8 +10,6 @@
 import { winstonLogger } from '../middleware/logger';
 import { irctcService } from './irctcService';
 import { railRadarService } from './railRadarService';
-import { confirmtktService } from './confirmtktService';
-import { railyatriService } from './railyatriService';
 import { rapidApiService } from './rapidApiService';
 import { dbService } from './dbService';
 import { providerConfigService } from './providerConfigService';
@@ -220,103 +218,7 @@ export class RailRadarAdapter implements RailProvider {
   }
 }
 
-// ─── 3. CONFIRMTKT ADAPTER ─────────────────────────────────────────────────────
-export class ConfirmTktAdapter implements RailProvider {
-  public readonly providerId = 'CONFIRMTKT';
-  public readonly displayName = 'ConfirmTkt Live Running Status';
-  public readonly capabilities: Readonly<ProviderCapabilities> = {
-    search: false,
-    availability: false,
-    liveTracking: true,
-    pnr: false,
-    schedule: false
-  };
-
-  async searchTrains(params: SearchParams): Promise<any[]> {
-    throw new UnsupportedCapabilityError(this.providerId, 'search');
-  }
-
-  async checkAvailability(params: AvailabilityParams): Promise<any> {
-    throw new UnsupportedCapabilityError(this.providerId, 'availability');
-  }
-
-  async getLiveStatus(params: LiveStatusParams): Promise<any> {
-    return confirmtktService.getTrainStatus(params.trainNo, params.date);
-  }
-
-  async getPNRStatus(params: PNRParams): Promise<any> {
-    throw new UnsupportedCapabilityError(this.providerId, 'pnr');
-  }
-
-  async getTrainSchedule(params: ScheduleParams): Promise<any> {
-    throw new UnsupportedCapabilityError(this.providerId, 'schedule');
-  }
-
-  async healthCheck(): Promise<HealthCheckResult> {
-    const start = Date.now();
-    try {
-      const guard = await providerConfigService.isProviderEnabled('CONFIRMTKT');
-      return mapGuardToHealthStatus(guard, Date.now() - start);
-    } catch (e: any) {
-      return {
-        status: 'UNAVAILABLE',
-        latencyMs: Date.now() - start,
-        message: e.message,
-        timestamp: new Date().toISOString()
-      };
-    }
-  }
-}
-
-// ─── 4. RAILYATRI ADAPTER ──────────────────────────────────────────────────────
-export class RailYatriAdapter implements RailProvider {
-  public readonly providerId = 'RAILYATRI';
-  public readonly displayName = 'RailYatri Live Running Status';
-  public readonly capabilities: Readonly<ProviderCapabilities> = {
-    search: false,
-    availability: false,
-    liveTracking: true,
-    pnr: false,
-    schedule: false
-  };
-
-  async searchTrains(params: SearchParams): Promise<any[]> {
-    throw new UnsupportedCapabilityError(this.providerId, 'search');
-  }
-
-  async checkAvailability(params: AvailabilityParams): Promise<any> {
-    throw new UnsupportedCapabilityError(this.providerId, 'availability');
-  }
-
-  async getLiveStatus(params: LiveStatusParams): Promise<any> {
-    return railyatriService.getTrainStatus(params.trainNo, params.date);
-  }
-
-  async getPNRStatus(params: PNRParams): Promise<any> {
-    throw new UnsupportedCapabilityError(this.providerId, 'pnr');
-  }
-
-  async getTrainSchedule(params: ScheduleParams): Promise<any> {
-    throw new UnsupportedCapabilityError(this.providerId, 'schedule');
-  }
-
-  async healthCheck(): Promise<HealthCheckResult> {
-    const start = Date.now();
-    try {
-      const guard = await providerConfigService.isProviderEnabled('RAILYATRI');
-      return mapGuardToHealthStatus(guard, Date.now() - start);
-    } catch (e: any) {
-      return {
-        status: 'UNAVAILABLE',
-        latencyMs: Date.now() - start,
-        message: e.message,
-        timestamp: new Date().toISOString()
-      };
-    }
-  }
-}
-
-// ─── 5. RAPIDAPI ADAPTER (Disabled) ────────────────────────────────────────────
+// ─── 3. RAPIDAPI ADAPTER (Disabled) ────────────────────────────────────────────
 export class RapidApiAdapter implements RailProvider {
   public readonly providerId = 'RAPIDAPI';
   public readonly displayName = 'RapidAPI Legacy Gateway';
@@ -419,8 +321,6 @@ export class RailProviderRegistry {
   constructor() {
     this.register(new IRCTCAdapter());
     this.register(new RailRadarAdapter());
-    this.register(new ConfirmTktAdapter());
-    this.register(new RailYatriAdapter());
     this.register(new RapidApiAdapter());
     this.register(new DatabaseScheduleAdapter());
   }

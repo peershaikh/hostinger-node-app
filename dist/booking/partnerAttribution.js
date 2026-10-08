@@ -22,9 +22,7 @@ const featureFlags_1 = require("../config/featureFlags");
 // These are advisory defaults; the partner may override via affiliateId config.
 const UTM_SOURCE_MAP = {
     IRCTC: 'irctc',
-    CONFIRMTKT: 'confirmtkt',
     IXIGO: 'ixigo',
-    RAILYATRI: 'railyatri',
     OFFICIAL_AGENT: 'trayago_agent',
     FUTURE_BUS: 'trayago_bus',
     FUTURE_FLIGHT: 'trayago_flight',

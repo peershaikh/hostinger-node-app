@@ -68,7 +68,6 @@ class DailyHealthReportJob {
                 IRCTC: status.providers.IRCTC,
                 RapidAPI: status.providers.RapidAPI,
                 RailRadar: status.providers.RailRadar,
-                ConfirmTkt: status.providers.ConfirmTkt,
             },
             event_pipeline: {
                 events_received: eventStats.events_received,
@@ -141,7 +140,6 @@ class DailyHealthReportJob {
       <tr><td style="padding:8px;border:1px solid #ddd;">IRCTC</td><td style="padding:8px;border:1px solid #ddd;color:${digestPayload.providers.IRCTC.status === 'ONLINE' ? 'green' : 'red'};font-weight:bold;">${digestPayload.providers.IRCTC.status}</td><td style="padding:8px;border:1px solid #ddd;">${digestPayload.providers.IRCTC.success_rate_percent}%</td><td style="padding:8px;border:1px solid #ddd;">${digestPayload.providers.IRCTC.avg_latency_ms}ms</td></tr>
       <tr><td style="padding:8px;border:1px solid #ddd;">RapidAPI</td><td style="padding:8px;border:1px solid #ddd;color:${digestPayload.providers.RapidAPI.status === 'ONLINE' ? 'green' : 'red'};font-weight:bold;">${digestPayload.providers.RapidAPI.status}</td><td style="padding:8px;border:1px solid #ddd;">${digestPayload.providers.RapidAPI.success_rate_percent}%</td><td style="padding:8px;border:1px solid #ddd;">${digestPayload.providers.RapidAPI.avg_latency_ms}ms</td></tr>
       <tr><td style="padding:8px;border:1px solid #ddd;">RailRadar</td><td style="padding:8px;border:1px solid #ddd;color:${digestPayload.providers.RailRadar.status === 'ONLINE' ? 'green' : 'red'};font-weight:bold;">${digestPayload.providers.RailRadar.status}</td><td style="padding:8px;border:1px solid #ddd;">${digestPayload.providers.RailRadar.success_rate_percent}%</td><td style="padding:8px;border:1px solid #ddd;">${digestPayload.providers.RailRadar.avg_latency_ms}ms</td></tr>
-      <tr><td style="padding:8px;border:1px solid #ddd;">ConfirmTkt</td><td style="padding:8px;border:1px solid #ddd;color:${digestPayload.providers.ConfirmTkt.status === 'ONLINE' ? 'green' : 'red'};font-weight:bold;">${digestPayload.providers.ConfirmTkt.status}</td><td style="padding:8px;border:1px solid #ddd;">${digestPayload.providers.ConfirmTkt.success_rate_percent}%</td><td style="padding:8px;border:1px solid #ddd;">${digestPayload.providers.ConfirmTkt.avg_latency_ms}ms</td></tr>
     </table>
 
     <h3 style="color:#374151;">4. Event Pipeline</h3>

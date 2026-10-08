@@ -21,6 +21,7 @@ const adminIntelligenceV2Service_1 = require("../services/adminIntelligenceV2Ser
 const productionIncidentService_1 = require("../services/productionIncidentService");
 const signupIntelligenceService_1 = require("../services/signupIntelligenceService");
 const learningObservabilityService_1 = require("../services/learningObservabilityService");
+const ledgerAggregationService_1 = require("../services/ledger/ledgerAggregationService");
 function normalizeRouteStation(stn) {
     if (!stn)
         return '';
@@ -1462,8 +1463,7 @@ class AdminController {
     // ─── Real-time Live Pulse & Pulse Activity Ticker (Phase 1) ───────────────
     async getAdminLivePulse(req, res) {
         try {
-            const now = new Date();
-            const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+            const startOfDay = learningService_1.learningService.getStartOfTodayIso('Asia/Kolkata');
             let todayPaidCount = 0;
             let todayRevenue = 0;
             let latestPurchases = [];
@@ -1697,9 +1697,37 @@ class AdminController {
                         .from('search_popularity')
                         .select('source, destination, count, last_searched_at')
                         .order('count', { ascending: false })
-                        .limit(20);
+                        .limit(100);
                     if (popData && popData.length > 0) {
-                        topRoutes = popData;
+                        const routeMap = new Map();
+                        for (const r of popData) {
+                            if (!r.source || !r.destination)
+                                continue;
+                            const src = normalizeRouteStation(r.source);
+                            const dst = normalizeRouteStation(r.destination);
+                            if (!src || !dst || src === dst)
+                                continue;
+                            const key = `${src}->${dst}`;
+                            const countVal = Number(r.count) || 1;
+                            const existing = routeMap.get(key);
+                            if (existing) {
+                                existing.count += countVal;
+                                if (r.last_searched_at && (!existing.last_searched_at || new Date(r.last_searched_at) > new Date(existing.last_searched_at))) {
+                                    existing.last_searched_at = r.last_searched_at;
+                                }
+                            }
+                            else {
+                                routeMap.set(key, {
+                                    source: src,
+                                    destination: dst,
+                                    count: countVal,
+                                    last_searched_at: r.last_searched_at || new Date().toISOString()
+                                });
+                            }
+                        }
+                        topRoutes = Array.from(routeMap.values())
+                            .sort((a, b) => b.count - a.count)
+                            .slice(0, 20);
                     }
                     else {
                         const { data: histData } = await supabase_1.supabase
@@ -2694,6 +2722,93 @@ class AdminController {
         }
         catch (err) {
             res.status(500).json({ success: false, error: err.message });
+        }
+    }
+    /**
+     * FinOps Summary & Aggregation API
+     * GET /api/admin/finops/summary
+     * Phase: STEP 2D-PHASE 2.2
+     * Queries authoritative PostgreSQL RPC public.get_finops_overview via LedgerAggregationService
+     */
+    async getFinOpsSummary(req, res) {
+        try {
+            const windowQuery = req.query.window;
+            const startQuery = req.query.start;
+            const endQuery = req.query.end;
+            const forceRefresh = String(req.query.forceRefresh || '').toLowerCase() === 'true';
+            // 1. Resolve and validate window parameter (default: '24h')
+            const windowStr = typeof windowQuery === 'string' ? windowQuery.trim().toLowerCase() : (windowQuery ? String(windowQuery) : '24h');
+            const validWindows = new Set(['24h', 'today', 'month', 'custom']);
+            if (!validWindows.has(windowStr)) {
+                res.status(400).json({
+                    success: false,
+                    error: "Invalid window parameter. Allowed values: '24h', 'today', 'month', 'custom'"
+                });
+                return;
+            }
+            const window = windowStr;
+            let startDateIso;
+            let endDateIso;
+            // 2. Validate custom window parameters
+            if (window === 'custom') {
+                if (!startQuery || typeof startQuery !== 'string' || startQuery.trim() === '') {
+                    res.status(400).json({
+                        success: false,
+                        error: "Query parameter 'start' is required when window='custom'"
+                    });
+                    return;
+                }
+                if (!endQuery || typeof endQuery !== 'string' || endQuery.trim() === '') {
+                    res.status(400).json({
+                        success: false,
+                        error: "Query parameter 'end' is required when window='custom'"
+                    });
+                    return;
+                }
+                const parsedStart = new Date(startQuery.trim());
+                if (isNaN(parsedStart.getTime())) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Invalid 'start' date format. Must be a valid ISO 8601 timestamp"
+                    });
+                    return;
+                }
+                const parsedEnd = new Date(endQuery.trim());
+                if (isNaN(parsedEnd.getTime())) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Invalid 'end' date format. Must be a valid ISO 8601 timestamp"
+                    });
+                    return;
+                }
+                if (parsedStart.getTime() >= parsedEnd.getTime()) {
+                    res.status(400).json({
+                        success: false,
+                        error: "'start' timestamp must be strictly before 'end' timestamp"
+                    });
+                    return;
+                }
+                startDateIso = parsedStart.toISOString();
+                endDateIso = parsedEnd.toISOString();
+            }
+            // 3. Delegate to authoritative LedgerAggregationService
+            const overview = await ledgerAggregationService_1.ledgerAggregationService.getFinOpsOverview({
+                window,
+                startDate: startDateIso,
+                endDate: endDateIso,
+                forceRefresh
+            });
+            res.json({
+                success: true,
+                data: overview
+            });
+        }
+        catch (err) {
+            logger_1.winstonLogger.error(`[ADMIN_FINOPS_SUMMARY_ERROR] ${err.message}`);
+            res.status(500).json({
+                success: false,
+                error: err.message || 'Internal server error aggregating FinOps telemetry'
+            });
         }
     }
 }
