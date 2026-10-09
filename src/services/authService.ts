@@ -11,6 +11,7 @@ import { userCache } from '../cache/userCache';
 import { quotaRepository } from '../repositories/quotaRepository';
 import { cacheService } from './cacheService';
 import { betaService } from './betaService';
+import { normalizeIndianPhoneNumber, maskPhoneNumber } from '../utils/phoneNormalizer';
 
 const USERS_FILE = path.join(__dirname, '../../data/users.json');
 const GUESTS_FILE = path.join(__dirname, '../../data/guests.json');
@@ -90,7 +91,7 @@ export class AuthService {
   private guests: GuestUsage[] = [];
   private otps: Record<string, { otp: string; expiresAt: number }> = {};
   private passwordResetOtps: Record<string, { otp: string; expiresAt: number }> = {};
-  private mobileOtps: Record<string, { otp: string; mobileNumber: string; expiresAt: number; attempts: number }> = {};
+  private mobileOtps: Record<string, { otpHash: string; mobileNumber: string; expiresAt: number; attempts: number; lastSentAt: number }> = {};
 
   // PHASE_4C759 Fix #3 (P1-AUTH-001): OTP Rate Limiting
   private otpRateLimits: Map<string, { count: number; resetAt: number }> = new Map();
@@ -932,7 +933,7 @@ export class AuthService {
       tokenVersion: 1,
       sessionEpoch: 1,
       fullName: fullName || '',
-      mobileNumber: mobileNumber || '',
+      mobileNumber: mobileNumber ? (normalizeIndianPhoneNumber(mobileNumber) || mobileNumber) : '',
       dob: dob || '',
       deviceType: deviceMeta?.deviceType || (deviceId?.startsWith('dev_') ? 'desktop' : 'mobile'),
       platform: deviceMeta?.platform || 'Unknown',
@@ -2095,8 +2096,9 @@ export class AuthService {
     }
 
     if (updates.mobileNumber !== undefined) {
-      if (updates.mobileNumber !== user.mobileNumber) {
-        user.mobileNumber = updates.mobileNumber;
+      const targetNumber = updates.mobileNumber ? (normalizeIndianPhoneNumber(updates.mobileNumber) || updates.mobileNumber) : '';
+      if (targetNumber !== user.mobileNumber) {
+        user.mobileNumber = targetNumber;
         user.mobileVerified = false;
         user.mobileVerificationMethod = null;
         user.mobileVerifiedAt = null;
@@ -2126,26 +2128,79 @@ export class AuthService {
     return user;
   }
 
+  private hashOtp(userId: string, otp: string): string {
+    const salt = process.env.JWT_SECRET || 'trayago_otp_secure_salt';
+    return crypto.createHash('sha256').update(`${userId}:${otp.trim()}:${salt}`).digest('hex');
+  }
+
   public async sendMobileOtp(userId: string, mobileNumber: string): Promise<boolean> {
     const user = await this.getUserById(userId);
     if (!user) throw new Error('User not found');
     
-    // Check if mobile number is already verified on another account
-    const existing = this.users.find(u => u.mobileNumber === mobileNumber && u.mobileVerified && u.id !== userId);
-    if (existing) throw new Error('Mobile number already verified on another account');
+    // Normalize to canonical E.164 (+91XXXXXXXXXX)
+    const normalizedMobile = normalizeIndianPhoneNumber(mobileNumber);
+    if (!normalizedMobile) {
+      throw new Error('Invalid Indian mobile number format');
+    }
 
-    // Generate 6-digit OTP code
+    const now = Date.now();
+
+    // 1. Resend cooldown (60 seconds)
+    const existingRecord = this.mobileOtps[userId];
+    const COOLDOWN_MS = 60 * 1000;
+    if (existingRecord && now - existingRecord.lastSentAt < COOLDOWN_MS) {
+      const secondsLeft = Math.ceil((COOLDOWN_MS - (now - existingRecord.lastSentAt)) / 1000);
+      throw new Error(`Please wait ${secondsLeft} second(s) before requesting another OTP.`);
+    }
+
+    // 2. Hourly rate limit per user (max 5 requests per hour), reusing this.otpRateLimits
+    const rateLimitKey = `mobile_otp:${userId}`;
+    let rateLimit = this.otpRateLimits.get(rateLimitKey);
+    if (!rateLimit || now > rateLimit.resetAt) {
+      rateLimit = {
+        count: 0,
+        resetAt: now + this.OTP_LIMIT_WINDOW_MS // 1 hour
+      };
+      this.otpRateLimits.set(rateLimitKey, rateLimit);
+    }
+    const MAX_HOURLY_MOBILE_OTP = 5;
+    if (rateLimit.count >= MAX_HOURLY_MOBILE_OTP) {
+      const minutesLeft = Math.ceil((rateLimit.resetAt - now) / 60000);
+      throw new Error(`Too many OTP requests. Please try again in ${minutesLeft} minute(s).`);
+    }
+
+    // 3. Check if mobile number is already verified on another account (checking normalized forms)
+    const existing = this.users.find(u => {
+      if (!u.mobileVerified || u.id === userId || !u.mobileNumber) return false;
+      const uNorm = normalizeIndianPhoneNumber(u.mobileNumber);
+      return uNorm === normalizedMobile || u.mobileNumber === normalizedMobile;
+    });
+    if (existing) {
+      throw new Error('Mobile number already verified on another account');
+    }
+
+    // 4. Generate 6-digit OTP code & store ONLY cryptographic hash
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpHash = this.hashOtp(userId, otp);
+
     this.mobileOtps[userId] = {
-      otp,
-      mobileNumber,
-      expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes expiry
-      attempts: 0
+      otpHash,
+      mobileNumber: normalizedMobile,
+      expiresAt: now + 5 * 60 * 1000, // 5 minutes expiry
+      attempts: 0,
+      lastSentAt: now
     };
 
+    rateLimit.count++;
+
+    // 5. Dispatch via SMS service (SMS service will NOT log plaintext OTP)
     const { smsService } = await import('./smsService');
-    const sent = await smsService.sendSmsOtp(mobileNumber, otp);
-    if (!sent) throw new Error('Failed to send SMS OTP. Please try again.');
+    const sent = await smsService.sendSmsOtp(normalizedMobile, otp);
+    if (!sent) {
+      throw new Error('Failed to send SMS OTP. Please try again.');
+    }
+
+    winstonLogger.info(`[MOBILE_OTP] Dispatched OTP to ${maskPhoneNumber(normalizedMobile)} for user ${userId}. Expiry: 5m.`);
     return true;
   }
 
@@ -2156,7 +2211,8 @@ export class AuthService {
     const record = this.mobileOtps[userId];
     if (!record) throw new Error('No OTP sent for this user');
 
-    if (Date.now() > record.expiresAt) {
+    const now = Date.now();
+    if (now > record.expiresAt) {
       delete this.mobileOtps[userId];
       throw new Error('OTP has expired. Please request a new one.');
     }
@@ -2167,17 +2223,24 @@ export class AuthService {
       throw new Error('Too many failed attempts. Please request a new OTP.');
     }
 
-    if (record.otp !== otpCode) {
+    // Verify hash securely using timingSafeEqual
+    const computedHash = this.hashOtp(userId, otpCode.trim());
+    const hashMatches = crypto.timingSafeEqual(
+      Buffer.from(record.otpHash, 'hex'),
+      Buffer.from(computedHash, 'hex')
+    );
+
+    if (!hashMatches) {
       throw new Error('Invalid verification code');
     }
 
-    // Success! Update user status
+    // Success! Update user status with canonical E.164 mobile number
     user.mobileNumber = record.mobileNumber;
     user.mobileVerified = true;
     user.mobileVerificationMethod = 'SMS';
     user.mobileVerifiedAt = new Date().toISOString();
 
-    // Consume OTP
+    // Consume OTP immediately
     delete this.mobileOtps[userId];
 
     // Sync to Supabase & save locally
@@ -2197,7 +2260,15 @@ export class AuthService {
     
     this.updateLocalUser(user);
     this.saveUsers();
+    winstonLogger.info(`[MOBILE_OTP] Successfully verified mobile for user ${userId} (${maskPhoneNumber(user.mobileNumber)}).`);
     return true;
+  }
+
+  /**
+   * Internal test helper for inspecting OTP record state in tests without exposing plaintext OTP.
+   */
+  public _getMobileOtpRecordForTest(userId: string) {
+    return this.mobileOtps[userId];
   }
 
   private sanitizeUser(user: User) {

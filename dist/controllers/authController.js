@@ -50,6 +50,7 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const deviceDetector_1 = require("../utils/deviceDetector");
 const analyticsService_1 = require("../services/analyticsService");
 const states_1 = require("../constants/states");
+const phoneNormalizer_1 = require("../utils/phoneNormalizer");
 // PHASE_5B142 Fix: on localhost (http) browsers require secure:false for cookies.
 // secure:true + sameSite:none is correct for production cross-domain (www → app),
 // but httpOnly cookies with secure:true are silently dropped on http:// in Safari
@@ -130,10 +131,13 @@ class AuthController {
                         return res.status(400).json({ success: false, error: 'Full name must be at least 2 characters and contain letters only' });
                     }
                 }
+                let validatedMobile = undefined;
                 if (mobileNumber !== undefined && mobileNumber !== '') {
-                    if (typeof mobileNumber !== 'string' || !/^(?:\+91|91)?[6-9]\d{9}$/.test(mobileNumber)) {
+                    const normalized = (0, phoneNormalizer_1.normalizeIndianPhoneNumber)(mobileNumber);
+                    if (!normalized) {
                         return res.status(400).json({ success: false, error: 'Invalid mobile number format' });
                     }
+                    validatedMobile = normalized;
                 }
                 if (dob !== undefined && dob !== '') {
                     if (typeof dob !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
@@ -162,7 +166,7 @@ class AuthController {
                     }
                 }
                 const deviceMeta = (0, deviceDetector_1.detectDeviceAndGeo)(req);
-                const result = await authService_1.authService.signup(email, password, referralCode, deviceId, otp, fullName, mobileNumber, dob, deviceMeta, validatedState);
+                const result = await authService_1.authService.signup(email, password, referralCode, deviceId, otp, fullName, validatedMobile, dob, deviceMeta, validatedState);
                 // Track signup event asynchronously
                 analyticsService_1.analyticsService.trackEvent('USER_SIGNUP', null, {
                     userId: result.user.id,
@@ -568,10 +572,16 @@ class AuthController {
                         return res.status(400).json({ success: false, error: 'Invalid date of birth' });
                     }
                 }
+                let validatedMobile = undefined;
                 if (mobileNumber !== undefined && mobileNumber !== '') {
-                    if (typeof mobileNumber !== 'string' || !/^(?:\+91|91)?[6-9]\d{9}$/.test(mobileNumber)) {
+                    const normalized = (0, phoneNormalizer_1.normalizeIndianPhoneNumber)(mobileNumber);
+                    if (!normalized) {
                         return res.status(400).json({ success: false, error: 'Invalid Indian mobile number format' });
                     }
+                    validatedMobile = normalized;
+                }
+                else if (mobileNumber === '') {
+                    validatedMobile = '';
                 }
                 let validatedState = undefined;
                 if (state !== undefined && state !== '') {
@@ -580,13 +590,13 @@ class AuthController {
                     }
                     validatedState = (0, states_1.normalizeRegion)(state);
                 }
-                const updatedUser = await authService_1.authService.updateUserProfile(userId, { fullName, dob, preferences, mobileNumber, state: validatedState });
+                const updatedUser = await authService_1.authService.updateUserProfile(userId, { fullName, dob, preferences, mobileNumber: validatedMobile, state: validatedState });
                 // Calculate new completion score
                 let score = 40;
                 if (updatedUser.fullName && updatedUser.fullName.trim().length >= 2 && /^[a-zA-Z\s]+$/.test(updatedUser.fullName)) {
                     score += 20;
                 }
-                if (updatedUser.mobileNumber && /^(?:\+91|91)?[6-9]\d{9}$/.test(updatedUser.mobileNumber)) {
+                if (updatedUser.mobileNumber && (0, phoneNormalizer_1.normalizeIndianPhoneNumber)(updatedUser.mobileNumber)) {
                     score += 20;
                 }
                 if (updatedUser.dob && !isNaN(Date.parse(updatedUser.dob)) && new Date(updatedUser.dob) < new Date()) {
@@ -612,10 +622,11 @@ class AuthController {
                 if (!mobileNumber) {
                     return res.status(400).json({ success: false, error: 'Mobile number is required' });
                 }
-                if (!/^(?:\+91|91)?[6-9]\d{9}$/.test(mobileNumber)) {
+                const normalizedMobile = (0, phoneNormalizer_1.normalizeIndianPhoneNumber)(mobileNumber);
+                if (!normalizedMobile) {
                     return res.status(400).json({ success: false, error: 'Invalid Indian mobile number format' });
                 }
-                await authService_1.authService.sendMobileOtp(userId, mobileNumber);
+                await authService_1.authService.sendMobileOtp(userId, normalizedMobile);
                 return res.json({
                     success: true,
                     message: 'OTP sent to mobile successfully'
@@ -632,10 +643,10 @@ class AuthController {
                     return res.status(401).json({ success: false, error: 'Unauthorized' });
                 }
                 const { otpCode } = req.body;
-                if (!otpCode) {
+                if (!otpCode || typeof otpCode !== 'string' || !/^\d{6}$/.test(otpCode.trim())) {
                     return res.status(400).json({ success: false, error: 'Verification code is required' });
                 }
-                await authService_1.authService.verifyMobileOtp(userId, otpCode);
+                await authService_1.authService.verifyMobileOtp(userId, otpCode.trim());
                 // Fetch updated user to return latest status
                 const updatedUser = await authService_1.authService.getUserById(userId);
                 let score = 40;
@@ -643,7 +654,7 @@ class AuthController {
                     if (updatedUser.fullName && updatedUser.fullName.trim().length >= 2 && /^[a-zA-Z\s]+$/.test(updatedUser.fullName)) {
                         score += 20;
                     }
-                    if (updatedUser.mobileNumber && /^(?:\+91|91)?[6-9]\d{9}$/.test(updatedUser.mobileNumber)) {
+                    if (updatedUser.mobileNumber && (0, phoneNormalizer_1.normalizeIndianPhoneNumber)(updatedUser.mobileNumber)) {
                         score += 20;
                     }
                     if (updatedUser.dob && !isNaN(Date.parse(updatedUser.dob)) && new Date(updatedUser.dob) < new Date()) {

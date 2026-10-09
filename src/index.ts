@@ -33,6 +33,7 @@ import pnrRoutes from './routes/pnr';
 import referralRoutes from './routes/referrals';
 import stationRoutes from './routes/stations';
 import trainRoutes from './routes/trains';
+import whatsappRoutes from './routes/whatsapp';
 
 
 import { trainController } from './controllers/trainController';
@@ -82,8 +83,8 @@ app.use(cors({
   origin: corsOriginValidator, // PHASE_4C849: strict per-request whitelist
   credentials: true
 }));
-// Payment Gateway Webhooks need exact raw string for HMAC signature verification
-app.use(['/api/payments/webhook', '/payments/webhook'], (req: any, _res, next) => {
+// Payment & WhatsApp Gateway Webhooks need exact raw string for HMAC signature verification
+app.use(['/api/payments/webhook', '/payments/webhook', '/api/whatsapp/webhook', '/whatsapp/webhook'], (req: any, _res, next) => {
   const chunks: Buffer[] = [];
   req.on('data', (chunk: Buffer) => {
     chunks.push(chunk);
@@ -219,6 +220,7 @@ app.use('/api/content', contentRoutes);
 app.use('/api/beta', betaRoutes);
 app.use('/api/alarms', alarmRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/whatsapp', whatsappRoutes);
 
 // PHASE_4C971 PROXY FIX: Mirror all routes WITHOUT /api/ prefix.
 // Next.js rewrite: source=/api/:path* → destination=https://api.trayago.in/:path*
@@ -239,6 +241,7 @@ app.use('/content', contentRoutes);
 app.use('/beta', betaRoutes);
 app.use('/alarms', alarmRoutes);
 app.use('/ai', aiRoutes);
+app.use('/whatsapp', whatsappRoutes);
 
 // Live train endpoint — both prefixed and un-prefixed
 app.get('/api/live-train/:trainNo', liveLimiter, usageMiddleware('live'), trainController.getLiveStatus);

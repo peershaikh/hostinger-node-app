@@ -6,8 +6,11 @@ import { emailService } from '../services/emailService';
 import { pushService } from '../services/pushService';
 import * as firebaseService from '../services/firebaseService';
 import { decryptToken } from '../controllers/notificationController';
+import { featureFlags } from '../config/featureFlags';
+import { whatsAppService } from '../services/whatsappService';
+import { normalizeIndianPhoneNumber } from '../utils/phoneNormalizer';
 
-const MEMORY_RETRY_QUEUE = new Map<string, { alert: any, retries: number, nextRetryAt: number }>();
+export const MEMORY_RETRY_QUEUE = new Map<string, { alert: any, retries: number, nextRetryAt: number }>();
 
 export class AlertDispatcher {
   private isProcessing = false;
@@ -29,7 +32,7 @@ export class AlertDispatcher {
     });
   }
 
-  private async processPendingAlerts() {
+  public async processPendingAlerts() {
     // 1. Fetch pending alerts
     const { data: alerts, error: fetchErr } = await supabase
       .from('smart_alerts')
@@ -61,21 +64,29 @@ export class AlertDispatcher {
 
       try {
         let userEmail: string | null = null;
+        let userPhone: string | null = null;
         
         if (alert.user_id) {
-          const { data: userData } = await supabase.from('users').select('email').eq('id', alert.user_id).single();
+          const { data: userData } = await supabase
+            .from('users')
+            .select('email, mobile_number')
+            .eq('id', alert.user_id)
+            .single();
           if (userData) {
             userEmail = userData.email;
+            userPhone = userData.mobile_number || (userData as any).phone || null;
           }
         }
         
         const metadata = alert.metadata || {};
         userEmail = userEmail || metadata.email || null;
+        userPhone = userPhone || metadata.mobile_number || metadata.phone || null;
         const title = metadata.title || `Trayago: ${alert.alert_type} Alert`;
         const message = metadata.message || 'You have a new update regarding your train journey.';
 
         // 2. Validate preferences (skip if disabled)
         let isCategoryEnabled = true;
+        let whatsappAlertsEnabled = true;
         if (alert.user_id) {
           const { data: prefs, error: prefsErr } = await supabase
             .from('user_notification_preferences')
@@ -90,6 +101,9 @@ export class AlertDispatcher {
               isCategoryEnabled = false;
             } else if (alert.alert_type === 'PLATFORM_CHANGE' && !prefs.platform_alerts_enabled) {
               isCategoryEnabled = false;
+            }
+            if (prefs.whatsapp_alerts_enabled === false) {
+              whatsappAlertsEnabled = false;
             }
           }
         }
@@ -187,6 +201,48 @@ export class AlertDispatcher {
           winstonLogger.info(`[ALERT_DISPATCHER] FCM delivery unavailable. Falling back to OneSignal for user: ${alert.user_id}`);
           const pushSent = await pushService.sendToUsers([alert.user_id], title, message);
           if (pushSent) delivered = true;
+        }
+
+        // 6A. Dispatch via WhatsApp (additive channel)
+        if (featureFlags.whatsappService && featureFlags.whatsappSmartAlerts) {
+          if (!whatsappAlertsEnabled) {
+            winstonLogger.info(`[ALERT_DISPATCHER] WhatsApp dispatch skipped for alert ${alert.id}: user preference disabled.`);
+          } else {
+            const validPhone = normalizeIndianPhoneNumber(userPhone);
+            if (!validPhone) {
+              winstonLogger.info(`[ALERT_DISPATCHER] WhatsApp dispatch skipped for alert ${alert.id}: missing or invalid mobile number.`);
+            } else {
+              try {
+                const templateData: Record<string, string> = {
+                  title,
+                  message
+                };
+                for (const [key, val] of Object.entries(metadata)) {
+                  if (
+                    val !== null &&
+                    val !== undefined &&
+                    typeof val !== 'object' &&
+                    !['device_id', 'email', 'phone', 'mobile_number', 'title', 'message'].includes(key)
+                  ) {
+                    templateData[key] = String(val);
+                  }
+                }
+                const waResult = await whatsAppService.sendSmartAlertTemplate(
+                  validPhone,
+                  alert.alert_type,
+                  templateData,
+                  alert.id
+                );
+                if (waResult.success) {
+                  winstonLogger.info(`[ALERT_DISPATCHER] WhatsApp smart alert dispatched for alert ${alert.id}. WAMID: ${waResult.wamid}`);
+                } else {
+                  winstonLogger.warn(`[ALERT_DISPATCHER] WhatsApp smart alert dispatch failed for alert ${alert.id}: ${waResult.reason}`);
+                }
+              } catch (waErr: any) {
+                winstonLogger.error(`[ALERT_DISPATCHER] WhatsApp dispatch exception for alert ${alert.id}: ${waErr.message}`);
+              }
+            }
+          }
         }
 
         // 6B. Log successful delivery to user notification history

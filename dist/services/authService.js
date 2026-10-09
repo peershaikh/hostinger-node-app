@@ -50,6 +50,7 @@ const userCache_1 = require("../cache/userCache");
 const quotaRepository_1 = require("../repositories/quotaRepository");
 const cacheService_1 = require("./cacheService");
 const betaService_1 = require("./betaService");
+const phoneNormalizer_1 = require("../utils/phoneNormalizer");
 const USERS_FILE = path_1.default.join(__dirname, '../../data/users.json');
 const GUESTS_FILE = path_1.default.join(__dirname, '../../data/guests.json');
 class AuthService {
@@ -852,7 +853,7 @@ class AuthService {
             tokenVersion: 1,
             sessionEpoch: 1,
             fullName: fullName || '',
-            mobileNumber: mobileNumber || '',
+            mobileNumber: mobileNumber ? ((0, phoneNormalizer_1.normalizeIndianPhoneNumber)(mobileNumber) || mobileNumber) : '',
             dob: dob || '',
             deviceType: deviceMeta?.deviceType || (deviceId?.startsWith('dev_') ? 'desktop' : 'mobile'),
             platform: deviceMeta?.platform || 'Unknown',
@@ -1904,8 +1905,9 @@ class AuthService {
                 user.notifyMarketing = !!updates.preferences.notifyMarketing;
         }
         if (updates.mobileNumber !== undefined) {
-            if (updates.mobileNumber !== user.mobileNumber) {
-                user.mobileNumber = updates.mobileNumber;
+            const targetNumber = updates.mobileNumber ? ((0, phoneNormalizer_1.normalizeIndianPhoneNumber)(updates.mobileNumber) || updates.mobileNumber) : '';
+            if (targetNumber !== user.mobileNumber) {
+                user.mobileNumber = targetNumber;
                 user.mobileVerified = false;
                 user.mobileVerificationMethod = null;
                 user.mobileVerifiedAt = null;
@@ -1933,26 +1935,70 @@ class AuthService {
         this.saveUsers();
         return user;
     }
+    hashOtp(userId, otp) {
+        const salt = process.env.JWT_SECRET || 'trayago_otp_secure_salt';
+        return crypto_1.default.createHash('sha256').update(`${userId}:${otp.trim()}:${salt}`).digest('hex');
+    }
     async sendMobileOtp(userId, mobileNumber) {
         const user = await this.getUserById(userId);
         if (!user)
             throw new Error('User not found');
-        // Check if mobile number is already verified on another account
-        const existing = this.users.find(u => u.mobileNumber === mobileNumber && u.mobileVerified && u.id !== userId);
-        if (existing)
+        // Normalize to canonical E.164 (+91XXXXXXXXXX)
+        const normalizedMobile = (0, phoneNormalizer_1.normalizeIndianPhoneNumber)(mobileNumber);
+        if (!normalizedMobile) {
+            throw new Error('Invalid Indian mobile number format');
+        }
+        const now = Date.now();
+        // 1. Resend cooldown (60 seconds)
+        const existingRecord = this.mobileOtps[userId];
+        const COOLDOWN_MS = 60 * 1000;
+        if (existingRecord && now - existingRecord.lastSentAt < COOLDOWN_MS) {
+            const secondsLeft = Math.ceil((COOLDOWN_MS - (now - existingRecord.lastSentAt)) / 1000);
+            throw new Error(`Please wait ${secondsLeft} second(s) before requesting another OTP.`);
+        }
+        // 2. Hourly rate limit per user (max 5 requests per hour), reusing this.otpRateLimits
+        const rateLimitKey = `mobile_otp:${userId}`;
+        let rateLimit = this.otpRateLimits.get(rateLimitKey);
+        if (!rateLimit || now > rateLimit.resetAt) {
+            rateLimit = {
+                count: 0,
+                resetAt: now + this.OTP_LIMIT_WINDOW_MS // 1 hour
+            };
+            this.otpRateLimits.set(rateLimitKey, rateLimit);
+        }
+        const MAX_HOURLY_MOBILE_OTP = 5;
+        if (rateLimit.count >= MAX_HOURLY_MOBILE_OTP) {
+            const minutesLeft = Math.ceil((rateLimit.resetAt - now) / 60000);
+            throw new Error(`Too many OTP requests. Please try again in ${minutesLeft} minute(s).`);
+        }
+        // 3. Check if mobile number is already verified on another account (checking normalized forms)
+        const existing = this.users.find(u => {
+            if (!u.mobileVerified || u.id === userId || !u.mobileNumber)
+                return false;
+            const uNorm = (0, phoneNormalizer_1.normalizeIndianPhoneNumber)(u.mobileNumber);
+            return uNorm === normalizedMobile || u.mobileNumber === normalizedMobile;
+        });
+        if (existing) {
             throw new Error('Mobile number already verified on another account');
-        // Generate 6-digit OTP code
+        }
+        // 4. Generate 6-digit OTP code & store ONLY cryptographic hash
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otpHash = this.hashOtp(userId, otp);
         this.mobileOtps[userId] = {
-            otp,
-            mobileNumber,
-            expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes expiry
-            attempts: 0
+            otpHash,
+            mobileNumber: normalizedMobile,
+            expiresAt: now + 5 * 60 * 1000, // 5 minutes expiry
+            attempts: 0,
+            lastSentAt: now
         };
+        rateLimit.count++;
+        // 5. Dispatch via SMS service (SMS service will NOT log plaintext OTP)
         const { smsService } = await Promise.resolve().then(() => __importStar(require('./smsService')));
-        const sent = await smsService.sendSmsOtp(mobileNumber, otp);
-        if (!sent)
+        const sent = await smsService.sendSmsOtp(normalizedMobile, otp);
+        if (!sent) {
             throw new Error('Failed to send SMS OTP. Please try again.');
+        }
+        logger_1.winstonLogger.info(`[MOBILE_OTP] Dispatched OTP to ${(0, phoneNormalizer_1.maskPhoneNumber)(normalizedMobile)} for user ${userId}. Expiry: 5m.`);
         return true;
     }
     async verifyMobileOtp(userId, otpCode) {
@@ -1962,7 +2008,8 @@ class AuthService {
         const record = this.mobileOtps[userId];
         if (!record)
             throw new Error('No OTP sent for this user');
-        if (Date.now() > record.expiresAt) {
+        const now = Date.now();
+        if (now > record.expiresAt) {
             delete this.mobileOtps[userId];
             throw new Error('OTP has expired. Please request a new one.');
         }
@@ -1971,15 +2018,18 @@ class AuthService {
             delete this.mobileOtps[userId];
             throw new Error('Too many failed attempts. Please request a new OTP.');
         }
-        if (record.otp !== otpCode) {
+        // Verify hash securely using timingSafeEqual
+        const computedHash = this.hashOtp(userId, otpCode.trim());
+        const hashMatches = crypto_1.default.timingSafeEqual(Buffer.from(record.otpHash, 'hex'), Buffer.from(computedHash, 'hex'));
+        if (!hashMatches) {
             throw new Error('Invalid verification code');
         }
-        // Success! Update user status
+        // Success! Update user status with canonical E.164 mobile number
         user.mobileNumber = record.mobileNumber;
         user.mobileVerified = true;
         user.mobileVerificationMethod = 'SMS';
         user.mobileVerifiedAt = new Date().toISOString();
-        // Consume OTP
+        // Consume OTP immediately
         delete this.mobileOtps[userId];
         // Sync to Supabase & save locally
         if ((0, supabase_1.isSupabaseConfigured)()) {
@@ -1998,7 +2048,14 @@ class AuthService {
         }
         this.updateLocalUser(user);
         this.saveUsers();
+        logger_1.winstonLogger.info(`[MOBILE_OTP] Successfully verified mobile for user ${userId} (${(0, phoneNormalizer_1.maskPhoneNumber)(user.mobileNumber)}).`);
         return true;
+    }
+    /**
+     * Internal test helper for inspecting OTP record state in tests without exposing plaintext OTP.
+     */
+    _getMobileOtpRecordForTest(userId) {
+        return this.mobileOtps[userId];
     }
     sanitizeUser(user) {
         const { password, ...rest } = user;

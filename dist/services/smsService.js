@@ -37,6 +37,7 @@ exports.smsService = exports.SmsService = void 0;
 const logger_1 = require("../middleware/logger");
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
+const phoneNormalizer_1 = require("../utils/phoneNormalizer");
 class SmsService {
     constructor() {
         this.logFilePath = path.join(__dirname, '../../../logs/sms.log');
@@ -48,21 +49,21 @@ class SmsService {
     }
     /**
      * Mock send SMS OTP logic
-     * Logs to winston and writes to server/logs/sms.log for easy manual testing
+     * Operational logging only — NEVER logs plaintext OTP codes to console or disk.
      */
-    async sendSmsOtp(mobileNumber, otpCode) {
+    async sendSmsOtp(mobileNumber, _otpCode) {
         try {
-            const message = `[SMS_GATEWAY] Mobile OTP sent successfully to ${mobileNumber}: Verification code is ${otpCode}`;
-            // Log to Winston Logger
-            logger_1.winstonLogger.info(message);
-            // Append to local log file for QA testing
+            const masked = (0, phoneNormalizer_1.maskPhoneNumber)(mobileNumber);
+            // Log operational event to Winston (NO plaintext OTP)
+            logger_1.winstonLogger.info(`[SMS_GATEWAY] Mobile OTP dispatched successfully to ${masked}. Status: DISPATCHED_MOCK.`);
+            // Append sanitized operational audit entry to local log file (NO plaintext OTP)
             const timestamp = new Date().toISOString();
-            const logEntry = `[${timestamp}] TO: ${mobileNumber} | CODE: ${otpCode} | MSG: Your Trayago mobile verification code is ${otpCode}. Valid for 5 minutes.\n`;
+            const logEntry = `[${timestamp}] TO: ${masked} | STATUS: DISPATCHED | MSG: Mobile verification code dispatched. Valid for 5 minutes.\n`;
             fs.appendFileSync(this.logFilePath, logEntry);
             return true;
         }
         catch (err) {
-            logger_1.winstonLogger.error(`[SMS_EXCEPTION] Failed to send SMS to ${mobileNumber}: ${err.message}`);
+            logger_1.winstonLogger.error(`[SMS_EXCEPTION] Failed to send SMS to ${(0, phoneNormalizer_1.maskPhoneNumber)(mobileNumber)}: ${err.message}`);
             return false;
         }
     }

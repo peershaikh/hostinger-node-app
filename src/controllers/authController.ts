@@ -17,6 +17,7 @@ import jwt from 'jsonwebtoken';
 import { detectDeviceAndGeo } from '../utils/deviceDetector';
 import { analyticsService } from '../services/analyticsService';
 import { isValidRegion, normalizeRegion } from '../constants/states';
+import { normalizeIndianPhoneNumber } from '../utils/phoneNormalizer';
 
 // PHASE_5B142 Fix: on localhost (http) browsers require secure:false for cookies.
 // secure:true + sameSite:none is correct for production cross-domain (www → app),
@@ -115,10 +116,13 @@ export class AuthController {
         }
       }
 
+      let validatedMobile: string | undefined = undefined;
       if (mobileNumber !== undefined && mobileNumber !== '') {
-        if (typeof mobileNumber !== 'string' || !/^(?:\+91|91)?[6-9]\d{9}$/.test(mobileNumber)) {
+        const normalized = normalizeIndianPhoneNumber(mobileNumber);
+        if (!normalized) {
           return res.status(400).json({ success: false, error: 'Invalid mobile number format' });
         }
+        validatedMobile = normalized;
       }
 
       if (dob !== undefined && dob !== '') {
@@ -152,7 +156,7 @@ export class AuthController {
 
       const deviceMeta = detectDeviceAndGeo(req);
 
-      const result = await authService.signup(email, password, referralCode, deviceId, otp, fullName, mobileNumber, dob, deviceMeta, validatedState);
+      const result = await authService.signup(email, password, referralCode, deviceId, otp, fullName, validatedMobile, dob, deviceMeta, validatedState);
 
       // Track signup event asynchronously
       analyticsService.trackEvent('USER_SIGNUP', null, {
@@ -594,10 +598,15 @@ export class AuthController {
         }
       }
 
+      let validatedMobile: string | undefined = undefined;
       if (mobileNumber !== undefined && mobileNumber !== '') {
-        if (typeof mobileNumber !== 'string' || !/^(?:\+91|91)?[6-9]\d{9}$/.test(mobileNumber)) {
+        const normalized = normalizeIndianPhoneNumber(mobileNumber);
+        if (!normalized) {
           return res.status(400).json({ success: false, error: 'Invalid Indian mobile number format' });
         }
+        validatedMobile = normalized;
+      } else if (mobileNumber === '') {
+        validatedMobile = '';
       }
 
       let validatedState: string | undefined = undefined;
@@ -608,14 +617,14 @@ export class AuthController {
         validatedState = normalizeRegion(state);
       }
 
-      const updatedUser = await authService.updateUserProfile(userId, { fullName, dob, preferences, mobileNumber, state: validatedState });
+      const updatedUser = await authService.updateUserProfile(userId, { fullName, dob, preferences, mobileNumber: validatedMobile, state: validatedState });
 
       // Calculate new completion score
       let score = 40;
       if (updatedUser.fullName && updatedUser.fullName.trim().length >= 2 && /^[a-zA-Z\s]+$/.test(updatedUser.fullName)) {
         score += 20;
       }
-      if (updatedUser.mobileNumber && /^(?:\+91|91)?[6-9]\d{9}$/.test(updatedUser.mobileNumber)) {
+      if (updatedUser.mobileNumber && normalizeIndianPhoneNumber(updatedUser.mobileNumber)) {
         score += 20;
       }
       if (updatedUser.dob && !isNaN(Date.parse(updatedUser.dob)) && new Date(updatedUser.dob) < new Date()) {
@@ -644,11 +653,12 @@ export class AuthController {
         return res.status(400).json({ success: false, error: 'Mobile number is required' });
       }
 
-      if (!/^(?:\+91|91)?[6-9]\d{9}$/.test(mobileNumber)) {
+      const normalizedMobile = normalizeIndianPhoneNumber(mobileNumber);
+      if (!normalizedMobile) {
         return res.status(400).json({ success: false, error: 'Invalid Indian mobile number format' });
       }
 
-      await authService.sendMobileOtp(userId, mobileNumber);
+      await authService.sendMobileOtp(userId, normalizedMobile);
 
       return res.json({
         success: true,
@@ -667,11 +677,11 @@ export class AuthController {
       }
 
       const { otpCode } = req.body;
-      if (!otpCode) {
+      if (!otpCode || typeof otpCode !== 'string' || !/^\d{6}$/.test(otpCode.trim())) {
         return res.status(400).json({ success: false, error: 'Verification code is required' });
       }
 
-      await authService.verifyMobileOtp(userId, otpCode);
+      await authService.verifyMobileOtp(userId, otpCode.trim());
 
       // Fetch updated user to return latest status
       const updatedUser = await authService.getUserById(userId);
@@ -680,7 +690,7 @@ export class AuthController {
         if (updatedUser.fullName && updatedUser.fullName.trim().length >= 2 && /^[a-zA-Z\s]+$/.test(updatedUser.fullName)) {
           score += 20;
         }
-        if (updatedUser.mobileNumber && /^(?:\+91|91)?[6-9]\d{9}$/.test(updatedUser.mobileNumber)) {
+        if (updatedUser.mobileNumber && normalizeIndianPhoneNumber(updatedUser.mobileNumber)) {
           score += 20;
         }
         if (updatedUser.dob && !isNaN(Date.parse(updatedUser.dob)) && new Date(updatedUser.dob) < new Date()) {

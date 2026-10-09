@@ -82,4 +82,12 @@ export const featureFlags = {
    * Set ENABLE_TRAIN_SCHEDULE_SYNC=true in .env to activate nightly sync.
    */
   trainScheduleSync: process.env.ENABLE_TRAIN_SCHEDULE_SYNC === 'true',
+
+  // ── STEP 5.9A — WhatsApp Cloud API Foundation (all default OFF) ─────────────
+  /** Master kill-switch: gates all WhatsApp Cloud API calls */
+  whatsappService: process.env.ENABLE_WHATSAPP_SERVICE === 'true',
+  /** Gates WhatsApp delivery for smart alerts */
+  whatsappSmartAlerts: process.env.ENABLE_WHATSAPP_SMART_ALERTS === 'true',
+  /** Gates WhatsApp OTP channel in authService */
+  whatsappOtp: process.env.ENABLE_WHATSAPP_OTP === 'true',
 };

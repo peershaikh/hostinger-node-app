@@ -10,6 +10,7 @@ import featureFlagAdminRouter from './featureFlagAdmin';
 import bookingAdminRouter from './bookingAdmin';
 import aiAdminRouter from './aiAdmin';
 import newsAdminRouter from './newsAdmin';
+import whatsappAdminRouter from './whatsappAdmin';
 // ── Phase 10.8.42 additions (T2/T3/T4) ──────────────────────────────────────
 import { eventMetrics } from '../services/eventMetrics';
 import { userCache } from '../cache/userCache';
@@ -150,5 +151,8 @@ router.post('/self-learning/revalidate-split', adminLimiter as any, requireAdmin
 
 // ─── News CMS Admin (Phase 066) ─────────────────────────────────────────────
 router.use('/news', newsAdminRouter);
+
+// ─── WhatsApp CRM Admin (Step 5.9I) ─────────────────────────────────────────
+router.use('/whatsapp', whatsappAdminRouter);
 
 export default router;

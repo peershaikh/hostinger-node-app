@@ -1,6 +1,7 @@
 import { winstonLogger } from '../middleware/logger';
 import * as fs from 'fs';
 import * as path from 'path';
+import { maskPhoneNumber } from '../utils/phoneNormalizer';
 
 export class SmsService {
   private logFilePath: string;
@@ -16,23 +17,23 @@ export class SmsService {
 
   /**
    * Mock send SMS OTP logic
-   * Logs to winston and writes to server/logs/sms.log for easy manual testing
+   * Operational logging only — NEVER logs plaintext OTP codes to console or disk.
    */
-  async sendSmsOtp(mobileNumber: string, otpCode: string): Promise<boolean> {
+  async sendSmsOtp(mobileNumber: string, _otpCode?: string): Promise<boolean> {
     try {
-      const message = `[SMS_GATEWAY] Mobile OTP sent successfully to ${mobileNumber}: Verification code is ${otpCode}`;
+      const masked = maskPhoneNumber(mobileNumber);
       
-      // Log to Winston Logger
-      winstonLogger.info(message);
+      // Log operational event to Winston (NO plaintext OTP)
+      winstonLogger.info(`[SMS_GATEWAY] Mobile OTP dispatched successfully to ${masked}. Status: DISPATCHED_MOCK.`);
       
-      // Append to local log file for QA testing
+      // Append sanitized operational audit entry to local log file (NO plaintext OTP)
       const timestamp = new Date().toISOString();
-      const logEntry = `[${timestamp}] TO: ${mobileNumber} | CODE: ${otpCode} | MSG: Your Trayago mobile verification code is ${otpCode}. Valid for 5 minutes.\n`;
+      const logEntry = `[${timestamp}] TO: ${masked} | STATUS: DISPATCHED | MSG: Mobile verification code dispatched. Valid for 5 minutes.\n`;
       fs.appendFileSync(this.logFilePath, logEntry);
 
       return true;
     } catch (err: any) {
-      winstonLogger.error(`[SMS_EXCEPTION] Failed to send SMS to ${mobileNumber}: ${err.message}`);
+      winstonLogger.error(`[SMS_EXCEPTION] Failed to send SMS to ${maskPhoneNumber(mobileNumber)}: ${err.message}`);
       return false;
     }
   }

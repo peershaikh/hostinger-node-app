@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.alertDispatcher = exports.AlertDispatcher = void 0;
+exports.alertDispatcher = exports.AlertDispatcher = exports.MEMORY_RETRY_QUEUE = void 0;
 const node_cron_1 = __importDefault(require("node-cron"));
 const crypto_1 = __importDefault(require("crypto"));
 const supabase_1 = require("../config/supabase");
@@ -45,7 +45,10 @@ const emailService_1 = require("../services/emailService");
 const pushService_1 = require("../services/pushService");
 const firebaseService = __importStar(require("../services/firebaseService"));
 const notificationController_1 = require("../controllers/notificationController");
-const MEMORY_RETRY_QUEUE = new Map();
+const featureFlags_1 = require("../config/featureFlags");
+const whatsappService_1 = require("../services/whatsappService");
+const phoneNormalizer_1 = require("../utils/phoneNormalizer");
+exports.MEMORY_RETRY_QUEUE = new Map();
 class AlertDispatcher {
     constructor() {
         this.isProcessing = false;
@@ -89,24 +92,32 @@ class AlertDispatcher {
         logger_1.winstonLogger.info(`[ALERT_DISPATCHER] Processing ${alerts.length} pending alerts.`);
         for (const alert of alerts) {
             // Check retry backoff
-            const retryData = MEMORY_RETRY_QUEUE.get(alert.id);
+            const retryData = exports.MEMORY_RETRY_QUEUE.get(alert.id);
             if (retryData && Date.now() < retryData.nextRetryAt) {
                 continue; // Skip until backoff expires
             }
             try {
                 let userEmail = null;
+                let userPhone = null;
                 if (alert.user_id) {
-                    const { data: userData } = await supabase_1.supabase.from('users').select('email').eq('id', alert.user_id).single();
+                    const { data: userData } = await supabase_1.supabase
+                        .from('users')
+                        .select('email, mobile_number')
+                        .eq('id', alert.user_id)
+                        .single();
                     if (userData) {
                         userEmail = userData.email;
+                        userPhone = userData.mobile_number || userData.phone || null;
                     }
                 }
                 const metadata = alert.metadata || {};
                 userEmail = userEmail || metadata.email || null;
+                userPhone = userPhone || metadata.mobile_number || metadata.phone || null;
                 const title = metadata.title || `Trayago: ${alert.alert_type} Alert`;
                 const message = metadata.message || 'You have a new update regarding your train journey.';
                 // 2. Validate preferences (skip if disabled)
                 let isCategoryEnabled = true;
+                let whatsappAlertsEnabled = true;
                 if (alert.user_id) {
                     const { data: prefs, error: prefsErr } = await supabase_1.supabase
                         .from('user_notification_preferences')
@@ -122,6 +133,9 @@ class AlertDispatcher {
                         }
                         else if (alert.alert_type === 'PLATFORM_CHANGE' && !prefs.platform_alerts_enabled) {
                             isCategoryEnabled = false;
+                        }
+                        if (prefs.whatsapp_alerts_enabled === false) {
+                            whatsappAlertsEnabled = false;
                         }
                     }
                 }
@@ -208,6 +222,44 @@ class AlertDispatcher {
                     if (pushSent)
                         delivered = true;
                 }
+                // 6A. Dispatch via WhatsApp (additive channel)
+                if (featureFlags_1.featureFlags.whatsappService && featureFlags_1.featureFlags.whatsappSmartAlerts) {
+                    if (!whatsappAlertsEnabled) {
+                        logger_1.winstonLogger.info(`[ALERT_DISPATCHER] WhatsApp dispatch skipped for alert ${alert.id}: user preference disabled.`);
+                    }
+                    else {
+                        const validPhone = (0, phoneNormalizer_1.normalizeIndianPhoneNumber)(userPhone);
+                        if (!validPhone) {
+                            logger_1.winstonLogger.info(`[ALERT_DISPATCHER] WhatsApp dispatch skipped for alert ${alert.id}: missing or invalid mobile number.`);
+                        }
+                        else {
+                            try {
+                                const templateData = {
+                                    title,
+                                    message
+                                };
+                                for (const [key, val] of Object.entries(metadata)) {
+                                    if (val !== null &&
+                                        val !== undefined &&
+                                        typeof val !== 'object' &&
+                                        !['device_id', 'email', 'phone', 'mobile_number', 'title', 'message'].includes(key)) {
+                                        templateData[key] = String(val);
+                                    }
+                                }
+                                const waResult = await whatsappService_1.whatsAppService.sendSmartAlertTemplate(validPhone, alert.alert_type, templateData, alert.id);
+                                if (waResult.success) {
+                                    logger_1.winstonLogger.info(`[ALERT_DISPATCHER] WhatsApp smart alert dispatched for alert ${alert.id}. WAMID: ${waResult.wamid}`);
+                                }
+                                else {
+                                    logger_1.winstonLogger.warn(`[ALERT_DISPATCHER] WhatsApp smart alert dispatch failed for alert ${alert.id}: ${waResult.reason}`);
+                                }
+                            }
+                            catch (waErr) {
+                                logger_1.winstonLogger.error(`[ALERT_DISPATCHER] WhatsApp dispatch exception for alert ${alert.id}: ${waErr.message}`);
+                            }
+                        }
+                    }
+                }
                 // 6B. Log successful delivery to user notification history
                 if (delivered) {
                     try {
@@ -250,15 +302,15 @@ class AlertDispatcher {
                         .from('smart_alerts')
                         .update({ status: 'DELIVERED', updated_at: new Date().toISOString() })
                         .eq('id', alert.id);
-                    MEMORY_RETRY_QUEUE.delete(alert.id);
+                    exports.MEMORY_RETRY_QUEUE.delete(alert.id);
                     logger_1.winstonLogger.debug(`[ALERT_DISPATCHER] Alert ${alert.id} marked as DELIVERED.`);
                 }
                 else {
                     // Retry logic (Exponential Backoff, Max 3)
-                    const currentRetry = MEMORY_RETRY_QUEUE.get(alert.id) || { retries: 0 };
+                    const currentRetry = exports.MEMORY_RETRY_QUEUE.get(alert.id) || { retries: 0 };
                     if (currentRetry.retries < 3) {
                         const nextRetryAt = Date.now() + Math.pow(2, currentRetry.retries) * 60000;
-                        MEMORY_RETRY_QUEUE.set(alert.id, { alert, retries: currentRetry.retries + 1, nextRetryAt });
+                        exports.MEMORY_RETRY_QUEUE.set(alert.id, { alert, retries: currentRetry.retries + 1, nextRetryAt });
                         logger_1.winstonLogger.debug(`[ALERT_DISPATCHER] Alert ${alert.id} failed. Queued for retry ${currentRetry.retries + 1}/3.`);
                     }
                     else {
@@ -266,21 +318,21 @@ class AlertDispatcher {
                             .from('smart_alerts')
                             .update({ status: 'FAILED', updated_at: new Date().toISOString() })
                             .eq('id', alert.id);
-                        MEMORY_RETRY_QUEUE.delete(alert.id);
+                        exports.MEMORY_RETRY_QUEUE.delete(alert.id);
                         logger_1.winstonLogger.debug(`[ALERT_DISPATCHER] Alert ${alert.id} marked as FAILED after 3 retries.`);
                     }
                 }
             }
             catch (err) {
                 logger_1.winstonLogger.error(`[ALERT_DISPATCHER] Failed to process alert ${alert.id}: ${err.message}`);
-                const currentRetry = MEMORY_RETRY_QUEUE.get(alert.id) || { retries: 0 };
+                const currentRetry = exports.MEMORY_RETRY_QUEUE.get(alert.id) || { retries: 0 };
                 if (currentRetry.retries < 3) {
                     const nextRetryAt = Date.now() + Math.pow(2, currentRetry.retries) * 60000;
-                    MEMORY_RETRY_QUEUE.set(alert.id, { alert, retries: currentRetry.retries + 1, nextRetryAt });
+                    exports.MEMORY_RETRY_QUEUE.set(alert.id, { alert, retries: currentRetry.retries + 1, nextRetryAt });
                 }
                 else {
                     await supabase_1.supabase.from('smart_alerts').update({ status: 'FAILED' }).eq('id', alert.id);
-                    MEMORY_RETRY_QUEUE.delete(alert.id);
+                    exports.MEMORY_RETRY_QUEUE.delete(alert.id);
                 }
             }
         }

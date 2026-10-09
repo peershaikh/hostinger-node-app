@@ -15,6 +15,7 @@ const featureFlagAdmin_1 = __importDefault(require("./featureFlagAdmin"));
 const bookingAdmin_1 = __importDefault(require("./bookingAdmin"));
 const aiAdmin_1 = __importDefault(require("./aiAdmin"));
 const newsAdmin_1 = __importDefault(require("./newsAdmin"));
+const whatsappAdmin_1 = __importDefault(require("./whatsappAdmin"));
 // ── Phase 10.8.42 additions (T2/T3/T4) ──────────────────────────────────────
 const eventMetrics_1 = require("../services/eventMetrics");
 const userCache_1 = require("../cache/userCache");
@@ -139,4 +140,6 @@ router.post('/self-learning/reject', rateLimiter_1.adminLimiter, adminAuth_1.req
 router.post('/self-learning/revalidate-split', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.revalidateSplitRoute.bind(adminController_1.adminController));
 // ─── News CMS Admin (Phase 066) ─────────────────────────────────────────────
 router.use('/news', newsAdmin_1.default);
+// ─── WhatsApp CRM Admin (Step 5.9I) ─────────────────────────────────────────
+router.use('/whatsapp', whatsappAdmin_1.default);
 exports.default = router;
