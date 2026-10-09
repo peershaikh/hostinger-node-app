@@ -335,8 +335,8 @@ export class LiveTrackingService {
         const depMs = dateObj.getTime() + firstDepMins * 60 * 1000;
         const arrMs = dateObj.getTime() + ((lastDay - 1) * 24 * 60 + lastArrMins) * 60 * 1000;
 
-        const startRange = depMs - 1 * 60 * 60 * 1000;
-        const endRange = arrMs + 6 * 60 * 60 * 1000;
+        const startRange = depMs - 2 * 60 * 60 * 1000;
+        const endRange = arrMs + 12 * 60 * 60 * 1000; // 12 hours buffer for multi-day and overnight Indian train delays
 
         if (now.getTime() >= startRange && now.getTime() <= endRange) {
           return dateStr;
@@ -503,11 +503,26 @@ export class LiveTrackingService {
 
     const todayIstStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     const requestedDateStr = date && /^\d{4}-\d{2}-\d{2}$/.test(date.trim()) ? date.trim() : null;
-    const isHistoricalRequest = Boolean(requestedDateStr && requestedDateStr < todayIstStr);
+
+    // For multi-day and overnight runs, activeDate can be yesterday (-1) or 2 days ago (-2).
+    // If the request matches the currently active run, or if no date was specified and an active run is detected,
+    // it MUST be tracked live as an active run, NOT treated as a completed historical run.
+    const effectiveActiveDate = activeDate || todayIstStr;
+    const isTargetingActiveRun = Boolean(
+      (requestedDateStr && requestedDateStr === activeDate) ||
+      (!requestedDateStr && activeDate)
+    );
+
+    // A request is only historical if it is strictly older than the active run date and not targeting the active run
+    const isHistoricalRequest = Boolean(
+      requestedDateStr &&
+      requestedDateStr < effectiveActiveDate &&
+      !isTargetingActiveRun
+    );
     const isFutureRequest = Boolean(requestedDateStr && requestedDateStr > todayIstStr);
     const startTimeMs = Date.now();
 
-    winstonLogger.info(`[LIVE_REQUEST] trainNo=${trainNo} requestedDate=${requestedDateStr || 'today'} activeDate=${activeDate}`);
+    winstonLogger.info(`[LIVE_REQUEST] trainNo=${trainNo} requestedDate=${requestedDateStr || 'today'} activeDate=${activeDate} isTargetingActiveRun=${isTargetingActiveRun} isHistorical=${isHistoricalRequest}`);
 
     // ── FUTURE DATE GUARD: Pure schedule mode (no live running claims) ────────────
     if (isFutureRequest) {
@@ -632,14 +647,15 @@ export class LiveTrackingService {
 
       const liveData = await fetchWithPriority<any>({
         irctc: async () => {
+          const liveQueryDate = requestedDateStr || activeDate || undefined;
           // 1. Try RailKit V2 (WIMT) tracker first for real-time GPS coordinates, coach layout, and accurate delays
-          const v2Res = await irctcService.getLiveStatusV2(trainNo, requestedDateStr || undefined);
+          const v2Res = await irctcService.getLiveStatusV2(trainNo, liveQueryDate);
           if (v2Res && !(v2Res as any).not_running && (v2Res.route || v2Res.currentLocation || v2Res.statusText)) {
             usedApi = 'RAILKIT_V2';
             return v2Res;
           }
           // 2. Fallback to V1 NTES tracker
-          const res = await irctcService.getLiveStatus(trainNo, requestedDateStr || undefined);
+          const res = await irctcService.getLiveStatus(trainNo, liveQueryDate);
           if (res && !(res as any).not_running) { usedApi = 'IRCTC'; return res; }
           return res || v2Res;
         },
@@ -707,8 +723,9 @@ export class LiveTrackingService {
               const depMins = parseToMins(s.departure_time);
               
               const dayOffset = (scheduleWithDays[idx]?.day || 1) - 1;
-              const arrTimeMs = targetDate.getTime() + dayOffset * 86400000 + arrMins * 60000;
-              const depTimeMs = targetDate.getTime() + dayOffset * 86400000 + depMins * 60000;
+              const delayOffsetMs = (delayMins || 0) * 60000;
+              const arrTimeMs = targetDate.getTime() + dayOffset * 86400000 + arrMins * 60000 + delayOffsetMs;
+              const depTimeMs = targetDate.getTime() + dayOffset * 86400000 + depMins * 60000 + delayOffsetMs;
 
               let is_departed = false;
               let is_current = false;
@@ -1074,11 +1091,12 @@ export class LiveTrackingService {
         lastTimeMs = msFromMidnight;
         
         const depTime = (() => {
-          if (date) {
-            if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-              return new Date(`${date}T00:00:00+05:30`);
+          const effectiveDate = date || activeDate;
+          if (effectiveDate) {
+            if (/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) {
+              return new Date(`${effectiveDate}T00:00:00+05:30`);
             }
-            const parsed = new Date(date);
+            const parsed = new Date(effectiveDate);
             if (!isNaN(parsed.getTime())) {
               const y = parsed.getFullYear();
               const m = String(parsed.getMonth() + 1).padStart(2, '0');
@@ -1094,7 +1112,9 @@ export class LiveTrackingService {
           const dd = String(istNow.getDate()).padStart(2, '0');
           return new Date(`${yyyy}-${mm}-${dd}T00:00:00+05:30`);
         })();
-        const absoluteDepMs = depTime.getTime() + msFromMidnight + currentDayOffsetMs;
+        // Add current delay so delayed trains are never marked passed prematurely
+        const delayOffsetMs = (delayMins || 0) * 60000;
+        const absoluteDepMs = depTime.getTime() + msFromMidnight + currentDayOffsetMs + delayOffsetMs;
         
         return absoluteDepMs > nowMs;
       });
@@ -1264,7 +1284,22 @@ export class LiveTrackingService {
         candidateLiveName ||
         `Train ${trainNo}`;
 
-      const isJourneyCompleted = isTimeCompleted || actualCurrentIndex === fullSchedule.length - 1;
+      // A journey is ONLY completed if:
+      // 1. Live API confirms it arrived at the destination (actualCurrentIndex is the last stop AND status indicates completed/arrived), OR
+      // 2. In DB fallback, when delay-adjusted time has fully elapsed.
+      // Under NO circumstances should theoretical time-based completion override a live running train en route!
+      const isLastStop = actualCurrentIndex >= fullSchedule.length - 1;
+      const liveConfirmedArrival = isLastStop && (
+        liveData.status === 'arrived' ||
+        liveData.status === 'completed' ||
+        liveData.currentLocation?.status === 'arrived' ||
+        String(liveData.statusText || '').toLowerCase().includes('reached') ||
+        String(liveData.statusText || '').toLowerCase() === 'end'
+      );
+
+      const isJourneyCompleted = usedApi === 'DATABASE_SCHEDULE'
+        ? (isTimeCompleted && isLastStop)
+        : (isLastStop && (liveConfirmedArrival || isTimeCompleted));
 
       // ── Detect if train is cancelled for this date ───────────────────────────────
 

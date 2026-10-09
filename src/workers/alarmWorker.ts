@@ -149,7 +149,9 @@ export class AlarmWorker {
         if (trainAlarms.length === 0) continue;
 
         winstonLogger.info(`[ALARM_WORKER] Fetching live status for train ${trainNo} (${trainAlarms.length} alarm(s))`);
-        const status = await liveTrackingService.getTrainRunningStatus(trainNo, todayStr);
+        // Do NOT pass todayStr: allows liveTrackingService to automatically resolve the active journey date
+        // for multi-day and overnight trains (which may have departed yesterday or 2 days ago).
+        const status = await liveTrackingService.getTrainRunningStatus(trainNo);
 
         if (!status) {
           winstonLogger.warn(`[ALARM_WORKER] Live status not available for train ${trainNo}`);
@@ -205,11 +207,13 @@ export class AlarmWorker {
 
       let distanceKm: number | null = null;
 
-      // Method A: GPS Proximity (Primary — preferred if live coordinates are available)
-      if (status.latitude && status.longitude) {
+      // Method A: GPS Proximity (Primary — preferred if live coordinates or train_location are available)
+      const curLat = status.latitude ?? status.train_location?.lat;
+      const curLon = status.longitude ?? status.train_location?.lon;
+      if (curLat && curLon) {
         distanceKm = this.calculateHaversine(
-          Number(status.latitude),
-          Number(status.longitude),
+          Number(curLat),
+          Number(curLon),
           destCoords.lat,
           destCoords.lon
         );
@@ -233,6 +237,32 @@ export class AlarmWorker {
           winstonLogger.debug(
             `[ALARM_WORKER] Station fallback: Train ${alarm.train_no} at ${currentStationCode} is ${distanceKm.toFixed(2)} km from ${alarm.destination_station}`
           );
+        }
+      }
+
+      // Method C: Track distance along the railway line (if both current and target stations have distanceKm in timeline)
+      if (Array.isArray(status.journey_timeline) && status.journey_timeline.length > 0) {
+        const destCode = (alarm.destination_station || '').toUpperCase().trim();
+        const currentIdx = status.current_station_index ?? -1;
+        const currentStop = currentIdx >= 0 ? status.journey_timeline[currentIdx] : null;
+        const destStop = status.journey_timeline.find((s: any) =>
+          (s.station_code || '').toUpperCase().trim() === destCode ||
+          (s.station_name || '').toUpperCase().trim() === destCode
+        );
+
+        if (
+          currentStop?.distance !== null &&
+          destStop?.distance !== null &&
+          currentStop?.distance !== undefined &&
+          destStop?.distance !== undefined
+        ) {
+          const trackDist = Math.abs(Number(destStop.distance) - Number(currentStop.distance));
+          if (distanceKm === null || trackDist < distanceKm) {
+            distanceKm = trackDist;
+            winstonLogger.debug(
+              `[ALARM_WORKER] Track distance check: Train ${alarm.train_no} is ${distanceKm.toFixed(2)} km along rail line from ${alarm.destination_station}`
+            );
+          }
         }
       }
 
