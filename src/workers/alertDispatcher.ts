@@ -213,20 +213,11 @@ export class AlertDispatcher {
               winstonLogger.info(`[ALERT_DISPATCHER] WhatsApp dispatch skipped for alert ${alert.id}: missing or invalid mobile number.`);
             } else {
               try {
-                const templateData: Record<string, string> = {
+                const templateData: Record<string, any> = {
+                  ...metadata,
                   title,
                   message
                 };
-                for (const [key, val] of Object.entries(metadata)) {
-                  if (
-                    val !== null &&
-                    val !== undefined &&
-                    typeof val !== 'object' &&
-                    !['device_id', 'email', 'phone', 'mobile_number', 'title', 'message'].includes(key)
-                  ) {
-                    templateData[key] = String(val);
-                  }
-                }
                 const waResult = await whatsAppService.sendSmartAlertTemplate(
                   validPhone,
                   alert.alert_type,

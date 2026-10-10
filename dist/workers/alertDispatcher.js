@@ -235,17 +235,10 @@ class AlertDispatcher {
                         else {
                             try {
                                 const templateData = {
+                                    ...metadata,
                                     title,
                                     message
                                 };
-                                for (const [key, val] of Object.entries(metadata)) {
-                                    if (val !== null &&
-                                        val !== undefined &&
-                                        typeof val !== 'object' &&
-                                        !['device_id', 'email', 'phone', 'mobile_number', 'title', 'message'].includes(key)) {
-                                        templateData[key] = String(val);
-                                    }
-                                }
                                 const waResult = await whatsappService_1.whatsAppService.sendSmartAlertTemplate(validPhone, alert.alert_type, templateData, alert.id);
                                 if (waResult.success) {
                                     logger_1.winstonLogger.info(`[ALERT_DISPATCHER] WhatsApp smart alert dispatched for alert ${alert.id}. WAMID: ${waResult.wamid}`);

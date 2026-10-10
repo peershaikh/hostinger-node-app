@@ -99,19 +99,13 @@ class WhatsAppService {
             return { success: false, reason: 'WHATSAPP_SMART_ALERTS_DISABLED' };
         }
         const templateName = this.resolveSmartAlertTemplateName(alertType);
-        const bodyParameters = Object.values(templateData).map(val => ({
-            type: 'text',
-            text: String(val)
-        }));
-        const components = [
-            {
-                type: 'body',
-                parameters: bodyParameters
-            }
-        ];
-        const bodyText = Object.entries(templateData)
-            .map(([k, v]) => `${k}: ${v}`)
-            .join(', ');
+        const componentResult = this.buildSmartAlertComponents(templateName, templateData);
+        if (!componentResult.success) {
+            logger_1.winstonLogger.warn(`[WHATSAPP_SERVICE] Smart alert parameter validation failed for template ${templateName}: ${componentResult.reason}`);
+            return { success: false, reason: componentResult.reason };
+        }
+        const components = componentResult.components;
+        const bodyText = componentResult.bodyText || this.extractTemplateBodyText(components);
         return this.sendTemplateMessage({
             to,
             templateName,
@@ -579,17 +573,132 @@ class WhatsAppService {
     resolveSmartAlertTemplateName(alertType) {
         switch (alertType) {
             case 'DELAY':
+            case 'trayago_train_delay_alert':
                 return 'trayago_train_delay_alert';
             case 'WL_CONFIRM':
+            case 'trayago_waitlist_confirmation':
                 return 'trayago_waitlist_confirmation';
             case 'CHART_PREPARED':
+            case 'trayago_chart_prepared':
                 return 'trayago_chart_prepared';
             case 'PLATFORM_CHANGE':
+            case 'trayago_platform_change':
                 return 'trayago_platform_change';
             default:
                 return 'trayago_smart_alert';
         }
     }
+    buildSmartAlertComponents(templateName, data) {
+        const safeData = data || {};
+        if (templateName === 'trayago_train_delay_alert') {
+            const title = cleanTemplateValue(safeData.title);
+            const message = cleanTemplateValue(safeData.message);
+            const trainNo = cleanTemplateValue(safeData.trainNo ?? safeData.train_no ?? safeData.trainNumber ?? safeData.train_number);
+            const currentDelayMins = cleanTemplateValue(safeData.currentDelayMins ?? safeData.current_delay_mins ?? safeData.delayMins ?? safeData.delay_mins ?? safeData.delayMinutes ?? safeData.delay_minutes ?? safeData.delay);
+            if (!title || !message || !trainNo || !currentDelayMins) {
+                return { success: false, reason: 'MISSING_DELAY_PARAMETERS' };
+            }
+            const parameters = [
+                { type: 'text', text: title },
+                { type: 'text', text: message },
+                { type: 'text', text: trainNo },
+                { type: 'text', text: currentDelayMins }
+            ];
+            return {
+                success: true,
+                components: [{ type: 'body', parameters }],
+                bodyText: `${title}: ${message} (Train ${trainNo}, Delay ${currentDelayMins}m)`
+            };
+        }
+        if (templateName === 'trayago_waitlist_confirmation') {
+            const title = cleanTemplateValue(safeData.title);
+            const message = cleanTemplateValue(safeData.message);
+            const pnr = cleanTemplateValue(safeData.pnr ?? safeData.pnrNumber ?? safeData.pnr_number);
+            const oldStatus = cleanTemplateValue(safeData.oldStatus ?? safeData.old_status ?? safeData.previousStatus ?? safeData.previous_status);
+            const newStatus = cleanTemplateValue(safeData.newStatus ?? safeData.new_status ?? safeData.currentStatus ?? safeData.current_status ?? safeData.status);
+            if (!title || !message || !pnr || !oldStatus || !newStatus) {
+                return { success: false, reason: 'MISSING_WAITLIST_PARAMETERS' };
+            }
+            const parameters = [
+                { type: 'text', text: title },
+                { type: 'text', text: message },
+                { type: 'text', text: pnr },
+                { type: 'text', text: oldStatus },
+                { type: 'text', text: newStatus }
+            ];
+            return {
+                success: true,
+                components: [{ type: 'body', parameters }],
+                bodyText: `${title}: ${message} (PNR ${pnr}: ${oldStatus} -> ${newStatus})`
+            };
+        }
+        if (templateName === 'trayago_chart_prepared') {
+            const title = cleanTemplateValue(safeData.title);
+            const message = cleanTemplateValue(safeData.message);
+            const pnr = cleanTemplateValue(safeData.pnr ?? safeData.pnrNumber ?? safeData.pnr_number);
+            const chartStatus = cleanTemplateValue(safeData.chartStatus ?? safeData.chart_status ?? safeData.chartingStatus ?? safeData.charting_status ?? safeData.status);
+            if (!title || !message || !pnr || !chartStatus) {
+                return { success: false, reason: 'MISSING_CHART_PARAMETERS' };
+            }
+            const parameters = [
+                { type: 'text', text: title },
+                { type: 'text', text: message },
+                { type: 'text', text: pnr },
+                { type: 'text', text: chartStatus }
+            ];
+            return {
+                success: true,
+                components: [{ type: 'body', parameters }],
+                bodyText: `${title}: ${message} (PNR ${pnr}, Chart: ${chartStatus})`
+            };
+        }
+        if (templateName === 'trayago_platform_change') {
+            const title = cleanTemplateValue(safeData.title);
+            const message = cleanTemplateValue(safeData.message);
+            const trainNo = cleanTemplateValue(safeData.trainNo ?? safeData.train_no ?? safeData.trainNumber ?? safeData.train_number);
+            const station = cleanTemplateValue(safeData.station ?? safeData.stationCode ?? safeData.station_code ?? safeData.stationName ?? safeData.station_name);
+            const oldPlatform = cleanTemplateValue(safeData.oldPlatform ?? safeData.old_platform ?? safeData.previousPlatform ?? safeData.previous_platform);
+            const newPlatform = cleanTemplateValue(safeData.newPlatform ?? safeData.new_platform ?? safeData.currentPlatform ?? safeData.current_platform ?? safeData.platform);
+            if (!title || !message || !trainNo || !station || !oldPlatform || !newPlatform) {
+                return { success: false, reason: 'MISSING_PLATFORM_PARAMETERS' };
+            }
+            const parameters = [
+                { type: 'text', text: title },
+                { type: 'text', text: message },
+                { type: 'text', text: trainNo },
+                { type: 'text', text: station },
+                { type: 'text', text: oldPlatform },
+                { type: 'text', text: newPlatform }
+            ];
+            return {
+                success: true,
+                components: [{ type: 'body', parameters }],
+                bodyText: `${title}: ${message} (Train ${trainNo} at ${station}: Platform ${oldPlatform} -> ${newPlatform})`
+            };
+        }
+        // Default: trayago_smart_alert (including WAKEUP_ALARM and fallback alerts)
+        // Documented smart-alert fallback allows title to default to 'Trayago Smart Alert'
+        const title = cleanTemplateValue(safeData.title) || 'Trayago Smart Alert';
+        const message = cleanTemplateValue(safeData.message);
+        if (!message) {
+            return { success: false, reason: 'MISSING_MESSAGE_PARAMETER' };
+        }
+        const parameters = [
+            { type: 'text', text: title },
+            { type: 'text', text: message }
+        ];
+        return {
+            success: true,
+            components: [{ type: 'body', parameters }],
+            bodyText: `${title}: ${message}`
+        };
+    }
 }
 exports.WhatsAppService = WhatsAppService;
+function cleanTemplateValue(val) {
+    if (val === null || val === undefined)
+        return null;
+    const str = String(val).trim();
+    return str.length > 0 ? str : null;
+}
 exports.whatsAppService = new WhatsAppService();
