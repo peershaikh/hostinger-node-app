@@ -100,8 +100,10 @@ function classifyStation(
  *   "22 Min Late"       → 22
  *   "1 Hr 10 Min Late"  → 70
  */
-export function parseDelayString(delayStr: string | undefined | null): number {
-  if (!delayStr) return 0;
+export function parseDelayString(delayStr: any): number {
+  if (delayStr === undefined || delayStr === null || delayStr === '') return 0;
+  if (typeof delayStr === 'number') return isNaN(delayStr) ? 0 : delayStr;
+  if (typeof delayStr !== 'string') return 0;
   const s = delayStr.trim();
   if (!s || /^(on time|right time)$/i.test(s)) return 0;
   if (/^early/i.test(s)) return 0;
@@ -308,7 +310,7 @@ export class LiveTrackingService {
         return { dateStr, dateObj };
       };
 
-      const candidates = [-3, -2, -1, 0];
+      const candidates = [0, -1, -2, -3];
       
       const parseTimeToMins = (time: string): number => {
         if (!time || time === '--:--') return 0;
@@ -1189,9 +1191,27 @@ export class LiveTrackingService {
         }
       }
 
+      // ── DETECT IF TRAIN HAS NOT STARTED / STILL AT SOURCE STATION ──
+      // Checks live data from RailKit V1 (progress.journeyStatus === 'not_started', statusNote 'Yet to start', passedStations === 0)
+      // or RailKit V2 (currentLocation.sequence === 1 && status === 'at-station', or statusText starts with 'At <origin>')
+      const originStationCode = (schedule[0]?.Station_Code || schedule[0]?.station_code || '').toUpperCase().trim();
+      const isLiveAtOriginOrNotStarted = Boolean(
+        liveData.progress?.journeyStatus === 'not_started' ||
+        liveData.progress?.passedStations === 0 ||
+        (typeof liveData.statusNote === 'string' && /yet to start/i.test(liveData.statusNote)) ||
+        (liveData.currentLocation?.sequence === 1 && liveData.currentLocation?.status === 'at-station') ||
+        (liveData.currentLocation?.stnCode && originStationCode && liveData.currentLocation.stnCode.toUpperCase().trim() === originStationCode && liveData.currentLocation?.status === 'at-station') ||
+        (typeof liveData.statusText === 'string' && /^(?:at|yet to start)\s+/i.test(liveData.statusText) && (liveData.currentLocation?.sequence === 1 || liveData.currentLocation?.stnCode === originStationCode))
+      );
+
+      if (isLiveAtOriginOrNotStarted) {
+        currentIndex = 0;
+        winstonLogger.info(`[LIVE_NOT_STARTED] Train ${trainNo} confirmed at source station (${originStationCode}) by live provider. Retaining origin stop.`);
+      }
+
       // ── API DATA SANITY CHECK ─────────────────────────────────────
       // Sometimes IRCTC returns the previous day's run (stuck at destination) or hasn't updated for today (stuck at source)
-      const isApiSuspiciouslyStuckAtSource = currentIndex === 0 && timeBasedIdx > 3;
+      const isApiSuspiciouslyStuckAtSource = !isLiveAtOriginOrNotStarted && currentIndex === 0 && timeBasedIdx > 3;
       const isApiSuspiciouslyAtDestination = currentIndex >= schedule.length - 1 && timeBasedIdx < schedule.length - 3;
       
       if (usedApi !== 'DATABASE_SCHEDULE' && (isApiSuspiciouslyStuckAtSource || isApiSuspiciouslyAtDestination)) {
@@ -1201,7 +1221,7 @@ export class LiveTrackingService {
       }
 
       // If train has completed journey naturally
-      if (isTimeCompleted && (currentIndex <= 0 || usedScheduleFallback || usedApi === 'DATABASE_SCHEDULE')) {
+      if (!isLiveAtOriginOrNotStarted && isTimeCompleted && (currentIndex <= 0 || usedScheduleFallback || usedApi === 'DATABASE_SCHEDULE')) {
         currentIndex = timeBasedIdx;
       }
 
@@ -1213,7 +1233,7 @@ export class LiveTrackingService {
       // Use the full schedule so the user can see all departed + upcoming stops.
       // Only `is_current` / `is_departed` flags change to reflect position.
       const fullSchedule = schedule.length > 0 ? schedule : dbSchedule;
-      const actualCurrentIndex = currentIndex >= 0 ? currentIndex : 0;
+      const actualCurrentIndex = isLiveAtOriginOrNotStarted ? 0 : (currentIndex >= 0 ? currentIndex : 0);
 
       const resolveValidTime = (liveVal: string | undefined, schedVal: string) => {
         if (!liveVal || liveVal === '--:--') return schedVal || '--:--';
@@ -1225,8 +1245,8 @@ export class LiveTrackingService {
         const liveStop = liveTimeline.find((l: any) =>
           l.station_code && stopCode && l.station_code.toUpperCase() === stopCode.toUpperCase()
         );
-        const isCurrent  = idx === actualCurrentIndex;
-        const isDeparted = idx < actualCurrentIndex;
+        const isCurrent  = isLiveAtOriginOrNotStarted ? idx === 0 : idx === actualCurrentIndex;
+        const isDeparted = isLiveAtOriginOrNotStarted ? false : idx < actualCurrentIndex;
         const stopName = stop.Station_Name || stop.station_name || liveStop?.station_name || 'Station';
 
         return {
@@ -1357,6 +1377,8 @@ export class LiveTrackingService {
           ? 'Train Cancelled'
           : isJourneyCompleted
           ? 'Train has reached destination'
+          : isLiveAtOriginOrNotStarted
+          ? (liveData.statusText || liveData.statusNote || (delayMins > 0 ? `Delayed at Source (${delayMins}m)` : 'Yet to start from its source'))
           : liveData.statusText || liveData.status_as_of || liveData.position || liveData.current_status || liveData.statusNote || 'Running',
         last_updated:   liveData.lastUpdatedAt || liveData.last_updated_time || liveData.updated_at || liveData.lastUpdate || new Date().toLocaleTimeString('en-IN'),
         is_running:     isCancelled ? false : (isJourneyCompleted ? false : (liveData.isLive ?? liveData.is_running ?? true)),

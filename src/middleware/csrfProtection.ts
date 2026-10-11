@@ -108,6 +108,17 @@ export const conditionalCsrf = (req: Request, res: Response, next: NextFunction)
     return next();
   }
 
+  // STEP 5.10BC: Exact-path CSRF exemption for Meta WhatsApp webhooks.
+  // GET is challenge-verified; POST requires HMAC-SHA256 signature verification in controller.
+  // Safely normalizes trailing slashes without broad prefix matching.
+  const rawPath = typeof req.path === 'string' ? req.path : '';
+  const normalizedPath = rawPath.length > 1 && rawPath.endsWith('/')
+    ? rawPath.replace(/\/+$/, '')
+    : rawPath;
+  if (normalizedPath === '/api/whatsapp/webhook' || normalizedPath === '/whatsapp/webhook') {
+    return next();
+  }
+
   // same-train-rescue is a read-only availability scan (no state-changing writes).
   if (req.path.endsWith('/trains/same-train-rescue')) {
     return next();
