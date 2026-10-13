@@ -871,9 +871,9 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "madgaon-mumbai": ["RN"],
 
   // —— Mumbai extended ——
-  "mumbai-varanasi": ["JBP", "STA", "ET", "PCOI", "PRYJ", "MKP", "BSL", "KTE", "CNB", "DDU"],
-  "mumbai-bsb": ["JBP", "STA", "ET", "PCOI", "PRYJ", "MKP", "BSL", "KTE", "CNB", "DDU"],
-  "bsb-mumbai": ["JBP", "STA", "ET", "PCOI", "PRYJ", "MKP", "BSL", "KTE", "CNB", "DDU"],
+  "mumbai-varanasi": ["DDU", "PRYJ", "PCOI", "JBP", "STA", "ET", "BSL", "KTE", "MKP", "CNB"],
+  "mumbai-bsb": ["DDU", "PRYJ", "PCOI", "JBP", "STA", "ET", "BSL", "KTE", "MKP", "CNB"],
+  "bsb-mumbai": ["DDU", "PRYJ", "PCOI", "JBP", "STA", "ET", "BSL", "KTE", "MKP", "CNB"],
   "mumbai-patna":   ["DDU", "JBP", "ET", "BSL", "STA", "PCOI", "PRYJ", "KTE", "CNB", "BXR", "ARA", "MMR"],
   "patna-mumbai":   ["DDU", "JBP", "ET", "BSL", "STA", "PCOI", "PRYJ", "KTE", "CNB", "BXR", "ARA", "MMR"],
   "mumbai-pnbe":    ["DDU", "JBP", "ET", "BSL", "STA", "PCOI", "PRYJ", "KTE", "CNB", "BXR", "ARA", "MMR"],
@@ -1738,7 +1738,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "patna-guwahati": ["KGP", "NJP", "GHY"],
 
   // —— Varanasi corridors ——
-  "varanasi-mumbai": ["JBP", "STA", "ET", "PCOI", "PRYJ", "MKP", "BSL", "KTE", "CNB", "DDU"],
+  "varanasi-mumbai": ["DDU", "PRYJ", "PCOI", "JBP", "STA", "ET", "BSL", "KTE", "MKP", "CNB"],
   "varanasi-chennai": ["DDU", "HWH", "BZA", "MAS"],
   "varanasi-kolkata": ["DDU", "GAYA", "PNBE", "ASN", "BWN"],
 
