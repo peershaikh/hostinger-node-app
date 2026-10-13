@@ -1699,17 +1699,25 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "hyderabad-delhi": ["NGP", "ET", "BPL", "JHS"],
   "secunderabad-delhi": ["NGP", "ET", "BPL", "JHS"],
   "hyderabad-kolkata": ["BZA", "VSKP", "KGP"],
-  "hyderabad-patna": ["BZA", "KGP", "HWH", "PNBE"],
-  "hyderabad-lucknow": ["NGP", "ET", "CNB", "LKO"],
+  "hyderabad-patna": ["NGP", "ET", "JBP", "DDU"],
+  "hyderabad-lucknow": ["NGP", "ET", "CNB"],
   "hyderabad-chennai": ["BZA", "RU", "GDR"],
-  "hyderabad-guwahati": ["BZA", "KGP", "HWH", "NJP", "GHY"],
+  "hyderabad-guwahati": ["BZA", "KGP", "HWH", "NJP"],
   "guwahati-hyderabad": ["NJP", "HWH", "KGP", "BZA"],
+  "hyderabad-varanasi": ["NGP", "ET", "JBP", "DDU"],
+  "varanasi-hyderabad": ["DDU", "JBP", "ET", "NGP"],
+  "hyderabad-pune": ["WADI", "SUR", "DD"],
+  "pune-hyderabad": ["DD", "SUR", "WADI"],
+  "hyderabad-bhubaneswar": ["BZA", "VSKP"],
+  "bhubaneswar-hyderabad": ["VSKP", "BZA"],
+  "hyderabad-ahmedabad": ["NGP", "BRC", "RTM"],
+  "hyderabad-jaipur": ["NGP", "BPL", "KOTA"],
 
   // —— Lucknow corridors ——
   "lucknow-mumbai": ["CNB", "VGLJ", "BPL", "ET", "BSL", "JHS", "BINA", "ORAI", "ST", "KOTA"],
   "lucknow-kolkata": ["PRYJ", "DDU", "GAYA", "ASN"],
   "lucknow-chennai": ["CNB", "PRYJ", "BSB", "HWH", "BZA", "MAS"],
-  "lucknow-hyderabad": ["CNB", "ET", "NGP", "SC"],
+  "lucknow-hyderabad": ["CNB", "ET", "NGP"],
   "lucknow-patna": ["PRYJ", "DDU", "GAYA", "PNBE"],
   "patna-lucknow": ["DDU", "BSB", "PRYJ", "CNB", "MGS"],
   "lucknow-guwahati": ["PNBE", "KGP", "NJP", "GHY"],
@@ -1720,21 +1728,21 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "jaipur-chennai": ["KOTA", "BPL", "NGP", "SC", "MAS"],
   "jaipur-kolkata": ["AGC", "CNB", "PRYJ", "DDU"],
   "jaipur-bangalore": ["KOTA", "BPL", "ET", "NGP", "SC", "SBC"],
-  "jaipur-hyderabad": ["KOTA", "BPL", "NGP", "SC"],
+  "jaipur-hyderabad": ["KOTA", "BPL", "NGP"],
   "jaipur-lucknow": ["AGC", "CNB", "LKO"],
   "jaipur-patna": ["AGC", "CNB", "PRYJ", "DDU", "PNBE"],
 
   // —— Ahmedabad/Gujarat corridors ——
   "ahmedabad-chennai": ["RTM", "ET", "NGP", "BZA", "MAS"],
   "ahmedabad-kolkata": ["RTM", "BPL", "ET", "NGP"],
-  "ahmedabad-hyderabad": ["RTM", "BRC", "NGP", "SC"],
+  "ahmedabad-hyderabad": ["RTM", "BRC", "NGP"],
   "ahmedabad-bangalore": ["RTM", "BRC", "NGP", "SC", "SBC"],
   "ahmedabad-patna": ["RTM", "BPL", "ET", "PRYJ", "PNBE"],
   "ahmedabad-lucknow": ["RTM", "BPL", "ET", "CNB", "LKO"],
 
   // —— Patna/Bihar corridors ——
   "patna-chennai": ["HWH", "BBS", "VSKP", "BZA", "MAS"],
-  "patna-hyderabad": ["HWH", "BZA", "SC"],
+  "patna-hyderabad": ["DDU", "JBP", "ET", "NGP"],
   "patna-guwahati": ["KGP", "NJP", "GHY"],
 
   // —— Varanasi corridors ——
@@ -1807,8 +1815,10 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "jaipur-bengaluru": ["KOTA", "RTM", "BPL", "ET", "NGP", "SC"],
   "chennai-goa": ["RU", "GTL", "UBL", "MAO"],
   "goa-chennai": ["MAO", "UBL", "GTL", "RU", "MAS"],
-  "hyderabad-goa": ["WADI", "GTL", "UBL", "MAO"],
-  "goa-hyderabad": ["MAO", "UBL", "GTL", "WADI", "SC"],
+  "hyderabad-goa": ["WADI", "GTL", "UBL"],
+  "goa-hyderabad": ["UBL", "GTL", "WADI"],
+  "hyderabad-madgaon": ["WADI", "GTL", "UBL"],
+  "madgaon-hyderabad": ["UBL", "GTL", "WADI"],
 
   // Eastern & Central
   "kolkata-ajmer": ["ASN", "GAYA", "DDU", "PRYJ", "CNB", "AGC"],
