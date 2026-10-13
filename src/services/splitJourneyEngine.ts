@@ -960,7 +960,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "hte-mumbai":       ["ROU", "BSP", "NGP", "R", "TATA", "JSG", "BSL", "BKSC", "DDU", "GAYA", "ET", "JBP"],
   "mumbai-lucknow": ["CNB", "VGLJ", "BPL", "ET", "BSL", "JHS", "BINA", "ORAI", "ST", "KOTA"],
   "mumbai-delhi": ["ST", "BRC", "RTM", "KOTA", "MTJ", "BSL", "ET", "BPL", "VGLJ", "GWL", "AGC", "ADI", "AII", "JP", "RE"],
-  "mumbai-jaipur": ["KOTA", "SWM", "RTM", "BRC", "ST", "AII", "ABR", "NAD", "FL", "ADI"],
+  "mumbai-jaipur": ["SWM", "KOTA", "BRC", "RTM", "ST", "AII", "ABR", "ADI"],
   "mumbai-kolkata": ["NGP", "ET", "BSP", "JBP", "ROU", "DDU", "TATA", "GAYA", "BSL", "ASN", "KGP", "PCOI"],
   "mumbai-secunderabad": ["WADI", "SUR", "PUNE", "KLBG", "VKB", "DD", "GR", "KWV", "LNL", "RC"],
   "secunderabad-mumbai": ["WADI", "SUR", "PUNE", "KLBG", "VKB", "DD", "GR", "KWV", "LNL", "RC"],
@@ -1716,7 +1716,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "lucknow-ahmedabad": ["JHS", "KOTA", "RTM", "ADI"],
 
   // —— Jaipur corridors ——
-  "jaipur-mumbai": ["SWM", "KOTA", "RTM", "BRC", "ST", "AII", "ABR", "NAD", "FL", "ADI"],
+  "jaipur-mumbai": ["SWM", "KOTA", "BRC", "RTM", "ST", "AII", "ABR", "ADI"],
   "jaipur-chennai": ["KOTA", "BPL", "NGP", "SC", "MAS"],
   "jaipur-kolkata": ["AGC", "CNB", "PRYJ", "DDU"],
   "jaipur-bangalore": ["KOTA", "BPL", "ET", "NGP", "SC", "SBC"],
