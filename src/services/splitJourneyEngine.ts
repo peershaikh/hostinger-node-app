@@ -1721,7 +1721,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "lucknow-patna": ["PRYJ", "DDU", "GAYA", "PNBE"],
   "patna-lucknow": ["DDU", "BSB", "PRYJ", "CNB", "MGS"],
   "lucknow-guwahati": ["PNBE", "KGP", "NJP", "GHY"],
-  "lucknow-ahmedabad": ["JHS", "KOTA", "RTM", "ADI"],
+  "lucknow-ahmedabad": ["JHS", "KOTA", "RTM"],
 
   // —— Jaipur corridors ——
   "jaipur-mumbai": ["SWM", "KOTA", "BRC", "RTM", "ST", "AII", "ABR", "ADI"],
@@ -1733,12 +1733,17 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "jaipur-patna": ["AGC", "CNB", "PRYJ", "DDU", "PNBE"],
 
   // —— Ahmedabad/Gujarat corridors ——
-  "ahmedabad-chennai": ["RTM", "ET", "NGP", "BZA", "MAS"],
+  "ahmedabad-chennai": ["RTM", "ET", "NGP", "BZA"],
   "ahmedabad-kolkata": ["RTM", "BPL", "ET", "NGP"],
   "ahmedabad-hyderabad": ["RTM", "BRC", "NGP"],
-  "ahmedabad-bangalore": ["RTM", "BRC", "NGP", "SC", "SBC"],
-  "ahmedabad-patna": ["RTM", "BPL", "ET", "PRYJ", "PNBE"],
-  "ahmedabad-lucknow": ["RTM", "BPL", "ET", "CNB", "LKO"],
+  "ahmedabad-bangalore": ["ST", "BRC", "SUR", "PUNE"],
+  "ahmedabad-patna": ["RTM", "BPL", "ET", "PRYJ", "DDU"],
+  "patna-ahmedabad": ["DDU", "PRYJ", "ET", "BPL", "RTM"],
+  "ahmedabad-lucknow": ["RTM", "BPL", "ET", "CNB"],
+  "ahmedabad-varanasi": ["RTM", "KOTA", "CNB", "PRYJ", "DDU"],
+  "varanasi-ahmedabad": ["DDU", "PRYJ", "CNB", "KOTA", "RTM"],
+  "ahmedabad-guwahati": ["RTM", "BPL", "ET", "DDU", "PNBE", "NJP"],
+  "guwahati-ahmedabad": ["NJP", "PNBE", "DDU", "ET", "BPL", "RTM"],
 
   // —— Patna/Bihar corridors ——
   "patna-chennai": ["HWH", "BBS", "VSKP", "BZA", "MAS"],
@@ -1785,12 +1790,12 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "indb-mumbai":   ["UJN", "RTM", "BRC", "ST", "NAD"],
   "pune-delhi": ["MMR", "BSL", "ET", "BPL", "GWL", "AGC"],
   "delhi-pune": ["AGC", "GWL", "BPL", "ET", "BSL", "MMR"],
-  "pune-ahmedabad": ["BSR", "ST", "BRC", "ADI"],
-  "ahmedabad-pune": ["ADI", "BRC", "ST", "BSR", "PUNE"],
+  "pune-ahmedabad": ["BSR", "ST", "BRC"],
+  "ahmedabad-pune": ["BRC", "ST", "BSR"],
   "pune-jaipur": ["BSR", "ST", "BRC", "RTM", "KOTA", "JP"],
   "jaipur-pune": ["JP", "KOTA", "RTM", "BRC", "ST", "BSR", "PUNE"],
-  "ahmedabad-jaipur": ["PNU", "ABR", "FA", "MJ", "AII", "JP"],
-  "jaipur-ahmedabad": ["JP", "AII", "MJ", "FA", "ABR", "PNU", "ADI"],
+  "ahmedabad-jaipur": ["PNU", "ABR", "FA", "MJ", "AII"],
+  "jaipur-ahmedabad": ["AII", "MJ", "FA", "ABR", "PNU"],
 
   // Northern / Himalayan / Pilgrimage
   "delhi-ajmer": ["RE", "AWR", "JP", "KSG"],
