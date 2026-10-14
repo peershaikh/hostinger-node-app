@@ -155,12 +155,28 @@ export class NewsTrainGuideService {
       try {
         const info = await irctcService.getTrainInfo(trainNo);
         if (info) {
-          if (info.train_name) trainName = info.train_name;
-          if (info.train_type) trainType = info.train_type;
-          if (Array.isArray(info.stations) && info.stations.length > 0) {
-            scheduleStations = info.stations;
-            source = info.stations[0]?.station_code || '';
-            destination = info.stations[info.stations.length - 1]?.station_code || '';
+          const tInfo = info.trainInfo || info;
+          if (tInfo.train_name) trainName = tInfo.train_name;
+          if (tInfo.type || tInfo.train_type) trainType = tInfo.type || tInfo.train_type;
+          if (tInfo.from_stn_code || tInfo.from_stn_name) source = tInfo.from_stn_name || tInfo.from_stn_code;
+          if (tInfo.to_stn_code || tInfo.to_stn_name) destination = tInfo.to_stn_name || tInfo.to_stn_code;
+
+          const rawRoute = info.route || info.stations || [];
+          if (Array.isArray(rawRoute) && rawRoute.length > 0) {
+            scheduleStations = rawRoute.map((s: any) => ({
+              station_code: s.stnCode || s.station_code || '',
+              station_name: s.stnName || s.station_name || '',
+              arrival_time: s.arrival || s.arrival_time || '',
+              departure_time: s.departure || s.departure_time || '',
+              halt: s.halt || '',
+              distance: s.distance || '',
+              day: s.day || '1',
+              platform: s.platform || '',
+            }));
+            if (!source && scheduleStations[0]) source = scheduleStations[0].station_name || scheduleStations[0].station_code;
+            if (!destination && scheduleStations[scheduleStations.length - 1]) {
+              destination = scheduleStations[scheduleStations.length - 1].station_name || scheduleStations[scheduleStations.length - 1].station_code;
+            }
           }
         }
       } catch (err: any) {
