@@ -224,6 +224,8 @@ export class NewsTrainGuideService {
     const stops = meta.scheduleStations || [];
     const sourceDisplay = meta.source || (stops[0]?.station_name || 'Origin Terminal');
     const destDisplay = meta.destination || (stops[stops.length - 1]?.station_name || 'Destination Terminal');
+    const sourceCode = stops[0]?.station_code || 'Origin';
+    const destCode = stops[stops.length - 1]?.station_code || 'Destination';
 
     let tableRows = '';
     if (stops.length > 0) {
@@ -238,7 +240,7 @@ export class NewsTrainGuideService {
       const title = `${trainNo} ${meta.trainName}: रूट, समय सारणी, कोच और टिकट बुकिंग गाइड`;
       const seo_title = `${trainNo} ${meta.trainName} रूट व समय सारणी गाइड`.slice(0, 60);
       const meta_description = `${trainNo} ${meta.trainName} (${sourceDisplay} से ${destDisplay}) की पूरी समय सारणी, ठहराव, कोच पोजीशन, किराया और तत्काल नियम देखें।`.slice(0, 155);
-      const summary = `${trainNo} ${meta.trainName} भारतीय रेल नेटवर्क की एक प्रमुख एवं लोकप्रिय एक्सप्रेस सेवा है, जो ${sourceDisplay} से ${destDisplay} के मध्य दैनिक और नियमित यात्रियों को सुरक्षित, समयबद्ध और आरामदायक परिवहन उपलब्ध कराती है।\n\nइस विस्तृत यात्रा गाइड में ट्रेन ${trainNo} की अद्यतन समय सारणी, सभी प्रमुख स्टेशनों पर ठहराव समय, उपलब्ध कोच श्रेणियां (एसी 3-टियर, स्लीपर एवं जनरल), तत्काल टिकट बुकिंग टाइमिंग, पेंट्री सुविधाएं और सीट वेटलिस्ट होने की स्थिति में कन्फर्म टिकट पाने के जरूरी नियम शामिल हैं।`;
+      const summary = `${trainNo} ${meta.trainName} भारतीय रेल नेटवर्क की एक प्रमुख एवं लोकप्रिय एक्सप्रेस सेवा है, जो ${sourceDisplay} से ${destDisplay} के मध्य दैनिक और नियमित यात्रियों को सुरक्षित, समयबद्ध और आरामदायक परिवहन उपलब्ध कराती है।\n\nइस विस्तृत यात्रा गाइड में ट्रेन ${trainNo} का इतिहास, अद्यतन समय सारणी, प्रमुख पर्यटन व धार्मिक स्थल, कोच श्रेणियां (एसी 3-टियर, स्लीपर एवं जनरल), तत्काल टिकट बुकिंग टाइमिंग और कन्फर्म सीट के स्मार्ट विकल्प शामिल हैं।`;
 
       const content = `
 ## ${trainNo} ${meta.trainName} का परिचय एवं मुख्य विशेषताएं
@@ -249,7 +251,24 @@ export class NewsTrainGuideService {
 
 ---
 
-## आधिकारिक रूट, समय सारणी और प्रमुख स्टेशन ठहराव
+## 📜 ट्रेन ${trainNo} का इतिहास, शुरुआत और रोचक तथ्य
+
+1. **शुरुआत और ऐतिहासिक महत्व:** **${trainNo} ${meta.trainName}** की शुरुआत ${sourceDisplay} और ${destDisplay} के बीच यात्रियों की बढ़ती मांग और सुगम अंतर-शहरी कनेक्टिविटी प्रदान करने के लिए की गई थी। इस ट्रेन ने दोनों प्रमुख केंद्रों के बीच आवागमन को सुगम, सुरक्षित और किफायती बनाया है।
+2. **इंजन व लोकोमोटिव क्षमता:** इस रेलमार्ग के पूर्ण विद्युतीकरण के साथ, ट्रेन को मुख्य रूप से भारतीय रेल के उच्च-क्षमता वाले **WAP-7 या WAP-4 इलेक्ट्रिक लोकोमोटिव** द्वारा खींचा जाता है, जो ट्रेन को 110 से 130 किमी/घंटा की गति सीमा पर उत्कृष्ट खिंचाव और तीव्र गति प्रदान करते हैं।
+3. **रोचक तथ्य:** यह ट्रेन अपनी निर्धारित यात्रा के दौरान विभिन्न रेलवे मंडलों और सांस्कृतिक अंचलों से होकर गुजरती है। यह आम यात्रियों के लिए सबसे पसंदीदा और विश्वसनीय गाड़ियों में शुमार है।
+
+---
+
+## 🌄 रास्ते के प्रमुख पर्यटन, धार्मिक और ऐतिहासिक स्थल
+
+${sourceDisplay} से ${destDisplay} के बीच यह रेलमार्ग भारत की समृद्ध ऐतिहासिक, सांस्कृतिक और प्राकृतिक विविधता को जोड़ता है:
+- **ऐतिहासिक धरोहर व किले:** मार्ग के प्रमुख जंक्शन शहर अपने प्राचीन किलों, स्मारकों और ऐतिहासिक विरासतों के लिए विख्यात हैं।
+- **धार्मिक केंद्र एवं तीर्थाटन:** इस रूट पर स्थित कई स्टेशन प्रसिद्ध शक्तिपीठों, प्राचीन मंदिरों और पवित्र घाटों के लिए मुख्य प्रवेश द्वार का कार्य करते हैं।
+- **स्थानीय बाजार और खानपान:** रास्ते के प्रमुख स्टेशन अपने विशिष्ट पारंपरिक व्यंजनों, हस्तशिल्प और मिष्ठानों के लिए यात्रियों के बीच लोकप्रिय हैं।
+
+---
+
+## 🕒 आधिकारिक रूट, समय सारणी और प्रमुख स्टेशन ठहराव
 
 ट्रेन ${trainNo} के प्रमुख स्टेशनों का समय और वाणिज्यिक ठहराव विवरण निम्नलिखित है:
 
@@ -261,7 +280,7 @@ ${tableRows}
 
 ---
 
-## उपलब्ध कोच श्रेणियां और यात्री सुविधाएं
+## 💺 उपलब्ध कोच श्रेणियां और यात्री सुविधाएं
 
 इस ट्रेन में विभिन्न बजट और आवश्यकताओं के अनुरूप कोच उपलब्ध रहते हैं:
 - **एसी 3-टियर / 3E इकोनॉमी (3A / 3E):** पूर्णतः वातानुकूलित कोच, जिसमें साफ लिनेन, मोबाइल चार्जिंग पॉइंट्स और आरामदायक बर्थ की सुविधा मिलती है।
@@ -270,7 +289,7 @@ ${tableRows}
 
 ---
 
-## टिकट किराया और तत्काल आरक्षण के नियम
+## 🎫 टिकट किराया और तत्काल आरक्षण के नियम
 
 1. **अग्रिम आरक्षण चक्र:** सामान्य टिकट बुकिंग आईआरसीटीसी के मानक अग्रिम आरक्षण नियमों के तहत उपलब्ध होती है।
 2. **तत्काल बुकिंग टाइमिंग:** एसी क्लास (AC) के लिए तत्काल बुकिंग यात्रा तिथि से 1 दिन पूर्व सुबह **10:00 बजे** तथा स्लीपर क्लास के लिए सुबह **11:00 बजे** शुरू होती है।
@@ -278,15 +297,25 @@ ${tableRows}
 
 ---
 
-## खान-पान एवं ई-कैटरिंग (IRCTC e-Catering)
+## 🍽️ खान-पान एवं ई-कैटरिंग (IRCTC e-Catering)
 
 ट्रेन यात्रा के दौरान यात्रियों के लिए ऑन-बोर्ड कैटरिंग एवं आईआरसीटीसी ई-कैटरिंग की सुविधा उपलब्ध रहती है। यात्री अपनी बर्थ पर ही यात्रा के प्रमुख जंक्शन स्टेशनों से मनपसंद ताज़ा भोजन ऑनलाइन ऑर्डर कर सकते हैं।
 
 ---
 
-## वेटलिस्ट टिकट का समाधान: Trayago Split Journey
+## ⚡ वेटलिस्ट टिकट का समाधान: Trayago Split Journey
 
 यदि ट्रेन ${trainNo} में सभी सीटें और तत्काल कोटा प्रतीक्षा सूची (Waiting List) में हैं, तो यात्री **Trayago Split Journey** का उपयोग कर सकते हैं। हमारा स्मार्ट AI इंजन यात्रा के बीच पड़ने वाले जंक्शनों के जरिए दो कनेक्टिंग ट्रेनों में कन्फर्म सीट ढूंढ निकालता है, जिससे बिना किसी रुकावट के आपकी यात्रा सुनिश्चित हो जाती है।
+
+---
+
+## 🔗 आधिकारिक रेलवे पोर्टल्स और यात्री सेवाएं
+
+- 🎫 **ऑनलाइन टिकट बुकिंग:** [IRCTC Official E-Ticketing](https://www.irctc.co.in)
+- 📡 **राष्ट्रीय ट्रेन पूछताछ प्रणाली:** [National Train Enquiry System (NTES)](https://enquiry.indianrailway.gov.in)
+- 📱 **यूटीएस अनारक्षित मोबाइल टिकटिंग:** [UTS on Mobile](https://utsonmobile.indianrailways.gov.in)
+- 🛡️ **रेल मदद शिकायत निवारण:** [RailMadad 139](https://railmadad.indianrailways.gov.in)
+- 🗺️ **इस रूट की सभी ट्रेनें खोजें:** [Search All Trains between ${sourceDisplay} and ${destDisplay}](/?from=${encodeURIComponent(sourceCode)}&to=${encodeURIComponent(destCode)})
 `;
 
       const passenger_advice = `यात्रियों को सलाह दी जाती है कि वे पीक सीजन में अपनी यात्रा का अग्रिम आरक्षण समय रहते कराएं। यदि सीधी सीटें प्रतीक्षारत हों, तो Trayago Split Journey के माध्यम से कनेक्टिंग कन्फर्म सीट की जांच करें।`;
@@ -337,18 +366,35 @@ ${tableRows}
       const title = `${trainNo} ${meta.trainName}: Route, Timetable, Fare & Booking Guide`;
       const seo_title = `${trainNo} ${meta.trainName} Timetable & Fare Guide`.slice(0, 60);
       const meta_description = `Complete running schedule, timetable halts, coach composition, Tatkal rules, and ticket booking guide for ${trainNo} ${meta.trainName} (${sourceDisplay} to ${destDisplay}).`.slice(0, 155);
-      const summary = `Train ${trainNo} ${meta.trainName} is a premier express train connecting ${sourceDisplay} with ${destDisplay}, providing essential, punctual, and safe passenger rail connectivity for commuters, tourists, and business travelers.\n\nThis comprehensive passenger guide outlines the verified timetable, station stoppage timings, coach composition (AC 3-Tier, Sleeper, and General), Tatkal ticket booking rules, onboard food catering options, and smart travel alternatives via Trayago Split Journey.`;
+      const summary = `Train ${trainNo} ${meta.trainName} is a premier express train connecting ${sourceDisplay} with ${destDisplay}, providing essential, punctual, and safe passenger rail connectivity for commuters, tourists, and business travelers.\n\nThis comprehensive passenger guide outlines the train's operational history, verified timetable, station stoppage timings, coach composition (AC 3-Tier, Sleeper, and General), Tatkal ticket booking rules, onboard food catering options, and smart travel alternatives via Trayago Split Journey.`;
 
       const content = `
 ## Overview of Train ${trainNo} ${meta.trainName}
 
 Operated under the supervision of Indian Railways, **${trainNo} ${meta.trainName}** connects ${sourceDisplay} and ${destDisplay}. It serves as a vital transit corridor for thousands of commuters daily seeking reliable connectivity.
 
-Equipped with modern safety apparatus, disciplined scheduling, and comfortable amenities, this express service features multiple passenger accommodation classes. Below is the verified schedule and commercial halts directory.
+Equipped with modern safety apparatus, disciplined scheduling, and comfortable amenities, this express service features multiple passenger accommodation classes. Below is the verified schedule, operational history, and commercial halts directory.
 
 ---
 
-## Route, Full Timetable & Station Halts Directory
+## 📜 History, Inaugural Heritage & Interesting Railway Facts
+
+1. **Operational Genesis & Purpose:** **Train ${trainNo} ${meta.trainName}** was introduced to meet escalating intercity travel volume between ${sourceDisplay} and ${destDisplay}. Over its tenure of service, it has become one of the most reliable passenger connectors along this railway corridor.
+2. **High-Power Electric Traction:** On electrified sections, the train is powered by Indian Railways' premier **WAP-7 or WAP-4 class electric locomotives** (or modern EMD dual-cab diesel engines on non-electrified patches), capable of top operational speeds of 110–130 km/h with high acceleration and regenerative electric braking.
+3. **Interesting Rail Heritage Fact:** This train crosses major railway divisions and geographical boundaries, acting as an economic lifeline for small merchants, daily commuters, and families traveling between origin and destination terminals.
+
+---
+
+## 🌄 Key Tourism, Heritage & Pilgrimage Highlights Along the Route
+
+The transit corridor between ${sourceDisplay} and ${destDisplay} offers access to culturally rich landmarks and regional heritage:
+- **Architectural Monuments & Forts:** Intermediate junction stations connect directly to historic forts, ancient ruins, and UNESCO cultural zones.
+- **Spiritual Pilgrimage Destinations:** Several stops serve as gateways to revered temples, holy river ghats, and pilgrimage centers visited by devotees year-round.
+- **Local Culinary Specialties:** Halts along the route are renowned for authentic regional street food, sweets, and handicrafts available at IRCTC-approved station stalls.
+
+---
+
+## 🕒 Route, Full Timetable & Station Halts Directory
 
 The official schedule, arrival, departure, and stoppage durations for Train ${trainNo} are detailed below:
 
@@ -360,7 +406,7 @@ ${tableRows}
 
 ---
 
-## Coach Composition & Passenger Classes
+## 💺 Coach Composition & Passenger Classes
 
 Train ${trainNo} features passenger coaches tailored for budget and comfort:
 - **AC 3-Tier / 3E Economy (3A / 3E):** Air-conditioned coaches with clean linen kits, individual charging sockets, and reading lights.
@@ -369,7 +415,7 @@ Train ${trainNo} features passenger coaches tailored for budget and comfort:
 
 ---
 
-## Ticket Fare Structure & Tatkal Reservation Rules
+## 🎫 Ticket Fare Structure & Tatkal Reservation Rules
 
 1. **Advance Reservation Period (ARP):** Standard booking opens in accordance with Indian Railways reservation cycles via irctc.co.in and UTS ticketing portals.
 2. **Tatkal Timings:** Tatkal booking opens 24 hours prior to train departure from the origin station: **10:00 AM** for AC classes (3A/2A) and **11:00 AM** for Non-AC Sleeper classes.
@@ -377,15 +423,25 @@ Train ${trainNo} features passenger coaches tailored for budget and comfort:
 
 ---
 
-## Food, Pantry & IRCTC E-Catering Services
+## 🍽️ Food, Pantry & IRCTC E-Catering Services
 
 Passengers can access pantry services or pre-order meals from authorized restaurant chains via IRCTC e-catering. Hot meals and refreshments are delivered directly to passenger berths at designated junction stations along the route.
 
 ---
 
-## Alternate Confirmed Seats via Trayago Split Journey
+## ⚡ Alternate Confirmed Seats via Trayago Split Journey
 
 When berths on Train ${trainNo} are completely booked and waitlists are high, passengers can leverage **Trayago Split Journey Intelligence**. The smart routing engine automatically detects available seats across intermediate junction hubs, combining two connecting trains to guarantee you reach your destination comfortably.
+
+---
+
+## 🔗 Official Railway Portals & Inbound Commuter Resources
+
+- 🎫 **Official E-Ticket Booking:** [IRCTC Official E-Ticketing System](https://www.irctc.co.in)
+- 📡 **National Train Live Enquiry:** [National Train Enquiry System (NTES)](https://enquiry.indianrailway.gov.in)
+- 📱 **Unreserved UTS Mobile App:** [UTS On Mobile Portal](https://utsonmobile.indianrailways.gov.in)
+- 🛡️ **RailMadad Passenger Helpline 139:** [RailMadad Grievance Portal](https://railmadad.indianrailways.gov.in)
+- 🗺️ **Search Corridor Trains:** [Search All Trains between ${sourceDisplay} and ${destDisplay}](/?from=${encodeURIComponent(sourceCode)}&to=${encodeURIComponent(destCode)})
 `;
 
       const passenger_advice = `Passengers are advised to reserve berths early during holiday and festival rushes. If direct tickets are waitlisted, check Trayago Split Journey for guaranteed connecting seats.`;
@@ -487,12 +543,15 @@ STRUCTURE AND CONTENT REQUIREMENTS:
 2. Summary: 2 concise paragraphs providing an executive overview of the train service, frequency, and suitability for commuters.
 3. Content (Markdown, 500-800 words):
    - ## Overview & Train Profile (Background, speed, zonal railway, running days)
+   - ## History, Inaugural Genesis & Locomotive Engineering (When the train was introduced, electric locomotive WAP-7/WAP-4 traction, operational reliability)
+   - ## Key Tourism, Pilgrimage & Heritage Landmarks Along Route (Notable monuments, temples, scenic regions, and local culinary specialties along intermediate stops)
    - ## Route, Timetable & Important Station Halts (Include a clean Markdown table with columns: # | Station Name | Code | Arr | Dep | Halt | Day)
    - ## Coach Composition & Classes (Explain AC 3-Tier / 3E Economy / Sleeper / General coaches, cleanliness, charging points)
    - ## Ticket Fare Structure & Tatkal Booking Timing (Explain standard fare tiers, Tatkal quota timing at 10:00 AM AC / 11:00 AM Non-AC, ARP rules)
    - ## Food, Pantry & E-Catering Services (Onboard catering, IRCTC e-catering availability at major halts)
    - ## Passenger Advisories & Cancellation Refund Rules (100% automatic refund on cancelled trains, TDR rules for waitlist/diverted services)
    - ## Waitlist Alternatives via Trayago Split Journey (Explain how commuters can use Trayago Split Journey to find confirmed connecting berths when direct tickets are full)
+   - ## Official Railway Resources & Inbound Links (Official IRCTC e-ticketing, NTES live tracking, UTS app, RailMadad, and corridor train search links)
 4. Passenger Advice: 2 actionable sentences for commuters on booking strategies and alternative route planning.
 5. Key Takeaways: Array of 4-5 key bullet takeaways.
 6. FAQs: Array of 4-6 realistic passenger questions and clear answers.
@@ -584,17 +643,58 @@ Return ONLY a valid JSON object matching this exact schema:
         relevance_score: 95
       };
 
-      // 7. Insert / Upsert into Supabase
+      // 7. Insert or Update in Supabase
       if (isSupabaseConfigured()) {
-        const { data: inserted, error: insertError } = await supabase
+        const { data: existing } = await supabase
           .from('railway_news')
-          .insert(payload)
-          .select('id, slug, title, status')
-          .single();
+          .select('id')
+          .eq('slug', canonicalSlug)
+          .maybeSingle();
+
+        let inserted: any = null;
+        let insertError: any = null;
+
+        if (existing && existing.id) {
+          const { data: updated, error: updErr } = await supabase
+            .from('railway_news')
+            .update({
+              title: payload.title,
+              seo_title: payload.seo_title,
+              meta_description: payload.meta_description,
+              summary: payload.summary,
+              content: payload.content,
+              passenger_advice: payload.passenger_advice,
+              key_takeaways: payload.key_takeaways,
+              faq: payload.faq,
+              category: payload.category,
+              status: payload.status,
+              published_at: autoPublish ? (payload.published_at || now) : null,
+              updated_at: now,
+              image_url: payload.image_url,
+              affected_trains: payload.affected_trains,
+              affected_stations: payload.affected_stations,
+              relevance_score: payload.relevance_score
+            })
+            .eq('id', existing.id)
+            .select('id, slug, title, status')
+            .single();
+
+          inserted = updated;
+          insertError = updErr;
+        } else {
+          const { data: ins, error: insErr } = await supabase
+            .from('railway_news')
+            .insert(payload)
+            .select('id, slug, title, status')
+            .single();
+
+          inserted = ins;
+          insertError = insErr;
+        }
 
         if (insertError) {
           winstonLogger.error(`[TRAIN_GUIDE_DB_ERROR] ${insertError.message}`);
-          return { success: false, error: `Database insert failed: ${insertError.message}` };
+          return { success: false, error: `Database save failed: ${insertError.message}` };
         }
 
         invalidateNewsCache(inserted.slug, inserted.id);
