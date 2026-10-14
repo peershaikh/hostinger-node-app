@@ -34,6 +34,7 @@ import referralRoutes from './routes/referrals';
 import stationRoutes from './routes/stations';
 import trainRoutes from './routes/trains';
 import whatsappRoutes from './routes/whatsapp';
+import ttsRoutes from './routes/tts';
 
 
 import { trainController } from './controllers/trainController';
@@ -221,6 +222,7 @@ app.use('/api/beta', betaRoutes);
 app.use('/api/alarms', alarmRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
+app.use('/api/tts', ttsRoutes);
 
 // PHASE_4C971 PROXY FIX: Mirror all routes WITHOUT /api/ prefix.
 // Next.js rewrite: source=/api/:path* → destination=https://api.trayago.in/:path*
@@ -242,6 +244,7 @@ app.use('/beta', betaRoutes);
 app.use('/alarms', alarmRoutes);
 app.use('/ai', aiRoutes);
 app.use('/whatsapp', whatsappRoutes);
+app.use('/tts', ttsRoutes);
 
 // Live train endpoint — both prefixed and un-prefixed
 app.get('/api/live-train/:trainNo', liveLimiter, usageMiddleware('live'), trainController.getLiveStatus);

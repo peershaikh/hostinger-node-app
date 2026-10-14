@@ -227,28 +227,50 @@ class AlertDispatcher {
                     if (!whatsappAlertsEnabled) {
                         logger_1.winstonLogger.info(`[ALERT_DISPATCHER] WhatsApp dispatch skipped for alert ${alert.id}: user preference disabled.`);
                     }
+                    else if (metadata.whatsapp_dispatched === true || metadata.whatsapp_wamid) {
+                        // STEP 5.10BQ: In-memory/metadata pre-send deduplication protection
+                        logger_1.winstonLogger.info(`[ALERT_DISPATCHER] WhatsApp dispatch skipped for alert ${alert.id}: already dispatched.`);
+                        delivered = true;
+                    }
                     else {
                         const validPhone = (0, phoneNormalizer_1.normalizeIndianPhoneNumber)(userPhone);
                         if (!validPhone) {
                             logger_1.winstonLogger.info(`[ALERT_DISPATCHER] WhatsApp dispatch skipped for alert ${alert.id}: missing or invalid mobile number.`);
                         }
                         else {
-                            try {
-                                const templateData = {
-                                    ...metadata,
-                                    title,
-                                    message
-                                };
-                                const waResult = await whatsappService_1.whatsAppService.sendSmartAlertTemplate(validPhone, alert.alert_type, templateData, alert.id);
-                                if (waResult.success) {
-                                    logger_1.winstonLogger.info(`[ALERT_DISPATCHER] WhatsApp smart alert dispatched for alert ${alert.id}. WAMID: ${waResult.wamid}`);
-                                }
-                                else {
-                                    logger_1.winstonLogger.warn(`[ALERT_DISPATCHER] WhatsApp smart alert dispatch failed for alert ${alert.id}: ${waResult.reason}`);
-                                }
+                            // STEP 5.10BQ: Fail-closed canary recipient restriction
+                            const isCanaryMode = featureFlags_1.featureFlags.whatsappCanaryMode || process.env.WHATSAPP_CANARY_MODE === 'true';
+                            const canaryPhone = (0, phoneNormalizer_1.normalizeIndianPhoneNumber)(process.env.WHATSAPP_CANARY_PHONE);
+                            if (isCanaryMode && !canaryPhone) {
+                                logger_1.winstonLogger.warn(`[ALERT_DISPATCHER] WhatsApp canary mode active but WHATSAPP_CANARY_PHONE is invalid or unset. Dispatch skipped fail-closed for alert ${alert.id}.`);
                             }
-                            catch (waErr) {
-                                logger_1.winstonLogger.error(`[ALERT_DISPATCHER] WhatsApp dispatch exception for alert ${alert.id}: ${waErr.message}`);
+                            else if (isCanaryMode && validPhone !== canaryPhone) {
+                                logger_1.winstonLogger.info(`[ALERT_DISPATCHER] WhatsApp dispatch skipped for alert ${alert.id}: recipient ${(0, phoneNormalizer_1.maskPhoneNumber)(validPhone)} does not match authorized canary recipient.`);
+                            }
+                            else {
+                                try {
+                                    const templateData = {
+                                        ...metadata,
+                                        title,
+                                        message
+                                    };
+                                    const waResult = await whatsappService_1.whatsAppService.sendSmartAlertTemplate(validPhone, alert.alert_type, templateData, alert.id);
+                                    if (waResult.success && !waResult.simulated) {
+                                        delivered = true;
+                                        metadata.whatsapp_dispatched = true;
+                                        metadata.whatsapp_wamid = waResult.wamid;
+                                        logger_1.winstonLogger.info(`[ALERT_DISPATCHER] WhatsApp smart alert dispatched for alert ${alert.id}. WAMID: ${waResult.wamid}`);
+                                    }
+                                    else if (waResult.simulated || waResult.reason === 'DRY_RUN_SIMULATED') {
+                                        logger_1.winstonLogger.info(`[ALERT_DISPATCHER] WhatsApp dry-run simulation recorded for alert ${alert.id}. Zero live delivery.`);
+                                    }
+                                    else {
+                                        logger_1.winstonLogger.warn(`[ALERT_DISPATCHER] WhatsApp smart alert dispatch failed for alert ${alert.id}: ${waResult.reason}`);
+                                    }
+                                }
+                                catch (waErr) {
+                                    logger_1.winstonLogger.error(`[ALERT_DISPATCHER] WhatsApp dispatch exception for alert ${alert.id}: ${waErr.message}`);
+                                }
                             }
                         }
                     }
@@ -293,7 +315,11 @@ class AlertDispatcher {
                 if (delivered) {
                     await supabase_1.supabase
                         .from('smart_alerts')
-                        .update({ status: 'DELIVERED', updated_at: new Date().toISOString() })
+                        .update({
+                        status: 'DELIVERED',
+                        updated_at: new Date().toISOString(),
+                        metadata: metadata
+                    })
                         .eq('id', alert.id);
                     exports.MEMORY_RETRY_QUEUE.delete(alert.id);
                     logger_1.winstonLogger.debug(`[ALERT_DISPATCHER] Alert ${alert.id} marked as DELIVERED.`);

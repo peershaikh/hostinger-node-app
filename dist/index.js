@@ -37,6 +37,7 @@ const referrals_1 = __importDefault(require("./routes/referrals"));
 const stations_1 = __importDefault(require("./routes/stations"));
 const trains_1 = __importDefault(require("./routes/trains"));
 const whatsapp_1 = __importDefault(require("./routes/whatsapp"));
+const tts_1 = __importDefault(require("./routes/tts"));
 const trainController_1 = require("./controllers/trainController");
 const rateLimiter_1 = require("./middleware/rateLimiter");
 const usageMiddleware_1 = require("./middleware/usageMiddleware");
@@ -201,6 +202,7 @@ app.use('/api/beta', beta_1.default);
 app.use('/api/alarms', alarms_1.default);
 app.use('/api/ai', ai_1.default);
 app.use('/api/whatsapp', whatsapp_1.default);
+app.use('/api/tts', tts_1.default);
 // PHASE_4C971 PROXY FIX: Mirror all routes WITHOUT /api/ prefix.
 // Next.js rewrite: source=/api/:path* → destination=https://api.trayago.in/:path*
 // The proxy STRIPS /api/ — Express never sees it. Both path forms now work.
@@ -221,6 +223,7 @@ app.use('/beta', beta_1.default);
 app.use('/alarms', alarms_1.default);
 app.use('/ai', ai_1.default);
 app.use('/whatsapp', whatsapp_1.default);
+app.use('/tts', tts_1.default);
 // Live train endpoint — both prefixed and un-prefixed
 app.get('/api/live-train/:trainNo', rateLimiter_1.liveLimiter, (0, usageMiddleware_1.usageMiddleware)('live'), trainController_1.trainController.getLiveStatus);
 app.get('/live-train/:trainNo', rateLimiter_1.liveLimiter, (0, usageMiddleware_1.usageMiddleware)('live'), trainController_1.trainController.getLiveStatus);

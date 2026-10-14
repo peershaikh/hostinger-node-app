@@ -737,9 +737,9 @@ const DETERMINISTIC_CORRIDORS = {
     "mumbai-madgaon": ["RN", "MAO"],
     "madgaon-mumbai": ["RN"],
     // —— Mumbai extended ——
-    "mumbai-varanasi": ["JBP", "STA", "ET", "PCOI", "PRYJ", "MKP", "BSL", "KTE", "CNB", "DDU"],
-    "mumbai-bsb": ["JBP", "STA", "ET", "PCOI", "PRYJ", "MKP", "BSL", "KTE", "CNB", "DDU"],
-    "bsb-mumbai": ["JBP", "STA", "ET", "PCOI", "PRYJ", "MKP", "BSL", "KTE", "CNB", "DDU"],
+    "mumbai-varanasi": ["DDU", "PRYJ", "PCOI", "JBP", "STA", "ET", "BSL", "KTE", "MKP", "CNB"],
+    "mumbai-bsb": ["DDU", "PRYJ", "PCOI", "JBP", "STA", "ET", "BSL", "KTE", "MKP", "CNB"],
+    "bsb-mumbai": ["DDU", "PRYJ", "PCOI", "JBP", "STA", "ET", "BSL", "KTE", "MKP", "CNB"],
     "mumbai-patna": ["DDU", "JBP", "ET", "BSL", "STA", "PCOI", "PRYJ", "KTE", "CNB", "BXR", "ARA", "MMR"],
     "patna-mumbai": ["DDU", "JBP", "ET", "BSL", "STA", "PCOI", "PRYJ", "KTE", "CNB", "BXR", "ARA", "MMR"],
     "mumbai-pnbe": ["DDU", "JBP", "ET", "BSL", "STA", "PCOI", "PRYJ", "KTE", "CNB", "BXR", "ARA", "MMR"],
@@ -823,7 +823,7 @@ const DETERMINISTIC_CORRIDORS = {
     "hte-mumbai": ["ROU", "BSP", "NGP", "R", "TATA", "JSG", "BSL", "BKSC", "DDU", "GAYA", "ET", "JBP"],
     "mumbai-lucknow": ["CNB", "VGLJ", "BPL", "ET", "BSL", "JHS", "BINA", "ORAI", "ST", "KOTA"],
     "mumbai-delhi": ["ST", "BRC", "RTM", "KOTA", "MTJ", "BSL", "ET", "BPL", "VGLJ", "GWL", "AGC", "ADI", "AII", "JP", "RE"],
-    "mumbai-jaipur": ["KOTA", "SWM", "RTM", "BRC", "ST", "AII", "ABR", "NAD", "FL", "ADI"],
+    "mumbai-jaipur": ["SWM", "KOTA", "BRC", "RTM", "ST", "AII", "ABR", "ADI"],
     "mumbai-kolkata": ["NGP", "ET", "BSP", "JBP", "ROU", "DDU", "TATA", "GAYA", "BSL", "ASN", "KGP", "PCOI"],
     "mumbai-secunderabad": ["WADI", "SUR", "PUNE", "KLBG", "VKB", "DD", "GR", "KWV", "LNL", "RC"],
     "secunderabad-mumbai": ["WADI", "SUR", "PUNE", "KLBG", "VKB", "DD", "GR", "KWV", "LNL", "RC"],
@@ -1544,41 +1544,49 @@ const DETERMINISTIC_CORRIDORS = {
     "hyderabad-delhi": ["NGP", "ET", "BPL", "JHS"],
     "secunderabad-delhi": ["NGP", "ET", "BPL", "JHS"],
     "hyderabad-kolkata": ["BZA", "VSKP", "KGP"],
-    "hyderabad-patna": ["BZA", "KGP", "HWH", "PNBE"],
-    "hyderabad-lucknow": ["NGP", "ET", "CNB", "LKO"],
+    "hyderabad-patna": ["NGP", "ET", "JBP", "DDU"],
+    "hyderabad-lucknow": ["NGP", "ET", "CNB"],
     "hyderabad-chennai": ["BZA", "RU", "GDR"],
-    "hyderabad-guwahati": ["BZA", "KGP", "HWH", "NJP", "GHY"],
+    "hyderabad-guwahati": ["BZA", "KGP", "HWH", "NJP"],
     "guwahati-hyderabad": ["NJP", "HWH", "KGP", "BZA"],
+    "hyderabad-varanasi": ["NGP", "ET", "JBP", "DDU"],
+    "varanasi-hyderabad": ["DDU", "JBP", "ET", "NGP"],
+    "hyderabad-pune": ["WADI", "SUR", "DD"],
+    "pune-hyderabad": ["DD", "SUR", "WADI"],
+    "hyderabad-bhubaneswar": ["BZA", "VSKP"],
+    "bhubaneswar-hyderabad": ["VSKP", "BZA"],
+    "hyderabad-ahmedabad": ["NGP", "BRC", "RTM"],
+    "hyderabad-jaipur": ["NGP", "BPL", "KOTA"],
     // —— Lucknow corridors ——
     "lucknow-mumbai": ["CNB", "VGLJ", "BPL", "ET", "BSL", "JHS", "BINA", "ORAI", "ST", "KOTA"],
     "lucknow-kolkata": ["PRYJ", "DDU", "GAYA", "ASN"],
     "lucknow-chennai": ["CNB", "PRYJ", "BSB", "HWH", "BZA", "MAS"],
-    "lucknow-hyderabad": ["CNB", "ET", "NGP", "SC"],
+    "lucknow-hyderabad": ["CNB", "ET", "NGP"],
     "lucknow-patna": ["PRYJ", "DDU", "GAYA", "PNBE"],
     "patna-lucknow": ["DDU", "BSB", "PRYJ", "CNB", "MGS"],
     "lucknow-guwahati": ["PNBE", "KGP", "NJP", "GHY"],
     "lucknow-ahmedabad": ["JHS", "KOTA", "RTM", "ADI"],
     // —— Jaipur corridors ——
-    "jaipur-mumbai": ["SWM", "KOTA", "RTM", "BRC", "ST", "AII", "ABR", "NAD", "FL", "ADI"],
+    "jaipur-mumbai": ["SWM", "KOTA", "BRC", "RTM", "ST", "AII", "ABR", "ADI"],
     "jaipur-chennai": ["KOTA", "BPL", "NGP", "SC", "MAS"],
     "jaipur-kolkata": ["AGC", "CNB", "PRYJ", "DDU"],
     "jaipur-bangalore": ["KOTA", "BPL", "ET", "NGP", "SC", "SBC"],
-    "jaipur-hyderabad": ["KOTA", "BPL", "NGP", "SC"],
+    "jaipur-hyderabad": ["KOTA", "BPL", "NGP"],
     "jaipur-lucknow": ["AGC", "CNB", "LKO"],
     "jaipur-patna": ["AGC", "CNB", "PRYJ", "DDU", "PNBE"],
     // —— Ahmedabad/Gujarat corridors ——
     "ahmedabad-chennai": ["RTM", "ET", "NGP", "BZA", "MAS"],
     "ahmedabad-kolkata": ["RTM", "BPL", "ET", "NGP"],
-    "ahmedabad-hyderabad": ["RTM", "BRC", "NGP", "SC"],
+    "ahmedabad-hyderabad": ["RTM", "BRC", "NGP"],
     "ahmedabad-bangalore": ["RTM", "BRC", "NGP", "SC", "SBC"],
     "ahmedabad-patna": ["RTM", "BPL", "ET", "PRYJ", "PNBE"],
     "ahmedabad-lucknow": ["RTM", "BPL", "ET", "CNB", "LKO"],
     // —— Patna/Bihar corridors ——
     "patna-chennai": ["HWH", "BBS", "VSKP", "BZA", "MAS"],
-    "patna-hyderabad": ["HWH", "BZA", "SC"],
+    "patna-hyderabad": ["DDU", "JBP", "ET", "NGP"],
     "patna-guwahati": ["KGP", "NJP", "GHY"],
     // —— Varanasi corridors ——
-    "varanasi-mumbai": ["JBP", "STA", "ET", "PCOI", "PRYJ", "MKP", "BSL", "KTE", "CNB", "DDU"],
+    "varanasi-mumbai": ["DDU", "PRYJ", "PCOI", "JBP", "STA", "ET", "BSL", "KTE", "MKP", "CNB"],
     "varanasi-chennai": ["DDU", "HWH", "BZA", "MAS"],
     "varanasi-kolkata": ["DDU", "GAYA", "PNBE", "ASN", "BWN"],
     // —— East/NE corridors ——
@@ -1642,8 +1650,10 @@ const DETERMINISTIC_CORRIDORS = {
     "jaipur-bengaluru": ["KOTA", "RTM", "BPL", "ET", "NGP", "SC"],
     "chennai-goa": ["RU", "GTL", "UBL", "MAO"],
     "goa-chennai": ["MAO", "UBL", "GTL", "RU", "MAS"],
-    "hyderabad-goa": ["WADI", "GTL", "UBL", "MAO"],
-    "goa-hyderabad": ["MAO", "UBL", "GTL", "WADI", "SC"],
+    "hyderabad-goa": ["WADI", "GTL", "UBL"],
+    "goa-hyderabad": ["UBL", "GTL", "WADI"],
+    "hyderabad-madgaon": ["WADI", "GTL", "UBL"],
+    "madgaon-hyderabad": ["UBL", "GTL", "WADI"],
     // Eastern & Central
     "kolkata-ajmer": ["ASN", "GAYA", "DDU", "PRYJ", "CNB", "AGC"],
     "ajmer-kolkata": ["AII", "AGC", "CNB", "PRYJ", "DDU", "GAYA", "ASN"],
@@ -3360,7 +3370,7 @@ class SplitJourneyEngine {
                 const remainder = validHubs.filter(h => !pinnedSet.has(h));
                 const sortedRemainder = (0, routeEngine_1.sortViaByDetourScore)(sCode, dCode, remainder, 600);
                 // Pinned corridor hubs come first (declared order preserved), remainder follows
-                hubs = [...pinnedCorridorHubs, ...sortedRemainder];
+                hubs = pinnedCorridorHubs;
                 logger_1.winstonLogger.info(`[SPLIT_ENGINE] N82 deterministic-pinned hub order: pinned=[${pinnedCorridorHubs.join(',')}] remainder=${sortedRemainder.length} total=${hubs.length}`);
             }
             else {
@@ -3540,6 +3550,10 @@ class SplitJourneyEngine {
         // NEXT chunk instead of re-filtering already-generated candidates.
         // PHASE_087N111 — Bound Phase 1 candidate hubs to top 10 (PHASE1_HUB_CAP) while preserving
         // N82 deterministic priority order at indices 0,1,2, preventing hub explosion from starving Phase 2.
+        if (isDeterministic) {
+            const allowed = new Set(DETERMINISTIC_CORRIDORS[pairKey1] || DETERMINISTIC_CORRIDORS[pairKey2] || []);
+            hubs = hubs.filter(h => allowed.has(h));
+        }
         const hubPool = hubs.slice(0, this.PHASE1_HUB_CAP);
         logger_1.winstonLogger.info(`[SPLIT_ENGINE] Phase 1: up to ${hubPool.length} ranked hubs (cap=${this.PHASE1_HUB_CAP}, batch=2)`);
         // —— Fix E: Process hubs in batches of 2 to cap parallel concurrency ——
