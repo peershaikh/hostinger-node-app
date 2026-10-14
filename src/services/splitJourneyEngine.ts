@@ -3794,7 +3794,7 @@ export class SplitJourneyEngine {
         const sortedRemainder = sortViaByDetourScore(sCode, dCode, remainder, 600);
 
         // Pinned corridor hubs come first (declared order preserved), remainder follows
-        hubs = [...pinnedCorridorHubs, ...sortedRemainder];
+        hubs = pinnedCorridorHubs;
         winstonLogger.info(
           `[SPLIT_ENGINE] N82 deterministic-pinned hub order: pinned=[${pinnedCorridorHubs.join(',')}] remainder=${sortedRemainder.length} total=${hubs.length}`
         );
@@ -3976,6 +3976,10 @@ export class SplitJourneyEngine {
     // NEXT chunk instead of re-filtering already-generated candidates.
     // PHASE_087N111 — Bound Phase 1 candidate hubs to top 10 (PHASE1_HUB_CAP) while preserving
     // N82 deterministic priority order at indices 0,1,2, preventing hub explosion from starving Phase 2.
+    if (isDeterministic) {
+      const allowed = new Set(DETERMINISTIC_CORRIDORS[pairKey1] || DETERMINISTIC_CORRIDORS[pairKey2] || []);
+      hubs = hubs.filter(h => allowed.has(h));
+    }
     const hubPool = hubs.slice(0, this.PHASE1_HUB_CAP);
 
     winstonLogger.info(`[SPLIT_ENGINE] Phase 1: up to ${hubPool.length} ranked hubs (cap=${this.PHASE1_HUB_CAP}, batch=2)`);
