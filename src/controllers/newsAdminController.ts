@@ -347,6 +347,41 @@ export class NewsAdminController {
       res.status(500).json({ success: false, error: 'Failed to toggle auto-curator.' });
     }
   }
+
+  // POST /api/admin/news/train-guide/generate — Generate AI Train & Route SEO Guide
+  async generateTrainGuide(req: Request, res: Response) {
+    try {
+      const { newsTrainGuideService } = require('../services/news/newsTrainGuideService');
+      const adminId = getAdminId(req);
+      const { trainNo, language, focusAngle, autoPublish, customImageUrl } = req.body || {};
+
+      if (!trainNo || !/^\d{5}$/.test(String(trainNo).trim())) {
+        return res.status(400).json({
+          success: false,
+          error: 'Train number must be a valid 5-digit number (e.g. 13128).'
+        });
+      }
+
+      const result = await newsTrainGuideService.generateTrainGuide({
+        trainNo: String(trainNo).trim(),
+        language: language === 'hi' ? 'hi' : 'en',
+        focusAngle: focusAngle ? String(focusAngle).trim() : undefined,
+        autoPublish: Boolean(autoPublish),
+        adminId,
+        customImageUrl: customImageUrl ? String(customImageUrl).trim() : undefined
+      });
+
+      if (!result.success) {
+        return res.status(500).json(result);
+      }
+
+      res.json(result);
+    } catch (err: any) {
+      winstonLogger.error(`[NEWS_ADMIN_CTRL_TRAIN_GUIDE] ${err.message}`);
+      res.status(500).json({ success: false, error: 'Failed to generate train guide.' });
+    }
+  }
 }
 
 export const newsAdminController = new NewsAdminController();
+

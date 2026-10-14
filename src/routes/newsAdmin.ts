@@ -153,4 +153,13 @@ router.post(
   asyncHandler(newsAdminController.toggleAutoCurator.bind(newsAdminController))
 );
 
+// ─── Phase 1 Programmatic Train & Route SEO Guide Generator ──────────────────
+router.post(
+  '/train-guide/generate',
+  adminLimiter as any,
+  requireAdmin as any,
+  asyncHandler(newsAdminController.generateTrainGuide.bind(newsAdminController))
+);
+
 export default router;
+
