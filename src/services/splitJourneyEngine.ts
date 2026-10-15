@@ -1718,8 +1718,8 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "lucknow-kolkata": ["PRYJ", "DDU", "GAYA", "ASN"],
   "lucknow-chennai": ["CNB", "PRYJ", "BSB", "HWH", "BZA", "MAS"],
   "lucknow-hyderabad": ["CNB", "ET", "NGP"],
-  "lucknow-patna": ["PRYJ", "DDU", "GAYA", "PNBE"],
-  "patna-lucknow": ["DDU", "BSB", "PRYJ", "CNB", "MGS"],
+  "lucknow-patna": ["PRYJ", "DDU", "GAYA"],
+  "patna-lucknow": ["DDU", "BSB", "PRYJ", "CNB"],
   "lucknow-guwahati": ["PNBE", "KGP", "NJP", "GHY"],
   "lucknow-ahmedabad": ["JHS", "KOTA", "RTM"],
   "lucknow-jaipur": ["CNB", "AGC"],
@@ -1752,9 +1752,14 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "guwahati-ahmedabad": ["NJP", "PNBE", "DDU", "ET", "BPL", "RTM"],
 
   // —— Patna/Bihar corridors ——
-  "patna-chennai": ["HWH", "BBS", "VSKP", "BZA", "MAS"],
+  "patna-chennai": ["DDU", "JBP", "ET", "NGP", "BZA", "VSKP", "BBS", "HWH"],
   "patna-hyderabad": ["DDU", "JBP", "ET", "NGP"],
-  "patna-guwahati": ["KGP", "NJP", "GHY"],
+  "patna-guwahati": ["BJU", "KIR", "NJP", "NBQ"],
+  "guwahati-patna": ["NBQ", "NJP", "KIR", "BJU"],
+  "patna-varanasi": ["DDU", "BXR", "ARA"],
+  "varanasi-patna": ["ARA", "BXR", "DDU"],
+  "patna-pune": ["DDU", "JBP", "ET", "BSL", "MMR"],
+  "pune-patna": ["MMR", "BSL", "ET", "JBP", "DDU"],
 
   // —— Varanasi corridors ——
   "varanasi-mumbai": ["DDU", "PRYJ", "PCOI", "JBP", "STA", "ET", "BSL", "KTE", "MKP", "CNB"],
