@@ -238,23 +238,28 @@ class AdminController {
                 if ((0, supabase_1.isSupabaseConfigured)()) {
                     const { data: voiceEvents } = await supabase_1.supabase
                         .from('analytics_events')
-                        .select('metadata')
-                        .eq('event_type', 'pnr_voice_played')
-                        .limit(1000);
+                        .select('event_type, event_data')
+                        .in('event_type', ['voice_played', 'pnr_voice_played', 'search_voice_played'])
+                        .limit(2000);
                     if (voiceEvents && voiceEvents.length > 0) {
                         voiceStats.total = voiceEvents.length;
                         voiceEvents.forEach((row) => {
-                            const meta = row.metadata || {};
-                            if (meta.lang === 'hi')
+                            const meta = row.event_data || {};
+                            const lang = (meta.lang || '').toLowerCase();
+                            if (lang === 'hi' || lang.startsWith('hi'))
                                 voiceStats.hindi++;
-                            else if (meta.lang === 'en')
+                            else if (lang === 'en' || lang.startsWith('en'))
                                 voiceStats.english++;
-                            if (meta.gender === 'male')
+                            else
+                                voiceStats.hindi++;
+                            const gender = (meta.gender || '').toLowerCase();
+                            if (gender === 'male')
                                 voiceStats.male++;
-                            else if (meta.gender === 'female')
+                            else
                                 voiceStats.female++;
-                            if (meta.hasRescueCallout || meta.isWaitlist)
+                            if (meta.hasRescueCallout || meta.isWaitlist || meta.feature === 'waitlist' || row.event_type === 'search_voice_played') {
                                 voiceStats.waitlist_callouts++;
+                            }
                         });
                     }
                 }
@@ -286,15 +291,15 @@ class AdminController {
                 if ((0, supabase_1.isSupabaseConfigured)()) {
                     const { data } = await supabase_1.supabase
                         .from('analytics_events')
-                        .select('metadata, created_at')
+                        .select('session_id, user_id, event_data, created_at')
                         .gte('created_at', thirtyDaysAgo);
                     eventRows = data || [];
                     const dauSet = new Set();
                     const wauSet = new Set();
                     const mauSet = new Set();
                     eventRows.forEach((row) => {
-                        const metadata = row?.metadata || {};
-                        const candidate = metadata.userId || metadata.user_id || metadata.session_id || metadata.sessionId;
+                        const eventData = row?.event_data || {};
+                        const candidate = row.user_id || row.session_id || eventData.userId || eventData.user_id || eventData.session_id || eventData.sessionId;
                         if (candidate && typeof candidate === 'string') {
                             mauSet.add(candidate);
                             if (row.created_at >= sevenDaysAgo)
@@ -419,7 +424,7 @@ class AdminController {
             try {
                 const { data } = await supabase_1.supabase
                     .from('analytics_events')
-                    .select('event_type, metadata, created_at')
+                    .select('event_type, event_data, created_at')
                     .order('created_at', { ascending: false })
                     .limit(100);
                 recentEvents = data || [];
@@ -472,9 +477,61 @@ class AdminController {
             // Map DB created_at to timestamp property for client compatibility
             const mappedRecentEvents = recentEvents.map((row) => ({
                 event_type: row.event_type,
-                metadata: row.metadata,
+                metadata: row.event_data || {},
                 timestamp: row.created_at || row.timestamp
             }));
+            // 6. Renewal Funnel Telemetry (Sent -> Checked/Clicked -> Paid)
+            const renewalFunnel = {
+                sent: 0,
+                clicked: 0,
+                paid: 0,
+                revenue_inr: 0,
+                click_rate: '0.0%',
+                conversion_rate: '0.0%',
+                overall_conversion: '0.0%',
+                by_stage: {
+                    EXPIRING_IN_3_DAYS: 0,
+                    EXPIRING_TOMORROW: 0,
+                    EXPIRED_GRACE: 0
+                },
+                recent_dispatches: []
+            };
+            try {
+                const basicStats = renewalNotificationService_1.renewalNotificationService.getRenewalStats();
+                renewalFunnel.sent = basicStats.totalDispatched;
+                renewalFunnel.recent_dispatches = basicStats.recentDispatches || [];
+                renewalFunnel.recent_dispatches.forEach((d) => {
+                    if (d.stage && renewalFunnel.by_stage[d.stage] !== undefined) {
+                        renewalFunnel.by_stage[d.stage]++;
+                    }
+                });
+                if ((0, supabase_1.isSupabaseConfigured)()) {
+                    const { count: clickCount } = await supabase_1.supabase
+                        .from('analytics_events')
+                        .select('id', { count: 'exact', head: true })
+                        .eq('event_type', 'renewal_email_clicked');
+                    renewalFunnel.clicked = clickCount || 0;
+                    const { data: paidTxns } = await supabase_1.supabase
+                        .from('payment_transactions')
+                        .select('amount')
+                        .eq('status', 'SUCCESS')
+                        .or('plan_id.eq.safar_pro_renewal_30d,amount.eq.39');
+                    if (paidTxns && paidTxns.length > 0) {
+                        renewalFunnel.paid = paidTxns.length;
+                        renewalFunnel.revenue_inr = paidTxns.reduce((sum, r) => sum + Number(r.amount || 39), 0);
+                    }
+                }
+                if (renewalFunnel.sent > 0) {
+                    renewalFunnel.click_rate = `${((renewalFunnel.clicked / renewalFunnel.sent) * 100).toFixed(1)}%`;
+                    renewalFunnel.overall_conversion = `${((renewalFunnel.paid / renewalFunnel.sent) * 100).toFixed(1)}%`;
+                }
+                if (renewalFunnel.clicked > 0) {
+                    renewalFunnel.conversion_rate = `${((renewalFunnel.paid / renewalFunnel.clicked) * 100).toFixed(1)}%`;
+                }
+            }
+            catch (renewalErr) {
+                logger_1.winstonLogger.warn(`[ADMIN_RENEWAL_FUNNEL_FAIL] ${renewalErr.message}`);
+            }
             res.status(200).json({
                 success: true,
                 data: {
@@ -546,7 +603,8 @@ class AdminController {
                         active_tokens: activeTokensCount
                     },
                     event_history: mappedRecentEvents || [],
-                    system_health: systemStatus
+                    system_health: systemStatus,
+                    renewals: renewalFunnel
                 }
             });
         }
@@ -2829,10 +2887,87 @@ class AdminController {
     }
     async getRenewalStats(req, res) {
         try {
-            const stats = renewalNotificationService_1.renewalNotificationService.getRenewalStats();
+            const basicStats = renewalNotificationService_1.renewalNotificationService.getRenewalStats();
+            const totalSent = basicStats.totalDispatched;
+            const recentDispatches = basicStats.recentDispatches || [];
+            const stageSentCounts = {
+                EXPIRING_IN_3_DAYS: 0,
+                EXPIRING_TOMORROW: 0,
+                EXPIRED_GRACE: 0
+            };
+            recentDispatches.forEach((d) => {
+                if (d.stage && stageSentCounts[d.stage] !== undefined) {
+                    stageSentCounts[d.stage]++;
+                }
+            });
+            let totalClicks = 0;
+            let uniqueClickUsers = 0;
+            let recentClicks = [];
+            try {
+                if ((0, supabase_1.isSupabaseConfigured)()) {
+                    const { data: clickRows } = await supabase_1.supabase
+                        .from('analytics_events')
+                        .select('session_id, user_id, event_data, created_at')
+                        .eq('event_type', 'renewal_email_clicked')
+                        .order('created_at', { ascending: false })
+                        .limit(100);
+                    if (clickRows && clickRows.length > 0) {
+                        totalClicks = clickRows.length;
+                        const userSet = new Set();
+                        clickRows.forEach((r) => {
+                            const u = r.user_id || r.event_data?.uid || r.session_id;
+                            if (u)
+                                userSet.add(u);
+                        });
+                        uniqueClickUsers = userSet.size;
+                        recentClicks = clickRows.slice(0, 10);
+                    }
+                }
+            }
+            catch (clickErr) {
+                logger_1.winstonLogger.warn(`[RENEWAL_CLICK_FETCH_FAIL] ${clickErr.message}`);
+            }
+            let totalPaid = 0;
+            let totalRevenue = 0;
+            let recentPayments = [];
+            try {
+                if ((0, supabase_1.isSupabaseConfigured)()) {
+                    const { data: paymentRows } = await supabase_1.supabase
+                        .from('payment_transactions')
+                        .select('id, user_id, amount, status, plan_id, created_at')
+                        .eq('status', 'SUCCESS')
+                        .or('plan_id.eq.safar_pro_renewal_30d,amount.eq.39')
+                        .order('created_at', { ascending: false })
+                        .limit(100);
+                    if (paymentRows && paymentRows.length > 0) {
+                        totalPaid = paymentRows.length;
+                        totalRevenue = paymentRows.reduce((sum, r) => sum + Number(r.amount || 39), 0);
+                        recentPayments = paymentRows.slice(0, 10);
+                    }
+                }
+            }
+            catch (payErr) {
+                logger_1.winstonLogger.warn(`[RENEWAL_PAYMENT_FETCH_FAIL] ${payErr.message}`);
+            }
+            const clickRate = totalSent > 0 ? `${((totalClicks / totalSent) * 100).toFixed(1)}%` : '0.0%';
+            const conversionRate = totalClicks > 0 ? `${((totalPaid / totalClicks) * 100).toFixed(1)}%` : '0.0%';
+            const overallConversion = totalSent > 0 ? `${((totalPaid / totalSent) * 100).toFixed(1)}%` : '0.0%';
             res.json({
                 success: true,
-                data: stats
+                data: {
+                    sent: totalSent,
+                    clicked: totalClicks,
+                    unique_click_users: uniqueClickUsers,
+                    paid: totalPaid,
+                    revenue_inr: totalRevenue,
+                    click_rate: clickRate,
+                    conversion_rate: conversionRate,
+                    overall_conversion: overallConversion,
+                    by_stage: stageSentCounts,
+                    recent_dispatches: recentDispatches,
+                    recent_clicks: recentClicks,
+                    recent_payments: recentPayments
+                }
             });
         }
         catch (err) {

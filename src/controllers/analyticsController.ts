@@ -150,18 +150,22 @@ export class AnalyticsController {
         }
       }
 
-      // 3. Legacy table write for backward compatibility
+      // 3. Database write to analytics_events with correct schema
       const dbPayload = {
         event_type: rawEventName,
-        session_id: sessionId,
-        metadata: metadata || {},
-        payload: {
-          pnr: pnr || null,
+        session_id: sessionId || null,
+        user_id: (userId || metadata?.user_id || metadata?.userId || null) as string | null,
+        event_data: {
+          ...(metadata || {}),
+          pnr: pnr || undefined,
           client_timestamp: new Date().toISOString()
         }
       };
 
-      await supabase.from('analytics_events').insert([dbPayload]);
+      const { error: insertErr } = await supabase.from('analytics_events').insert([dbPayload]);
+      if (insertErr) {
+        winstonLogger.warn(`[EVENT_TRACK_INSERT_WARN] ${insertErr.message}`);
+      }
       res.status(200).json({ success: true });
     } catch (err: any) {
       winstonLogger.error(`[EVENT_TRACK] Error: ${err.message}`);

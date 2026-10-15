@@ -415,11 +415,7 @@ async function resolveSegmentForAvailability(trainNo, from, to, date, hints) {
     // In that case emit DB_UNVERIFIED_STOP_DATA (still fail-closed) so upstream diagnostics
     // can distinguish "stop confirmed absent" from "stop absent in DB, live not checked".
     const scheduleIsDbOnly = ctx.source === 'db' && !ctx.runningDaysAuthoritative;
-    let fromStop = ctx.stops.find(s => (s.Station_Code || '').toUpperCase().trim() === fromIn);
-    if (!fromStop) {
-        const { areStationsCompatible } = require('./stationAliases');
-        fromStop = ctx.stops.find(s => areStationsCompatible(fromIn, (s.Station_Code || '').toUpperCase().trim()));
-    }
+    const fromStop = ctx.stops.find(s => (s.Station_Code || '').toUpperCase().trim() === fromIn);
     if (!fromStop) {
         if (scheduleIsDbOnly) {
             logger_1.winstonLogger.info(`[STATION_RESOLVER] DB_UNVERIFIED_STOP_DATA train=${tNo} from=${fromIn}` +
@@ -437,11 +433,7 @@ async function resolveSegmentForAvailability(trainNo, from, to, date, hints) {
             message: `Station ${fromIn} is not a physical stop on train ${tNo}`,
         };
     }
-    let toStop = ctx.stops.find(s => (s.Station_Code || '').toUpperCase().trim() === toIn);
-    if (!toStop) {
-        const { areStationsCompatible } = require('./stationAliases');
-        toStop = ctx.stops.find(s => areStationsCompatible(toIn, (s.Station_Code || '').toUpperCase().trim()));
-    }
+    const toStop = ctx.stops.find(s => (s.Station_Code || '').toUpperCase().trim() === toIn);
     if (!toStop) {
         if (scheduleIsDbOnly) {
             logger_1.winstonLogger.info(`[STATION_RESOLVER] DB_UNVERIFIED_STOP_DATA train=${tNo} to=${toIn}` +
@@ -459,12 +451,7 @@ async function resolveSegmentForAvailability(trainNo, from, to, date, hints) {
             message: `Station ${toIn} is not a physical stop on train ${tNo}`,
         };
     }
-    if (Number(fromStop.SN) > Number(toStop.SN)) {
-        const tmp = fromStop;
-        fromStop = toStop;
-        toStop = tmp;
-    }
-    else if (Number(fromStop.SN) === Number(toStop.SN)) {
+    if (Number(fromStop.SN) >= Number(toStop.SN)) {
         return {
             success: false,
             reason: 'SEGMENT_NOT_BOOKABLE',

@@ -191,7 +191,7 @@ export class RenewalNotificationService {
           year: 'numeric'
         });
 
-        const renewalUrl = 'https://www.trayago.in/pricing?plan=safar_pro_renewal_30d&promo=RENEW39';
+        const renewalUrl = `https://www.trayago.in/pricing?plan=safar_pro_renewal_30d&promo=RENEW39&source=email_renewal&stage=${stage}&uid=${userId}`;
         let emailSuccess = false;
 
         // 2. Dispatch Email

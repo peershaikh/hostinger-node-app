@@ -113,17 +113,15 @@ export class AnalyticsService {
         }
       });
 
-      // 2. Legacy table write for backward compatibility
+      // 2. Database write to analytics_events with correct schema
       const dbPayload = {
         event_type: eventType,
-        session_id: sessionId,
+        session_id: sessionId || null,
         user_id: (metadata?.user_id || metadata?.userId || null) as string | null,
         event_data: {
-          metadata: metadata || {},
-          payload: {
-            pnr: pnr || null,
-            client_timestamp: new Date().toISOString()
-          }
+          ...(metadata || {}),
+          pnr: pnr || undefined,
+          client_timestamp: new Date().toISOString()
         }
       };
 
@@ -135,22 +133,22 @@ export class AnalyticsService {
       )
         .then(({ error }) => {
           if (error) {
-            if (error.code === '42P01' || error.code === '42703' || error.code === 'PGRST204' || error.message?.includes('schema cache')) {
-              winstonLogger.debug(`[ANALYTICS] Table ${this.EVENTS_TABLE} schema note (${error.code}): ${error.message}`);
+            if (error.code === '42P01') {
+              winstonLogger.warn(`[ANALYTICS] Table ${this.EVENTS_TABLE} not found yet. Skipping telemetry.`);
             } else {
-              winstonLogger.debug(`[TELEMETRY_FAIL] ${eventType} DB write note: ${error.message}`);
+              winstonLogger.warn(`[TELEMETRY_FAIL] ${eventType} DB write failed: ${error.message}`);
             }
           } else {
             winstonLogger.debug(`[TELEMETRY] Event tracked successfully: ${eventType}`);
           }
         })
         .catch((err: any) => {
-          winstonLogger.debug(`[TELEMETRY_EXCEPTION] ${eventType} background write note: ${err.message}`);
+          winstonLogger.warn(`[TELEMETRY_EXCEPTION] ${eventType} background write failed: ${err.message}`);
         });
 
       return true;
     } catch (err: any) {
-      winstonLogger.debug(`[TELEMETRY_FAIL] ${eventType}: ${err.message}`);
+      winstonLogger.warn(`[TELEMETRY_FAIL] ${eventType}: ${err.message}`);
       return false;
     }
   }

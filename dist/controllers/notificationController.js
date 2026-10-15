@@ -238,11 +238,12 @@ const updateNotificationPreferences = async (req, res) => {
     try {
         const { data: existing, error: findError } = await supabase_1.supabase
             .from('user_notification_preferences')
-            .select('user_id')
+            .select('*')
             .eq('user_id', userId)
             .limit(1);
         if (findError)
             throw findError;
+        const existingPrefs = existing && existing.length > 0 ? existing[0] : null;
         const payload = {
             delay_alerts_enabled: req.body.delay_alerts_enabled !== undefined ? !!req.body.delay_alerts_enabled : true,
             waitlist_alerts_enabled: req.body.waitlist_alerts_enabled !== undefined ? !!req.body.waitlist_alerts_enabled : true,
@@ -250,7 +251,25 @@ const updateNotificationPreferences = async (req, res) => {
             marketing_alerts_enabled: req.body.marketing_alerts_enabled !== undefined ? !!req.body.marketing_alerts_enabled : false,
             updated_at: new Date().toISOString()
         };
-        if (existing && existing.length > 0) {
+        if (req.body.whatsapp_alerts_enabled !== undefined) {
+            payload.whatsapp_alerts_enabled = !!req.body.whatsapp_alerts_enabled;
+            if (payload.whatsapp_alerts_enabled) {
+                payload.whatsapp_opt_in_at = req.body.whatsapp_opt_in_at || new Date().toISOString();
+            }
+            else {
+                payload.whatsapp_opt_out_at = req.body.whatsapp_opt_out_at || new Date().toISOString();
+            }
+        }
+        else if (!existingPrefs) {
+            payload.whatsapp_alerts_enabled = true;
+        }
+        if (req.body.whatsapp_opt_in_at !== undefined) {
+            payload.whatsapp_opt_in_at = req.body.whatsapp_opt_in_at;
+        }
+        if (req.body.whatsapp_opt_out_at !== undefined) {
+            payload.whatsapp_opt_out_at = req.body.whatsapp_opt_out_at;
+        }
+        if (existingPrefs) {
             // Update
             const { error: updateError } = await supabase_1.supabase
                 .from('user_notification_preferences')
@@ -275,11 +294,32 @@ const updateNotificationPreferences = async (req, res) => {
             component: 'NOTIFICATION_CONTROLLER',
             event: 'opt_out_enforced'
         });
-        return res.status(200).json({ success: true });
+        const currentWhatsappEnabled = payload.whatsapp_alerts_enabled !== undefined
+            ? payload.whatsapp_alerts_enabled
+            : (existingPrefs?.whatsapp_alerts_enabled ?? true);
+        const currentOptIn = payload.whatsapp_opt_in_at !== undefined
+            ? payload.whatsapp_opt_in_at
+            : (existingPrefs?.whatsapp_opt_in_at ?? null);
+        const currentOptOut = payload.whatsapp_opt_out_at !== undefined
+            ? payload.whatsapp_opt_out_at
+            : (existingPrefs?.whatsapp_opt_out_at ?? null);
+        return res.status(200).json({
+            success: true,
+            preferences: {
+                delay_alerts_enabled: payload.delay_alerts_enabled,
+                waitlist_alerts_enabled: payload.waitlist_alerts_enabled,
+                platform_alerts_enabled: payload.platform_alerts_enabled,
+                marketing_alerts_enabled: payload.marketing_alerts_enabled,
+                whatsapp_alerts_enabled: currentWhatsappEnabled,
+                whatsapp_opt_in_at: currentOptIn,
+                whatsapp_opt_out_at: currentOptOut
+            }
+        });
     }
     catch (dbError) {
         // Graceful DB Fallback - Cascade preferences to in-memory maps
         logger_1.winstonLogger.info(`[NOTIFICATION_CONTROLLER] DB connection failed. Cascading to in-memory preferences: ${dbError.message}`);
+        const existingMem = exports.MEMORY_PREFERENCES.get(userId);
         const payload = {
             user_id: userId,
             delay_alerts_enabled: req.body.delay_alerts_enabled !== undefined ? !!req.body.delay_alerts_enabled : true,
@@ -288,13 +328,47 @@ const updateNotificationPreferences = async (req, res) => {
             marketing_alerts_enabled: req.body.marketing_alerts_enabled !== undefined ? !!req.body.marketing_alerts_enabled : false,
             updated_at: new Date()
         };
+        if (req.body.whatsapp_alerts_enabled !== undefined) {
+            payload.whatsapp_alerts_enabled = !!req.body.whatsapp_alerts_enabled;
+            if (payload.whatsapp_alerts_enabled) {
+                payload.whatsapp_opt_in_at = req.body.whatsapp_opt_in_at || new Date().toISOString();
+            }
+            else {
+                payload.whatsapp_opt_out_at = req.body.whatsapp_opt_out_at || new Date().toISOString();
+            }
+        }
+        else if (existingMem) {
+            payload.whatsapp_alerts_enabled = existingMem.whatsapp_alerts_enabled ?? true;
+            payload.whatsapp_opt_in_at = existingMem.whatsapp_opt_in_at ?? null;
+            payload.whatsapp_opt_out_at = existingMem.whatsapp_opt_out_at ?? null;
+        }
+        else {
+            payload.whatsapp_alerts_enabled = true;
+        }
+        if (req.body.whatsapp_opt_in_at !== undefined) {
+            payload.whatsapp_opt_in_at = req.body.whatsapp_opt_in_at;
+        }
+        if (req.body.whatsapp_opt_out_at !== undefined) {
+            payload.whatsapp_opt_out_at = req.body.whatsapp_opt_out_at;
+        }
         exports.MEMORY_PREFERENCES.set(userId, payload);
         logger_1.winstonLogger.info({
             message: `Updated notification preferences for user ${userId} (fallback)`,
             component: 'NOTIFICATION_CONTROLLER',
             event: 'opt_out_enforced'
         });
-        return res.status(200).json({ success: true });
+        return res.status(200).json({
+            success: true,
+            preferences: {
+                delay_alerts_enabled: payload.delay_alerts_enabled,
+                waitlist_alerts_enabled: payload.waitlist_alerts_enabled,
+                platform_alerts_enabled: payload.platform_alerts_enabled,
+                marketing_alerts_enabled: payload.marketing_alerts_enabled,
+                whatsapp_alerts_enabled: payload.whatsapp_alerts_enabled,
+                whatsapp_opt_in_at: payload.whatsapp_opt_in_at ?? null,
+                whatsapp_opt_out_at: payload.whatsapp_opt_out_at ?? null
+            }
+        });
     }
 };
 exports.updateNotificationPreferences = updateNotificationPreferences;
