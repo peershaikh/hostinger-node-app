@@ -353,7 +353,7 @@ export class NewsAdminController {
     try {
       const { newsTrainGuideService } = require('../services/news/newsTrainGuideService');
       const adminId = getAdminId(req);
-      const { trainNo, language, focusAngle, autoPublish, customImageUrl } = req.body || {};
+      const { trainNo, language, focusAngle, focusTopics, autoPublish, customImageUrl } = req.body || {};
 
       if (!trainNo || !/^\d{5}$/.test(String(trainNo).trim())) {
         return res.status(400).json({
@@ -366,6 +366,7 @@ export class NewsAdminController {
         trainNo: String(trainNo).trim(),
         language: language === 'hi' ? 'hi' : 'en',
         focusAngle: focusAngle ? String(focusAngle).trim() : undefined,
+        focusTopics: Array.isArray(focusTopics) ? focusTopics : undefined,
         autoPublish: Boolean(autoPublish),
         adminId,
         customImageUrl: customImageUrl ? String(customImageUrl).trim() : undefined

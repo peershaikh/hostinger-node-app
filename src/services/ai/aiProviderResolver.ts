@@ -99,17 +99,63 @@ export class AiProviderResolver {
    * Optional featureKey enables per-feature provider+model routing from admin panel.
    * All callers that don't pass featureKey continue to work unchanged.
    */
+  /**
+   * Resolves an ordered list of candidate providers for a given capability and optional feature key.
+   * Order:
+   *   1. Feature routing primaryProvider (if configured, enabled, and capable)
+   *   2. Feature routing fallbackProvider (if configured, enabled, and capable)
+   *   3. System default provider (if enabled and capable)
+   *   4. Any other registered, enabled, and capable provider
+   */
+  public resolveCandidateProviders(
+    capability: keyof AiCapabilities,
+    featureKey?: AiFeatureKey
+  ): AiProvider[] {
+    const config = aiAdminConfigService.getConfig();
+    const candidates: AiProvider[] = [];
+    const seen = new Set<string>();
+
+    const addIfCapable = (providerId?: string) => {
+      if (!providerId) return;
+      const id = providerId.toUpperCase().trim();
+      if (seen.has(id)) return;
+      const provConfig = config.providers[id];
+      if (!provConfig?.enabled) return;
+      const adapter = this.providers.get(id);
+      if (!adapter) return;
+      if (!adapter.capabilities[capability]) return;
+      seen.add(id);
+      candidates.push(adapter);
+    };
+
+    if (featureKey && config.routing?.[featureKey]) {
+      addIfCapable(config.routing[featureKey].primaryProvider);
+      addIfCapable(config.routing[featureKey].fallbackProvider);
+    }
+
+    addIfCapable(config.defaultProvider || 'GEMINI');
+
+    // Add any remaining capable providers
+    for (const p of this.getProvidersByCapability(capability)) {
+      addIfCapable(p.providerId);
+    }
+
+    return candidates;
+  }
+
+  /**
+   * Safe execution wrapper with standardized fallback across providers and error propagation.
+   * Optional featureKey enables per-feature provider+model routing from admin panel.
+   */
   public async executeWithFallback<T>(
     capability: keyof AiCapabilities,
     fn: (provider: AiProvider) => Promise<T>,
     fallbackValue?: T,
     featureKey?: AiFeatureKey
   ): Promise<{ result: T | null; providerUsed: string; error?: AiError }> {
-    const provider = featureKey
-      ? this.resolveForFeature(featureKey, capability)
-      : this.resolveProvider(capability);
+    const candidates = this.resolveCandidateProviders(capability, featureKey);
 
-    if (!provider) {
+    if (candidates.length === 0) {
       winstonLogger.warn(`[AI_RESOLVER_NO_PROVIDER] No capable provider available for ${capability}`);
       return {
         result: fallbackValue !== undefined ? fallbackValue : null,
@@ -122,27 +168,32 @@ export class AiProviderResolver {
       };
     }
 
-    try {
-      const result = await fn(provider);
-      return {
-        result,
-        providerUsed: provider.providerId
-      };
-    } catch (err: any) {
-      const aiErr = err instanceof AiError ? err : new AiError({
-        code: 'PROVIDER_UNAVAILABLE',
-        message: err?.message || 'AI execution failed',
-        provider: provider.providerId
-      });
+    let lastError: AiError | undefined;
 
-      winstonLogger.warn(`[AI_EXEC_FAIL] ${provider.providerId} failed for ${capability}: [${aiErr.code}] ${aiErr.message}`);
-
-      return {
-        result: fallbackValue !== undefined ? fallbackValue : null,
-        providerUsed: provider.providerId,
-        error: aiErr
-      };
+    for (const provider of candidates) {
+      try {
+        const result = await fn(provider);
+        return {
+          result,
+          providerUsed: provider.providerId
+        };
+      } catch (err: any) {
+        lastError = err instanceof AiError ? err : new AiError({
+          code: 'PROVIDER_UNAVAILABLE',
+          message: err?.message || 'AI execution failed',
+          provider: provider.providerId
+        });
+        winstonLogger.warn(
+          `[AI_EXEC_FAIL] ${provider.providerId} failed for ${capability}: [${lastError.code}] ${lastError.message}. Trying next fallback candidate...`
+        );
+      }
     }
+
+    return {
+      result: fallbackValue !== undefined ? fallbackValue : null,
+      providerUsed: candidates[0]?.providerId || 'NONE',
+      error: lastError
+    };
   }
 }
 
