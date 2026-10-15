@@ -30,6 +30,7 @@ export class PaymentController {
                 safar_pro_1d: { amount: 1900, duration_days: 1 },      // ₹19 (24 hours)
                 safar_pro_7d: { amount: 1900, duration_days: 7 },      // ₹19 (AI Pass)
                 safar_pro_30d: { amount: 4900, duration_days: 30 },    // ₹49 (Pro Monthly)
+                safar_pro_renewal_30d: { amount: 3900, duration_days: 37 }, // ₹39 (Loyalty Renewal: 30 days + 7 days bonus = 37 days)
                 safar_pro: { amount: 14900, duration_days: 30 },       // ₹149 (Legacy Safar Pro - preserved)
                 safar_pro_90d: { amount: 39900, duration_days: 365 }   // ₹399 (Pro Yearly - 365 days)
             };
@@ -37,6 +38,14 @@ export class PaymentController {
             let planInfo = PLAN_MAPPING[planType];
             if (!planInfo) {
                 return res.status(400).json({ success: false, message: 'Invalid planType' });
+            }
+
+            // Loyalty Renewal Offer (Option B: ₹39 for 37 days)
+            if (promoCode === 'RENEW39' || promoCode === 'LOYALTY37') {
+                if (planType === 'safar_pro_30d' || planType === 'safar_pro_renewal_30d') {
+                    planInfo = { amount: 3900, duration_days: 37 };
+                    winstonLogger.info(`[PAYMENT] Applied Loyalty Renewal Promo (${promoCode}) for user ${userId}: ₹39 for 37 days`);
+                }
             }
 
             // Dynamic admin promo offer synchronization (e.g. ₹19 for 30 days)

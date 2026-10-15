@@ -22,6 +22,8 @@ const productionIncidentService_1 = require("../services/productionIncidentServi
 const signupIntelligenceService_1 = require("../services/signupIntelligenceService");
 const learningObservabilityService_1 = require("../services/learningObservabilityService");
 const ledgerAggregationService_1 = require("../services/ledger/ledgerAggregationService");
+const renewalNotificationJob_1 = require("../jobs/renewalNotificationJob");
+const renewalNotificationService_1 = require("../services/renewalNotificationService");
 function normalizeRouteStation(stn) {
     if (!stn)
         return '';
@@ -2809,6 +2811,33 @@ class AdminController {
                 success: false,
                 error: err.message || 'Internal server error aggregating FinOps telemetry'
             });
+        }
+    }
+    async triggerRenewalScan(req, res) {
+        try {
+            const results = await renewalNotificationJob_1.renewalNotificationJob.runScan();
+            res.json({
+                success: true,
+                message: 'Renewal scan executed successfully',
+                data: results
+            });
+        }
+        catch (err) {
+            logger_1.winstonLogger.error(`[ADMIN_RENEWAL_TRIGGER_ERROR] ${err.message}`);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    }
+    async getRenewalStats(req, res) {
+        try {
+            const stats = renewalNotificationService_1.renewalNotificationService.getRenewalStats();
+            res.json({
+                success: true,
+                data: stats
+            });
+        }
+        catch (err) {
+            logger_1.winstonLogger.error(`[ADMIN_RENEWAL_STATS_ERROR] ${err.message}`);
+            res.status(500).json({ success: false, error: err.message });
         }
     }
 }

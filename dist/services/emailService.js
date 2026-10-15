@@ -287,6 +287,135 @@ class EmailService {
             tag: 'CONTACT_INQUIRY',
         });
     }
+    async sendSubscriptionRenewalEmail(options) {
+        const { toEmail, userName, stage, expiryDateFormatted, offerPlanName = 'Safar Pro Loyalty Renewal', offerPrice = '₹39', originalPrice = '₹49', bonusDaysText = '+ 7 Days Free Bonus (37 Days Total)', renewalUrl, promoCode = 'RENEW39' } = options;
+        const safeName = String(userName || 'Traveler').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        let badgeText = '⏳ 3 DAYS LEFT • EXPIRES SOON';
+        let badgeBg = '#fef3c7';
+        let badgeColor = '#92400e';
+        let headline = 'Your Safar Pro Plan Expires in 3 Days';
+        let subheadline = 'Renew today with your exclusive Loyalty Bonus: 37 days of unlimited AI train features for just ₹39!';
+        let subject = `[Trayago] Your Safar Pro expires in 3 days — Claim 7 Days Free Bonus!`;
+        if (stage === 'EXPIRING_TOMORROW') {
+            badgeText = '⚠️ LAST 24 HOURS • ACTION NEEDED';
+            badgeBg = '#fee2e2';
+            badgeColor = '#991b1b';
+            headline = 'Final Notice: Safar Pro Expires Tomorrow';
+            subheadline = 'Don\'t lose your unlimited AI split routes, berth confirmation alerts & ad-free experience.';
+            subject = `[Urgent] Your Safar Pro expires tomorrow — Keep unlimited routes active`;
+        }
+        else if (stage === 'EXPIRED_GRACE') {
+            badgeText = '🔄 SPECIAL WINBACK LOYALTY OFFER';
+            badgeBg = '#ede9fe';
+            badgeColor = '#5b21b6';
+            headline = 'Your Safar Pro Has Expired';
+            subheadline = 'We miss you! Re-activate your Pro benefits today with an exclusive 7-day bonus pass for ₹39.';
+            subject = `[Exclusive Offer] Your Safar Pro has expired — Reactivate with 7 Bonus Days`;
+        }
+        const html = `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f1f5f9; color: #1e293b;">
+        <!-- Header -->
+        <div style="background: linear-gradient(135deg, #4338ca 0%, #6366f1 50%, #8b5cf6 100%); padding: 32px 24px; border-radius: 16px 16px 0 0; text-align: center; color: white;">
+          <h1 style="margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.5px;">Trayago</h1>
+          <p style="margin: 6px 0 0; font-size: 14px; opacity: 0.9; font-weight: 500;">Intelligent Pan-India Train Assistant</p>
+          <div style="display: inline-block; margin-top: 18px; padding: 6px 14px; background-color: ${badgeBg}; color: ${badgeColor}; border-radius: 9999px; font-size: 11px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;">
+            ${badgeText}
+          </div>
+        </div>
+
+        <!-- Main Card -->
+        <div style="background-color: #ffffff; padding: 32px 28px; border-radius: 0 0 16px 16px; border: 1px solid #e2e8f0; border-top: none; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);">
+          <p style="margin: 0 0 14px; font-size: 17px; font-weight: 600; color: #0f172a;">
+            Namaste ${safeName},
+          </p>
+          <h2 style="margin: 0 0 12px; font-size: 22px; font-weight: 700; color: #1e1b4b; line-height: 1.3;">
+            ${headline}
+          </h2>
+          <p style="margin: 0 0 24px; font-size: 15px; line-height: 1.6; color: #475569;">
+            ${subheadline}
+          </p>
+
+          <!-- Plan Status Pill -->
+          <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 18px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 13px; color: #64748b; font-weight: 500;">Expiry Date:</span>
+            <span style="font-size: 14px; color: #0f172a; font-weight: 700;">${expiryDateFormatted}</span>
+          </div>
+
+          <!-- Special Renewal Offer Highlight Box -->
+          <div style="background: linear-gradient(145deg, #faf5ff 0%, #f3e8ff 100%); border: 2px dashed #a855f7; border-radius: 14px; padding: 24px 20px; text-align: center; margin-bottom: 28px;">
+            <span style="background-color: #7e22ce; color: #ffffff; padding: 4px 12px; border-radius: 9999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">
+              ⭐ LOYALTY RENEWAL PASS
+            </span>
+            <h3 style="margin: 12px 0 6px; font-size: 20px; font-weight: 800; color: #3b0764;">
+              ${offerPlanName}
+            </h3>
+            <p style="margin: 0 0 16px; font-size: 14px; font-weight: 600; color: #7e22ce;">
+              ${bonusDaysText}
+            </p>
+
+            <div style="margin: 16px 0;">
+              <span style="font-size: 16px; color: #94a3b8; text-decoration: line-through; margin-right: 8px;">${originalPrice}</span>
+              <span style="font-size: 38px; font-weight: 900; color: #6b21a8; vertical-align: middle;">${offerPrice}</span>
+              <span style="font-size: 14px; color: #6b21a8; font-weight: 600;">/ 37 Days</span>
+            </div>
+
+            <div style="background-color: #ffffff; border: 1px solid #d8b4fe; border-radius: 8px; padding: 8px 14px; display: inline-block; margin-bottom: 18px;">
+              <span style="font-size: 12px; color: #6b21a8; font-weight: 600;">PROMO CODE: </span>
+              <span style="font-size: 13px; font-family: monospace; font-weight: 800; color: #581c87; letter-spacing: 1px;">${promoCode}</span>
+            </div>
+
+            <div>
+              <a href="${renewalUrl}" style="display: inline-block; width: 85%; max-width: 340px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-size: 16px; font-weight: 700; box-shadow: 0 4px 14px rgba(124, 58, 237, 0.35);">
+                Renew Safar Pro for ${offerPrice} Now &rarr;
+              </a>
+            </div>
+          </div>
+
+          <!-- Feature Checklist -->
+          <div style="margin-bottom: 24px;">
+            <p style="margin: 0 0 12px; font-size: 13px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">
+              What stays unlocked with Safar Pro:
+            </p>
+            <ul style="margin: 0; padding: 0; list-style: none;">
+              <li style="padding: 8px 0; font-size: 14px; color: #334155; display: flex; align-items: center;">
+                <span style="color: #10b981; font-weight: bold; margin-right: 10px; font-size: 16px;">✓</span>
+                <span><strong>Unlimited AI Split Journey Engine</strong> &bull; Find confirmed seats when direct is waitlisted</span>
+              </li>
+              <li style="padding: 8px 0; font-size: 14px; color: #334155; display: flex; align-items: center;">
+                <span style="color: #10b981; font-weight: bold; margin-right: 10px; font-size: 16px;">✓</span>
+                <span><strong>Instant PNR & Charting Alerts</strong> &bull; Multi-ticket tracking with high-speed updates</span>
+              </li>
+              <li style="padding: 8px 0; font-size: 14px; color: #334155; display: flex; align-items: center;">
+                <span style="color: #10b981; font-weight: bold; margin-right: 10px; font-size: 16px;">✓</span>
+                <span><strong>Priority Station Wake-Up Alarm</strong> &bull; Never miss your stop at night</span>
+              </li>
+              <li style="padding: 8px 0; font-size: 14px; color: #334155; display: flex; align-items: center;">
+                <span style="color: #10b981; font-weight: bold; margin-right: 10px; font-size: 16px;">✓</span>
+                <span><strong>100% Ad-Free Travel Experience</strong> &bull; Lightning fast search with zero interruptions</span>
+              </li>
+            </ul>
+          </div>
+
+          <p style="margin: 0; font-size: 12px; color: #94a3b8; text-align: center; line-height: 1.5;">
+            Secured via Razorpay &bull; Instant activation on all devices &bull; UPI, Cards, Netbanking supported
+          </p>
+        </div>
+
+        <!-- Footer -->
+        <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #64748b;">
+          <p style="margin: 0 0 6px;">Questions or need help? Contact us at <a href="mailto:support@trayago.in" style="color: #4f46e5; text-decoration: none;">support@trayago.in</a></p>
+          <p style="margin: 0;">&copy; ${new Date().getFullYear()} Trayago. All rights reserved.</p>
+        </div>
+      </div>
+    `;
+        return this.sendWithFailover({
+            to: toEmail,
+            subject,
+            html,
+            senderName: 'Trayago Safar Pro',
+            tag: 'SUBSCRIPTION_RENEWAL',
+        });
+    }
 }
 exports.EmailService = EmailService;
 exports.emailService = new EmailService();

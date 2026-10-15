@@ -353,6 +353,9 @@ const startServer = async () => {
         const { dailyHealthReportJob } = require('./jobs/dailyHealthReport');
         dailyHealthReportJob.start();
 
+        const { renewalNotificationJob } = require('./jobs/renewalNotificationJob');
+        renewalNotificationJob.start();
+
         // PHASE_4C750: News refresh job
         const { newsRefreshJob } = require('./jobs/newsRefreshJob');
         await newsRefreshJob.start();

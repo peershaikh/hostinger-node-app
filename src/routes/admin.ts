@@ -89,6 +89,8 @@ router.get('/revenue', adminLimiter as any, requireAdmin as any, adminController
 router.get('/transactions', adminLimiter as any, requireAdmin as any, adminController.listPaymentTransactions.bind(adminController));
 router.get('/subscriptions', adminLimiter as any, requireAdmin as any, adminController.getPaymentSubscriptions.bind(adminController));
 router.get('/payment-metrics', adminLimiter as any, requireAdmin as any, adminController.getPaymentMetrics.bind(adminController));
+router.post('/renewals/trigger', adminLimiter as any, requireAdmin as any, adminController.triggerRenewalScan.bind(adminController));
+router.get('/renewals/stats', adminLimiter as any, requireAdmin as any, adminController.getRenewalStats.bind(adminController));
 
 router.get('/audit-logs', adminLimiter as any, requireAdmin as any, adminController.listAuditLogs.bind(adminController));
 router.post('/audit-logs', adminLimiter as any, requireAdmin as any, adminController.logAuditEvent.bind(adminController));
