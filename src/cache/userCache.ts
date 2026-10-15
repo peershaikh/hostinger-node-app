@@ -11,9 +11,9 @@ interface CacheStats {
   pubSubEvents: number;
 }
 
-class UserCache {
-  // L1 Cache: 5 minutes TTL
-  public cache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
+export class UserCache {
+  // L1 Cache: 30 seconds TTL (bounds maximum stale-cache window)
+  public cache = new NodeCache({ stdTTL: 30, checkperiod: 10 });
   
   // L2 Cache & PubSub
   private redisClient: Redis | null = null;

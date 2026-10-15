@@ -63,7 +63,9 @@ exports.featureFlags = {
      * (E) instead of the refresh-rotation `token_version` (R). Stage 1 keeps this
      * OFF: sessionEpoch is emitted and updated but NOT enforced. Default false.
      */
-    authEnforceSessionEpoch: process.env.AUTH_ENFORCE_SESSION_EPOCH === 'true',
+    get authEnforceSessionEpoch() {
+        return process.env.AUTH_ENFORCE_SESSION_EPOCH === 'true';
+    },
     // ── PHASE_5B020C — Offline Station Provider ─────────────────────────────────
     /** Use OfflineStationProvider instead of stationMapper for fallbacks */
     useOfflineProvider: process.env.USE_OFFLINE_PROVIDER === 'true',

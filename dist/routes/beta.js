@@ -5,7 +5,7 @@ const betaService_1 = require("../services/betaService");
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const authService_1 = require("../services/authService");
 const router = (0, express_1.Router)();
-router.post('/redeem', authMiddleware_1.authMiddleware, async (req, res) => {
+router.post('/redeem', authMiddleware_1.requireAuth, async (req, res) => {
     try {
         const { code } = req.body;
         const userId = req.headers['x-user-id'] || req.user?.id;

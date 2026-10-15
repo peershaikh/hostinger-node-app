@@ -51,7 +51,6 @@ const quotaRepository_1 = require("../repositories/quotaRepository");
 const cacheService_1 = require("./cacheService");
 const betaService_1 = require("./betaService");
 const phoneNormalizer_1 = require("../utils/phoneNormalizer");
-const otpStorageService_1 = require("./otpStorageService");
 const USERS_FILE = path_1.default.join(__dirname, '../../data/users.json');
 const GUESTS_FILE = path_1.default.join(__dirname, '../../data/guests.json');
 class AuthService {
@@ -78,11 +77,6 @@ class AuthService {
         // ensureAdmin is now async (persists to DB); fire-and-forget from constructor
         this.ensureAdmin().catch(e => console.warn('[AuthService] ensureAdmin error:', e));
         this.syncWithSupabase();
-        const origClear = this.otpRateLimits.clear.bind(this.otpRateLimits);
-        this.otpRateLimits.clear = () => {
-            origClear();
-            otpStorageService_1.otpStorageService.clearTestStore();
-        };
     }
     async getAllUsers() {
         try {
@@ -425,16 +419,41 @@ class AuthService {
         const user = await this.getUserByEmail(email);
         if (!user)
             throw new Error('User not found');
-        user.password = bcryptjs_1.default.hashSync(newPassword, 10);
-        delete this.passwordResetOtps[email];
-        // Phase 1: Dual-write hook
+        const hashedPassword = bcryptjs_1.default.hashSync(newPassword, 10);
+        const nextTokenVersion = (user.tokenVersion || 1) + 1;
+        const nextSessionEpoch = (user.sessionEpoch || 1) + 1;
+        // Atomically persist password update and session/token invalidation to Supabase
         if ((0, supabase_1.isSupabaseConfigured)()) {
-            userRepository_1.userRepository.update(user.id, { password: user.password }).catch(err => logger_1.winstonLogger.error(`[AUTH_PHASE1] Failed to sync resetPassword to Supabase: ${err.message}`));
-            await userCache_1.userCache.invalidate(user.id);
+            try {
+                await userRepository_1.userRepository.update(user.id, {
+                    password: hashedPassword,
+                    tokenVersion: nextTokenVersion,
+                    sessionEpoch: nextSessionEpoch
+                });
+            }
+            catch (err) {
+                logger_1.winstonLogger.error(`[AUTH] Failed to sync resetPassword to Supabase: ${err.message}`);
+                throw new Error(`Failed to update password in database: ${err.message}`);
+            }
         }
+        // Only update in-memory state and consume OTP after persistence succeeds
+        user.password = hashedPassword;
+        user.tokenVersion = nextTokenVersion;
+        user.sessionEpoch = nextSessionEpoch;
+        delete this.passwordResetOtps[email];
+        await userCache_1.userCache.invalidate(user.id).catch(() => { });
         this.updateLocalUser(user);
         this.saveUsers();
         return true;
+    }
+    /**
+     * Test helper to set a password reset OTP for testing without sending real emails.
+     */
+    _setPasswordResetOtpForTest(email, otp, expiresAt) {
+        this.passwordResetOtps[email] = {
+            otp,
+            expiresAt: expiresAt ?? (Date.now() + 10 * 60 * 1000)
+        };
     }
     loadUsers() {
         try {
@@ -1206,10 +1225,11 @@ class AuthService {
             throw new Error('Account has been blocked');
         const currentVersion = user.tokenVersion || 1;
         const decodedVersion = decoded.tokenVersion || 1;
-        // PERMANENT LOGIN GUARANTEE: Smooth auto-sync on version drift.
-        // As long as the refresh JWT is cryptographically valid and signed by REFRESH_TOKEN_SECRET,
-        // we advance tokenVersion without ever rejecting or logging out a legitimate user.
-        user.tokenVersion = Math.max(currentVersion, decodedVersion) + 1;
+        // Strict token rotation: reject stale or revoked refresh tokens (RFC 6819 §5.2.2.3)
+        if (decodedVersion !== currentVersion) {
+            throw new Error('Invalid refresh token');
+        }
+        user.tokenVersion = currentVersion + 1;
         if ((0, supabase_1.isSupabaseConfigured)()) {
             try {
                 await userRepository_1.userRepository.update(userId, { tokenVersion: user.tokenVersion });
@@ -1954,7 +1974,30 @@ class AuthService {
         if (!normalizedMobile) {
             throw new Error('Invalid Indian mobile number format');
         }
-        // 1. Check if mobile number is already verified on another account
+        const now = Date.now();
+        // 1. Resend cooldown (60 seconds)
+        const existingRecord = this.mobileOtps[userId];
+        const COOLDOWN_MS = 60 * 1000;
+        if (existingRecord && now - existingRecord.lastSentAt < COOLDOWN_MS) {
+            const secondsLeft = Math.ceil((COOLDOWN_MS - (now - existingRecord.lastSentAt)) / 1000);
+            throw new Error(`Please wait ${secondsLeft} second(s) before requesting another OTP.`);
+        }
+        // 2. Hourly rate limit per user (max 5 requests per hour), reusing this.otpRateLimits
+        const rateLimitKey = `mobile_otp:${userId}`;
+        let rateLimit = this.otpRateLimits.get(rateLimitKey);
+        if (!rateLimit || now > rateLimit.resetAt) {
+            rateLimit = {
+                count: 0,
+                resetAt: now + this.OTP_LIMIT_WINDOW_MS // 1 hour
+            };
+            this.otpRateLimits.set(rateLimitKey, rateLimit);
+        }
+        const MAX_HOURLY_MOBILE_OTP = 5;
+        if (rateLimit.count >= MAX_HOURLY_MOBILE_OTP) {
+            const minutesLeft = Math.ceil((rateLimit.resetAt - now) / 60000);
+            throw new Error(`Too many OTP requests. Please try again in ${minutesLeft} minute(s).`);
+        }
+        // 3. Check if mobile number is already verified on another account (checking normalized forms)
         const existing = this.users.find(u => {
             if (!u.mobileVerified || u.id === userId || !u.mobileNumber)
                 return false;
@@ -1964,22 +2007,18 @@ class AuthService {
         if (existing) {
             throw new Error('Mobile number already verified on another account');
         }
-        // 2. Request OTP via OtpStorageService (Atomic cooldown & hourly rate limits)
-        const { otp, otpId, cooldownSeconds } = await otpStorageService_1.otpStorageService.requestOtp({
-            phoneE164: normalizedMobile,
-            userId,
-            channel: 'SMS'
-        });
-        const now = Date.now();
-        const otpHash = otpStorageService_1.otpStorageService.hashOtp(userId, otp);
+        // 4. Generate 6-digit OTP code & store ONLY cryptographic hash
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otpHash = this.hashOtp(userId, otp);
         this.mobileOtps[userId] = {
             otpHash,
             mobileNumber: normalizedMobile,
-            expiresAt: now + 5 * 60 * 1000,
+            expiresAt: now + 5 * 60 * 1000, // 5 minutes expiry
             attempts: 0,
             lastSentAt: now
         };
-        // 3. Dispatch via SMS service (SMS service will NOT log plaintext OTP)
+        rateLimit.count++;
+        // 5. Dispatch via SMS service (SMS service will NOT log plaintext OTP)
         const { smsService } = await Promise.resolve().then(() => __importStar(require('./smsService')));
         const sent = await smsService.sendSmsOtp(normalizedMobile, otp);
         if (!sent) {
@@ -1992,25 +2031,31 @@ class AuthService {
         const user = await this.getUserById(userId);
         if (!user)
             throw new Error('User not found');
-        let verifiedResult;
-        try {
-            verifiedResult = await otpStorageService_1.otpStorageService.verifyOtp({
-                userId,
-                otpCode: otpCode.trim()
-            });
+        const record = this.mobileOtps[userId];
+        if (!record)
+            throw new Error('No OTP sent for this user');
+        const now = Date.now();
+        if (now > record.expiresAt) {
+            delete this.mobileOtps[userId];
+            throw new Error('OTP has expired. Please request a new one.');
         }
-        catch (err) {
-            if (err.message && err.message.includes('Too many failed attempts')) {
-                delete this.mobileOtps[userId];
-            }
-            throw err;
+        record.attempts += 1;
+        if (record.attempts > 5) {
+            delete this.mobileOtps[userId];
+            throw new Error('Too many failed attempts. Please request a new OTP.');
         }
-        // 2. Success! Update user status with canonical E.164 mobile number
-        user.mobileNumber = verifiedResult.phoneE164 || user.mobileNumber;
+        // Verify hash securely using timingSafeEqual
+        const computedHash = this.hashOtp(userId, otpCode.trim());
+        const hashMatches = crypto_1.default.timingSafeEqual(Buffer.from(record.otpHash, 'hex'), Buffer.from(computedHash, 'hex'));
+        if (!hashMatches) {
+            throw new Error('Invalid verification code');
+        }
+        // Success! Update user status with canonical E.164 mobile number
+        user.mobileNumber = record.mobileNumber;
         user.mobileVerified = true;
-        user.mobileVerificationMethod = verifiedResult.channel || 'SMS';
+        user.mobileVerificationMethod = 'SMS';
         user.mobileVerifiedAt = new Date().toISOString();
-        // Consume local test copy immediately
+        // Consume OTP immediately
         delete this.mobileOtps[userId];
         // Sync to Supabase & save locally
         if ((0, supabase_1.isSupabaseConfigured)()) {
@@ -2036,7 +2081,7 @@ class AuthService {
      * Internal test helper for inspecting OTP record state in tests without exposing plaintext OTP.
      */
     _getMobileOtpRecordForTest(userId) {
-        return otpStorageService_1.otpStorageService.getRecordForTest(userId) || this.mobileOtps[userId];
+        return this.mobileOtps[userId];
     }
     sanitizeUser(user) {
         const { password, ...rest } = user;

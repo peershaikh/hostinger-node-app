@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import { betaService } from '../services/betaService';
-import { authMiddleware } from '../middleware/authMiddleware';
+import { requireAuth } from '../middleware/authMiddleware';
 import { authService } from '../services/authService';
 
 const router = Router();
 
-router.post('/redeem', authMiddleware, async (req: any, res: any) => {
+router.post('/redeem', requireAuth, async (req: any, res: any) => {
   try {
     const { code } = req.body;
     const userId = (req.headers['x-user-id'] as string) || req.user?.id;

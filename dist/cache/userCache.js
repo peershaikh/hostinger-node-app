@@ -3,14 +3,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.userCache = void 0;
+exports.userCache = exports.UserCache = void 0;
 const node_cache_1 = __importDefault(require("node-cache"));
 const ioredis_1 = __importDefault(require("ioredis"));
 const logger_1 = require("../middleware/logger");
 class UserCache {
     constructor() {
-        // L1 Cache: 5 minutes TTL
-        this.cache = new node_cache_1.default({ stdTTL: 300, checkperiod: 60 });
+        // L1 Cache: 30 seconds TTL (bounds maximum stale-cache window)
+        this.cache = new node_cache_1.default({ stdTTL: 30, checkperiod: 10 });
         // L2 Cache & PubSub
         this.redisClient = null;
         this.redisSubscriber = null;
@@ -152,4 +152,5 @@ class UserCache {
         return { ...this.stats };
     }
 }
+exports.UserCache = UserCache;
 exports.userCache = new UserCache();

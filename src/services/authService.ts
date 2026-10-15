@@ -481,20 +481,44 @@ export class AuthService {
     const user = await this.getUserByEmail(email);
     if (!user) throw new Error('User not found');
 
-    user.password = bcrypt.hashSync(newPassword, 10);
-    delete this.passwordResetOtps[email];
+    const hashedPassword = bcrypt.hashSync(newPassword, 10);
+    const nextTokenVersion = (user.tokenVersion || 1) + 1;
+    const nextSessionEpoch = (user.sessionEpoch || 1) + 1;
 
-    // Phase 1: Dual-write hook
+    // Atomically persist password update and session/token invalidation to Supabase
     if (isSupabaseConfigured()) {
-      userRepository.update(user.id, { password: user.password }).catch(err => 
-        winstonLogger.error(`[AUTH_PHASE1] Failed to sync resetPassword to Supabase: ${err.message}`)
-      );
-      await userCache.invalidate(user.id);
+      try {
+        await userRepository.update(user.id, {
+          password: hashedPassword,
+          tokenVersion: nextTokenVersion,
+          sessionEpoch: nextSessionEpoch
+        });
+      } catch (err: any) {
+        winstonLogger.error(`[AUTH] Failed to sync resetPassword to Supabase: ${err.message}`);
+        throw new Error(`Failed to update password in database: ${err.message}`);
+      }
     }
 
+    // Only update in-memory state and consume OTP after persistence succeeds
+    user.password = hashedPassword;
+    user.tokenVersion = nextTokenVersion;
+    user.sessionEpoch = nextSessionEpoch;
+    delete this.passwordResetOtps[email];
+
+    await userCache.invalidate(user.id).catch(() => {});
     this.updateLocalUser(user);
     this.saveUsers();
     return true;
+  }
+
+  /**
+   * Test helper to set a password reset OTP for testing without sending real emails.
+   */
+  public _setPasswordResetOtpForTest(email: string, otp: string, expiresAt?: number) {
+    this.passwordResetOtps[email] = {
+      otp,
+      expiresAt: expiresAt ?? (Date.now() + 10 * 60 * 1000)
+    };
   }
 
   private loadUsers() {
@@ -1337,10 +1361,12 @@ export class AuthService {
     const currentVersion = user.tokenVersion || 1;
     const decodedVersion = decoded.tokenVersion || 1;
 
-    // PERMANENT LOGIN GUARANTEE: Smooth auto-sync on version drift.
-    // As long as the refresh JWT is cryptographically valid and signed by REFRESH_TOKEN_SECRET,
-    // we advance tokenVersion without ever rejecting or logging out a legitimate user.
-    user.tokenVersion = Math.max(currentVersion, decodedVersion) + 1;
+    // Strict token rotation: reject stale or revoked refresh tokens (RFC 6819 §5.2.2.3)
+    if (decodedVersion !== currentVersion) {
+      throw new Error('Invalid refresh token');
+    }
+
+    user.tokenVersion = currentVersion + 1;
 
     if (isSupabaseConfigured()) {
       try {

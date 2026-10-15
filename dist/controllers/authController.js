@@ -416,7 +416,7 @@ class AuthController {
                 if (newPassword.length < 6) {
                     return res.status(400).json({ success: false, error: 'Password must be at least 6 characters' });
                 }
-                authService_1.authService.resetPassword(email, otp, newPassword);
+                await authService_1.authService.resetPassword(email, otp, newPassword);
                 return res.json({ success: true, message: 'Password reset successfully. Please log in.' });
             }
             catch (err) {
@@ -456,15 +456,14 @@ class AuthController {
             }
         };
         this.logout = async (req, res) => {
-            // Increment tokenVersion so existing access tokens are immediately rejected
-            // by usageMiddleware (which checks x-token-version on every quota-gated request)
+            // Invalidate tokens so existing access and refresh tokens are immediately rejected
             const userId = req.headers['x-user-id'];
             if (userId) {
                 try {
-                    await authService_1.authService.terminateUserSessions(userId);
+                    await authService_1.authService.invalidateUserTokens(userId);
                 }
                 catch (err) {
-                    logger_1.winstonLogger.warn(`[AUTH] logout: terminateUserSessions failed for ${userId}: ${err.message}`);
+                    logger_1.winstonLogger.warn(`[AUTH] logout: invalidateUserTokens failed for ${userId}: ${err.message}`);
                     // Non-fatal — still proceed with logout
                 }
             }
