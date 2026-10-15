@@ -23,12 +23,15 @@ import { newsAutoCuratorService } from './newsAutoCuratorService';
 import { invalidateNewsCache } from '../railwayNewsService';
 import { newsAdminService } from './newsAdminService';
 import { irctcService } from '../irctcService';
+import { newsInternetSearchService, LiveInternetData } from './newsInternetSearchService';
 
 export interface TrainGuideOptions {
   trainNo: string;
   language?: 'en' | 'hi';
   focusAngle?: string;
   focusTopics?: string[];
+  customKeywords?: string;
+  enableWebSearch?: boolean;
   autoPublish?: boolean;
   adminId?: string;
   customImageUrl?: string;
@@ -385,6 +388,8 @@ export class NewsTrainGuideService {
       'tourism',
       'coaches',
       'fare_tatkal',
+      'cancellation_refund',
+      'flight_vs_train',
       'food_pantry',
       'travel_tips',
       'split_journey'
@@ -399,6 +404,12 @@ export class NewsTrainGuideService {
 
     if (focusAngle && typeof focusAngle === 'string') {
       const angle = focusAngle.toLowerCase();
+      if (angle.includes('cancellation') || angle.includes('refund') || angle.includes('रद्द') || angle.includes('रिफंड') || angle.includes('tdr') || angle.includes('cancel')) {
+        return ['cancellation_refund'];
+      }
+      if (angle.includes('flight') || angle.includes('plane') || angle.includes('हवाई जहाज') || angle.includes('विमान') || angle.includes('बनाम') || angle.includes('airline')) {
+        return ['flight_vs_train'];
+      }
       if (angle.includes('history') || angle.includes('इतिहास') || angle.includes('fact')) {
         return ['history'];
       }
@@ -419,7 +430,7 @@ export class NewsTrainGuideService {
       }
     }
 
-    // Default: Complete 360° Comprehensive coverage (All 8 topics)
+    // Default: Complete 360° Comprehensive coverage (All 10 topics)
     return validTopics;
   }
 
@@ -729,7 +740,9 @@ export class NewsTrainGuideService {
     },
     language: 'en' | 'hi',
     focusAngle?: string,
-    focusTopics?: string[]
+    focusTopics?: string[],
+    liveData?: LiveInternetData,
+    customKeywords?: string
   ): {
     title: string;
     seo_title: string;
@@ -771,6 +784,8 @@ export class NewsTrainGuideService {
     const isHistoryFocus = isSingleFocus && activeTopics[0] === 'history';
     const isTimetableFocus = isSingleFocus && activeTopics[0] === 'timetable';
     const isFoodFocus = isSingleFocus && activeTopics[0] === 'food_pantry';
+    const isCancellationFocus = isSingleFocus && activeTopics[0] === 'cancellation_refund';
+    const isFlightVsTrainFocus = isSingleFocus && activeTopics[0] === 'flight_vs_train';
 
     // ─── HINDI GENERATION ────────────────────────────────────────────────────────
     if (isHi) {
@@ -794,6 +809,16 @@ export class NewsTrainGuideService {
         seo_title = `${trainNo} ${meta.trainName} पेंट्री मेनू व कैटरिंग`.slice(0, 60);
         meta_description = `${trainNo} ${meta.trainName} में ऑन-बोर्ड पेंट्री भोजन, आईआरसीटीसी कैटरिंग मेनू, ई-कैटरिंग डिलीवरी और रास्ते के मशहूर स्टेशन व्यंजनों की पूरी जानकारी।`.slice(0, 155);
         summary = `ट्रेन **${trainNo} ${meta.trainName}** में सफर के दौरान खान-पान का अनुभव कैसा रहता है? जानिए ऑन-बोर्ड पेंट्री कार की सुविधाएं, आईआरसीटीसी मील ऑप्शंस और रास्ते में पड़ने वाले जंक्शन स्टेशनों के प्रसिद्ध पारंपरिक व्यंजनों की पूरी लिस्ट।\n\nयात्री अपनी सीट पर गर्म और स्वच्छ भोजन ऑनलाइन ई-कैटरिंग के जरिए कैसे मंगवा सकते हैं, इसकी पूरी प्रक्रिया भी इस गाइड में समझाई गई है।`;
+      } else if (isCancellationFocus) {
+        title = `${trainNo} ${meta.trainName}: टिकट कैंसिलेशन नियम, क्लर्केज चार्ज व रिफंड कैलकुलेटर`;
+        seo_title = `${trainNo} ${meta.trainName} कैंसिलेशन व रिफंड गाइड`.slice(0, 60);
+        meta_description = `${trainNo} ${meta.trainName} टिकट कैंसिलेशन चार्ज, 48h/12h/4h स्लैब, RAC/WL रिफंड, 100% स्वतः रिफंड और टीडीआर ऑनलाइन नियम।`.slice(0, 155);
+        summary = `यदि आप **${trainNo} ${meta.trainName}** (${sourceDisplay} से ${destDisplay}) में अपनी यात्रा रद्द करने का विचार कर रहे हैं, तो आईआरसीटीसी (IRCTC) और भारतीय रेल के आधिकारिक कैंसिलेशन नियमों को जानना अनिवार्य है।\n\nयह गाइड प्रस्थान से पूर्व विभिन्न समय सीमाओं (48 घंटे, 12 घंटे, 4 घंटे) में कटने वाले क्लर्केज शुल्क, आरएसी व वेटलिस्ट टिकटों पर मिलने वाले रिफंड, ट्रेन रद्द होने पर 100% स्वतः रिफंड और टीडीआर फाइलिंग की पूरी प्रक्रिया समझाती है।`;
+      } else if (isFlightVsTrainFocus) {
+        title = `${trainNo} ${meta.trainName} बनाम फ्लाइट: समय, किराया, सामान व सुविधा तुलना`;
+        seo_title = `${trainNo} ${meta.trainName} बनाम फ्लाइट तुलना`.slice(0, 60);
+        meta_description = `${trainNo} ${meta.trainName} और हवाई जहाज (Flight) में कौन सा बेहतर है? कुल समय, 15 किलो बैगेज सीमा बनाम 40 किलो, स्लीपर आराम और किराये की तुलना।`.slice(0, 155);
+        summary = `${sourceDisplay} से ${destDisplay} कॉरिडोर पर सफर करने वाले यात्रियों के सामने अक्सर सवाल होता है कि फ्लाइट चुनें या प्रतिष्ठित ट्रेन **${trainNo} ${meta.trainName}**?\n\nयह तुलनात्मक रिपोर्ट एयरपोर्ट आने-जाने का कुल डोर-टू-डोर समय, 15 किलो बैगेज सीमा बनाम ट्रेन में 40-50 किलो मुफ्त सामान, संकरी इकोनॉमी सीट बनाम 6-फुट फ्लैट स्लीपर बर्थ और किराये की स्थिरता का वस्तुनिष्ठ विश्लेषण करती है।`;
       } else {
         // Complete 360° Comprehensive Mega-Guide (Multi-topic / All topics)
         title = `${trainNo} ${meta.trainName}: 360° सम्पूर्ण यात्रा गाइड — इतिहास, रूट, समय सारणी, कोच और जरूरी टिप्स`;
@@ -817,6 +842,29 @@ export class NewsTrainGuideService {
 - **लोकोमोटिव ट्रैक्शन:** ${profile.locoHi}
 - **कोच व्यवस्था:** ${profile.isAllAc ? 'शत-प्रतिशत ऑल-एसी वातानुकूलित कोच (कोई स्लीपर या जनरल अनारक्षित कोच नहीं)' : 'वातानुकूलित, स्लीपर एवं अनारक्षित सामान्य कोच'}
       `.trim());
+
+      // Live Web Search Grounding Section (if data present)
+      if (liveData && (liveData.summary || (liveData.newsHeadlines && liveData.newsHeadlines.length > 0))) {
+        const headlinesMarkdown = (liveData.newsHeadlines || [])
+          .slice(0, 5)
+          .map((h: any) => `- 📰 **${h.title}** (${h.source} — ${new Date(h.pubDate).toLocaleDateString('hi-IN')})`)
+          .join('\n');
+
+        sections.push(`
+## 🌐 लाइव इंटरनेट रिसर्च एवं ताज़ा रेलवे समाचार अलर्ट (Real-Time Grounding)
+
+भारतीय रेल एवं प्रमुख समाचार स्रोतों (Google News, Wikipedia, TOI, रेल मंत्रालय) से संकलित ताज़ा परिचालन स्थिति:
+
+${liveData.summary ? `> **सत्यापित संदर्भ रिकॉर्ड:** ${liveData.summary}\n` : ''}
+${headlinesMarkdown ? `### 📡 हालिया प्रमुख समाचार व एडवाइजरी:\n${headlinesMarkdown}` : ''}
+        `.trim());
+      }
+
+      if (customKeywords && customKeywords.trim()) {
+        sections.push(`
+> **विशेष विश्लेषण विषय:** यह लेख विशेष रूप से आपके चयनित कीवर्ड्स (**${customKeywords.trim()}**) को केंद्र में रखकर तैयार किया गया है।
+        `.trim());
+      }
 
       // Section 2: History (if selected)
       if (activeTopics.includes('history')) {
@@ -882,6 +930,48 @@ ${profile.coachesHi.map(c => `- ${c}`).join('\n')}
         `.trim());
       }
 
+      // Section 6A: Cancellation & Refund Calculator (if selected)
+      if (activeTopics.includes('cancellation_refund')) {
+        sections.push(`
+## 📉 ट्रेन टिकट कैंसिलेशन नियम, क्लर्केज चार्ज व रिफंड कैलकुलेटर
+
+आईआरसीटीसी (IRCTC) और भारतीय रेलवे के आधिकारिक नियमों के अनुसार यदि आप ट्रेन **${trainNo} ${meta.trainName}** में टिकट रद्द करते हैं, तो रिफंड का निर्धारण चार्ट बनने के समय और ट्रेन प्रस्थान समय के आधार पर किया जाता है:
+
+### ⏱️ समय सीमा अनुसार रिफंड कटौती स्लैब (Refund Deduction Slabs)
+
+| प्रस्थान से पूर्व का समय | कटौती दर (Deduction Rate) | न्यूनतम क्लर्केज चार्ज (प्रति यात्री) |
+|:---|:---|:---|
+| **48 घंटे से अधिक पूर्व** | फ्लैट क्लर्केज शुल्क | 1A/EC: ₹240 + GST<br>2A/FC: ₹200 + GST<br>3A/CC/3E: ₹180 + GST<br>Sleeper: ₹120<br>2S: ₹60 |
+| **48 घंटे से 12 घंटे तक** | कुल मूल किराये का **25%** | न्यूनतम फ्लैट क्लर्केज चार्ज के अधीन |
+| **12 घंटे से 4 घंटे तक** (या चार्ट बनने तक) | कुल मूल किराये का **50%** | न्यूनतम फ्लैट क्लर्केज चार्ज के अधीन |
+| **4 घंटे से कम या चार्ट बनने के बाद** | **0% रिफंड** (कोई रिफंड नहीं) | कन्फर्म टिकट पर कोई रिफंड देय नहीं होता |
+
+### 📋 आरएसी (RAC) व वेटलिस्ट (Waiting List) टिकट रिफंड नियम
+- **चार्ट बनने के बाद व प्रस्थान से 30 मिनट पूर्व तक:** आरएसी या वेटलिस्ट टिकट रद्द कराने पर केवल न्यूनतम क्लर्केज चार्ज (₹60 प्रति यात्री) काटा जाता है और शेष पूरा किराया वापस खाते में क्रेडिट होता है।
+- **ऑटोमैटिक 100% फुल रिफंड (ट्रेन रद्द होने पर):** यदि ट्रेन रेलवे द्वारा मौसम (कोहरा, बाढ़ आदि) या तकनीकी कारणों से रद्द की जाती है, तो ऑनलाइन ई-टिकट धारकों को बिना किसी टीडीआर (TDR) के **100% पूरा रिफंड स्वतः** उसी बैंक/यूपीआई खाते में वापस मिल जाता है।
+- **ऑनलाइन टीडीआर फाइलिंग (TDR Filing):** यदि ट्रेन 3 घंटे से अधिक लेट हो और यात्री यात्रा न करना चाहे, अथवा एसी कोच में एसी काम न करने पर किराए का अंतर प्राप्त करने हेतु ऑनलाइन टीडीआर दाखिल किया जा सकता है।
+        `.trim());
+      }
+
+      // Section 6B: Flight vs Train Comparison (if selected)
+      if (activeTopics.includes('flight_vs_train')) {
+        sections.push(`
+## ✈️ फ्लाइट बनाम ट्रेन (${trainNo} ${meta.trainName}): समय, किराया, सामान व आराम की सीधी तुलना
+
+क्या आपको इस मार्ग पर हवाई जहाज (Flight) से यात्रा करनी चाहिए या **${trainNo} ${meta.trainName}** चुननी चाहिए? आइए सभी व्यावहारिक पहलुओं की निष्पक्ष तुलना करें:
+
+| तुलना का आधार (Parameter) | 🚆 ट्रेन (${trainNo} ${meta.trainName}) | ✈️ फ्लाइट (विमान यात्रा) |
+|:---|:---|:---|
+| **डोर-टू-डोर वास्तविक समय** | शहर के मुख्य स्टेशन से केंद्र तक रात भर में सुगम सफर; दिन का कीमती समय नहीं बिगड़ता | एयरपोर्ट की दूरी (1.5h) + चेक-इन/सुरक्षा जांच (2h) + उड़ान (2h) + बैगेज प्राप्ति (45m) = **लगभग 6.5 से 7 घंटे** |
+| **मुफ्त सामान की सीमा (Luggage)** | **40 से 50 किग्रा** (1A में 70 किग्रा) बिना किसी अतिरिक्त वजन या पेनल्टी के | केवल **15 किग्रा** चेक-इन + 7 किग्रा केबिन बैग; अतिरिक्त वजन पर ₹500 से ₹600 प्रति किग्रा का भारी जुर्माना |
+| **नींद और बैठने का आराम** | 6 फीट का सीधा फ्लैट स्लीपर बर्थ, साफ चादर, तकिया, कंबल और प्राइवेसी पर्दे | 29-30 इंच की संकरी इकोनॉमी सीट जिसमें रात भर सीधा बैठना थकावट भरा होता है |
+| **किराया व आखिरी समय की कीमतें** | पारदर्शी व बजट-अनुकूल किराया संरचना (3A: ₹2,000-₹2,500; 2A: ₹3,000-₹3,500) | आखिरी समय में डायनामिक सर्ज के कारण किराया अक्सर ₹8,000 से ₹16,000+ तक पहुंच जाता है |
+| **मौसम व कोहरे में विश्वसनीयता** | इलेक्ट्रिक इंजन में लगे फॉग-पास डिवाइस और कवच प्रणाली से खराब मौसम में भी निरंतर परिचालन | घने कोहरे या खराब दृश्यता में एयरपोर्ट पर फ्लाइट्स का घंटों लेट होना या रद्द होना आम है |
+
+> **यात्री निष्कर्ष:** यदि आप परिवार के साथ हैं, अधिक सामान ले जा रहे हैं या दिनभर की भागदौड़ बचाकर रात में आराम से सोना चाहते हैं, तो ट्रेन ${trainNo} फ्लाइट की तुलना में कहीं अधिक किफायती और सुविधाजनक विकल्प है।
+        `.trim());
+      }
+
       // Section 7: Food & Pantry (if selected)
       if (activeTopics.includes('food_pantry')) {
         const foodsContent = foods.length > 0
@@ -931,6 +1021,8 @@ ${foodsContent}
 
       const passenger_advice = isHistoryFocus
         ? `ट्रेन ${trainNo} के ऐतिहासिक महत्व और शानदार रूट का आनंद लेने के लिए यात्रा के दौरान थुल घाट और प्रमुख ऐतिहासिक जंक्शनों पर खिड़की से नजारों का अनुभव अवश्य लें।`
+        : isCancellationFocus
+        ? `कन्फर्म टिकट कैंसिल करते समय चार्टिंग समय (प्रस्थान से 4 घंटे पूर्व) का विशेष ध्यान रखें, क्योंकि चार्ट बनने के बाद कन्फर्म टिकट पर कोई रिफंड नहीं मिलता।`
         : `पीक सीजन में अपनी यात्रा का अग्रिम आरक्षण समय रहते कराएं। यदि सीधी सीटें प्रतीक्षारत हों, तो Trayago Split Journey के माध्यम से कनेक्टिंग कन्फर्म सीट की जांच करें।`;
 
       const key_takeaways = isHistoryFocus ? [
@@ -938,6 +1030,11 @@ ${foodsContent}
         `ट्विन पुश-पुल WAP-7 तकनीक से थुल घाट पर बिना बैंकर इंजन के चलने वाली ऐतिहासिक ट्रेन।`,
         `अक्टूबर 2021 में आधुनिक तेजस स्मार्ट स्लीपर एलएचबी रैक में अपग्रेड की गई।`,
         `शत-प्रतिशत वातानुकूलित कोच संरचना, जिसमें कोई भी स्लीपर या जनरल कोच नहीं होता।`
+      ] : isCancellationFocus ? [
+        `प्रस्थान से 48 घंटे पूर्व कैंसिल करने पर सिर्फ फ्लैट क्लर्केज चार्ज कटता है।`,
+        `48 से 12 घंटे के बीच 25% और 12 से 4 घंटे (चार्ट बनने) के बीच 50% किराया कटता है।`,
+        `चार्ट बनने के बाद कन्फर्म टिकट पर 0% रिफंड मिलता है।`,
+        `ट्रेन रेलवे द्वारा रद्द होने पर 100% पूरा रिफंड बिना टीडीआर स्वतः बैंक खाते में आ जाता है।`
       ] : [
         `ट्रेन ${trainNo} ${meta.trainName} ${sourceDisplay} से ${destDisplay} के बीच संचालित होती है।`,
         `कोच व्यवस्था: ${profile.isAllAc ? '100% ऑल-एसी वातानुकूलित' : 'एसी, स्लीपर व सामान्य श्रेणियां'}।`,
@@ -983,6 +1080,28 @@ ${foodsContent}
         }
       ];
 
+      if (activeTopics.includes('cancellation_refund') || isCancellationFocus) {
+        faqs.push(
+          {
+            question: `ट्रेन टिकट प्रस्थान से 48 घंटे पहले कैंसिल करने पर कितना चार्ज कटता है?`,
+            answer: `48 घंटे से अधिक पहले कैंसिल करने पर केवल फ्लैट क्लर्केज चार्ज कटता है (1A/EC: ₹240, 2A: ₹200, 3A/CC: ₹180, SL: ₹120, 2S: ₹60 प्रति यात्री)।`
+          },
+          {
+            question: `यदि ट्रेन रेलवे द्वारा रद्द (Cancel) कर दी जाए, तो रिफंड कैसे मिलता है?`,
+            answer: `यदि ट्रेन रेलवे द्वारा पूरी तरह रद्द की जाती है, तो ई-टिकट धारकों को किसी टीडीआर फाइल करने की जरूरत नहीं होती। 100% पूरा रिफंड स्वतः उसी खाते में 3 से 7 दिनों में आ जाता है।`
+          }
+        );
+      }
+
+      if (activeTopics.includes('flight_vs_train') || isFlightVsTrainFocus) {
+        faqs.push(
+          {
+            question: `क्या इस रूट पर ट्रेन से जाना फ्लाइट से बेहतर और सस्ता है?`,
+            answer: `हां, ट्रेन में 40-50 किग्रा मुफ्त सामान, आरामदायक फ्लैट स्लीपर बर्थ और लगभग 1/3 से 1/4 किराया रहता है, जबकि फ्लाइट में 15 किग्रा की सीमा और आखिरी समय पर भारी सर्ज चार्ज लगता है।`
+          }
+        );
+      }
+
       return {
         title,
         seo_title,
@@ -1017,6 +1136,16 @@ ${foodsContent}
       seo_title = `${trainNo} ${meta.trainName} Pantry Menu & Catering`.slice(0, 60);
       meta_description = `Complete onboard pantry meal menu, catering charges, IRCTC e-catering options, and authentic regional station delicacies along ${trainNo} ${meta.trainName}.`.slice(0, 155);
       summary = `Wondering what food is served aboard Train ${trainNo} ${meta.trainName}? This dedicated culinary guide covers onboard pantry service, multi-course dining options, IRCTC e-catering delivery right to your berth, and iconic station delicacies.\n\nFrom traditional local specialties at intermediate stops to hygienic boxed meals, discover how to enjoy the best food during your journey.`;
+    } else if (isCancellationFocus) {
+      title = `${trainNo} ${meta.trainName}: Ticket Cancellation Charges, Refund Rules & Slabs`;
+      seo_title = `${trainNo} ${meta.trainName} Cancellation & Refund Guide`.slice(0, 60);
+      meta_description = `Official IRCTC cancellation charges, refund deduction slabs (48h, 12h, 4h), RAC/WL clerkage, 100% automatic refund, and TDR filing for ${trainNo} ${meta.trainName}.`.slice(0, 155);
+      summary = `Planning to cancel your reservation on Train **${trainNo} ${meta.trainName}** (${sourceDisplay} to ${destDisplay})? Understanding Indian Railways and IRCTC cancellation policies can save you from unnecessary financial deductions.\n\nThis definitive guide outlines exact time-based deduction slabs (before 48h, 48-12h, 12-4h, post-charting), RAC/WL clerkage fees, automatic 100% refunds when railways cancel trains, and online TDR filing criteria.`;
+    } else if (isFlightVsTrainFocus) {
+      title = `${trainNo} ${meta.trainName} vs Flight: Travel Time, Baggage, Comfort & Fare Comparison`;
+      seo_title = `${trainNo} ${meta.trainName} vs Flight Comparison`.slice(0, 60);
+      meta_description = `Comparing Train ${trainNo} ${meta.trainName} vs domestic flights: door-to-door transit time, 15kg baggage limits vs 40kg, sleeping comfort & last-minute fares.`.slice(0, 155);
+      summary = `Traveling between ${sourceDisplay} and ${destDisplay}? Commuters frequently weigh the choice between booking a flight or reserving a berth aboard **${trainNo} ${meta.trainName}**.\n\nThis objective comparison analyzes door-to-door transit hours, strict airline 15kg baggage limits versus 40-50kg train allowances, sleeping berth comfort against cramped economy airline seats, and fare predictability.`;
     } else {
       // 360° Comprehensive Mega-Guide (Multi-topic / All topics)
       title = `${trainNo} ${meta.trainName}: 360° Travel Guide — History, Route, Timetable, Coaches & Tips`;
@@ -1040,6 +1169,29 @@ Operated under the supervision of Indian Railways, **${trainNo} ${meta.trainName
 - **Motive Power:** ${profile.locoEn}
 - **Accommodation Structure:** ${profile.isAllAc ? '100% All-Air-Conditioned (Zero Sleeper and Zero Unreserved General coaches)' : 'Air-Conditioned, Sleeper, and General Unreserved accommodation'}
     `.trim());
+
+    // Live Web Search Grounding Section (if data present)
+    if (liveData && (liveData.summary || (liveData.newsHeadlines && liveData.newsHeadlines.length > 0))) {
+      const headlinesMarkdown = (liveData.newsHeadlines || [])
+        .slice(0, 5)
+        .map((h: any) => `- 📰 **${h.title}** (${h.source} — ${new Date(h.pubDate).toLocaleDateString('en-IN')})`)
+        .join('\n');
+
+      sections.push(`
+## 🌐 Real-Time Railway News, Advisories & Web Grounding
+
+Synthesized from verified media reports, official railway press releases, and real-time updates:
+
+${liveData.summary ? `> **Verified Record:** ${liveData.summary}\n` : ''}
+${headlinesMarkdown ? `### 📡 Recent News Headlines & Travel Advisories:\n${headlinesMarkdown}` : ''}
+      `.trim());
+    }
+
+    if (customKeywords && customKeywords.trim()) {
+      sections.push(`
+> **Target Keywords Analyzed:** This comprehensive dossier specifically explores and contextualizes your queried topics (**${customKeywords.trim()}**) for maximum search-intent relevance.
+      `.trim());
+    }
 
     // Section 2: History (if selected)
     if (activeTopics.includes('history')) {
@@ -1105,6 +1257,51 @@ ${profile.coachesEn.map(c => `- ${c}`).join('\n')}
       `.trim());
     }
 
+    // Section 6A: Cancellation Charges & Refund Calculator (if selected)
+    if (activeTopics.includes('cancellation_refund')) {
+      sections.push(`
+## 📉 Ticket Cancellation Charges, Refund Calculator & Official Rules
+
+Indian Railways and IRCTC calculate ticket cancellation refunds based on the exact interval between cancellation and the scheduled departure (or charting time):
+
+### ⏱️ Time-Based Cancellation Deduction Slabs
+
+| Cancellation Window | Deduction Percentage | Minimum Flat Clerkage Charge (Per Passenger) |
+|:---|:---|:---|
+| **More than 48 Hours before departure** | Flat Clerkage Fee | 1A / Executive Class: ₹240 + GST<br>2A / First Class: ₹200 + GST<br>3A / CC / 3E: ₹180 + GST<br>Sleeper (SL): ₹120<br>Second Sitting (2S): ₹60 |
+| **Between 48 Hours and 12 Hours** | **25%** of base fare | Subject to minimum flat clerkage charge |
+| **Between 12 Hours and 4 Hours** (or chart preparation) | **50%** of base fare | Subject to minimum flat clerkage charge |
+| **Less than 4 Hours / After Charting** | **0% Refund** (Zero) | No refund admissible on confirmed tickets |
+
+### 📋 RAC, Waiting List & Automatic Refund Safeguards
+- **RAC / Waitlisted Tickets:** Can be cancelled online up to 30 minutes before scheduled train departure. Only a flat clerkage fee of ₹60 (+GST for AC) is deducted per passenger; the entire balance is 100% refunded.
+- **100% Automatic Refund on Railway Cancellations:** If Indian Railways cancels the train due to fog, flooding, or technical maintenance, e-ticket passengers receive a **100% automated refund** directly into their original payment method without needing to file an online TDR.
+- **When to File an Online TDR (Ticket Deposit Receipt):**
+  1. Train delayed by more than 3 hours and passenger chooses not to travel.
+  2. Air conditioning failure in AC coaches (difference of fare refunded).
+  3. Route diversion where the passenger opts out of the journey.
+      `.trim());
+    }
+
+    // Section 6B: Flight vs Train Comparison (if selected)
+    if (activeTopics.includes('flight_vs_train')) {
+      sections.push(`
+## ✈️ Flight vs Train (${trainNo} ${meta.trainName}): Transit Time, Baggage, Comfort & Fare Comparison
+
+Deciding whether to take a domestic flight or board Train **${trainNo} ${meta.trainName}** on this corridor? Here is an objective, head-to-head comparison:
+
+| Evaluation Factor | 🚆 Train (${trainNo} ${meta.trainName}) | ✈️ Domestic Airplane / Flight |
+|:---|:---|:---|
+| **Door-to-Door Travel Time** | Downtown station to downtown station overnight; zero daytime productivity lost | Commute to airport (1.5h) + Security/Boarding (2h) + Flight (2h) + Baggage claim (45m) = **~6.5 to 7 Hours** |
+| **Free Baggage Allowance** | **40 kg to 50 kg free** (up to 70 kg in First AC) with zero weighing scale anxiety | Strict **15 kg check-in** limit; exorbitant excess baggage penalty of ₹500 to ₹600 per kg |
+| **Sleeping Comfort & Space** | Full 6-foot horizontal sleeping berth, fresh linen, blankets, and freedom to walk | Cramped 29-30 inch economy pitch; sleeping upright in a narrow seat causes physical strain |
+| **Fare Predictability** | Reasonable, transparent pricing (3A: ₹2,000–₹2,500; 2A: ₹3,000–₹3,500) | Astronomical last-minute surge pricing often skyrocketing between ₹8,000 and ₹16,000+ |
+| **Weather & Fog Resilience** | Electric locomotives with FOG PASS navigation operate steadily through zero visibility | Heavy winter ground fogs frequently ground flights or cause multi-hour runway holds |
+
+> **Bottom Line:** For travelers with family, business gear, or leisure baggage who value uninterrupted horizontal sleep and budget certainty, Train ${trainNo} remains the superior, hassle-free option.
+      `.trim());
+    }
+
     // Section 7: Food & Pantry (if selected)
     if (activeTopics.includes('food_pantry')) {
       const foodsContent = foods.length > 0
@@ -1154,6 +1351,8 @@ When berths on Train ${trainNo} are completely booked and waitlists are high, pa
 
     const passenger_advice = isHistoryFocus
       ? `To fully experience the heritage of Train ${trainNo}, look out for scenic mountain viaducts through the Western Ghats (Thull Ghat) and observe the Push-Pull locomotive setup at origin and terminus.`
+      : isCancellationFocus
+      ? `Pay close attention to the 4-hour chart preparation cutoff; once the chart is finalized, zero refund is granted on confirmed tickets.`
       : `Reserve berths early during holiday rush periods. If direct tickets are waitlisted, check Trayago Split Journey for guaranteed connecting seats.`;
 
     const key_takeaways = isHistoryFocus ? [
@@ -1161,6 +1360,11 @@ When berths on Train ${trainNo} are completely booked and waitlists are high, pa
       `Powered by twin Push-Pull WAP-7 electric locomotives to conquer the steep 1:37 Thull Ghat without banker engines.`,
       `Upgraded to modern Tejas Smart Sleeper LHB coaches in October 2021 with automatic doors.`,
       `100% all-air-conditioned passenger accommodation with zero Sleeper or General coaches.`
+    ] : isCancellationFocus ? [
+      `Cancellations >48 hours prior incur only a flat clerkage fee (₹60 to ₹240 depending on class).`,
+      `Cancellations between 48h and 12h incur a 25% penalty; 12h to 4h incur a 50% penalty.`,
+      `Post-charting cancellations (<4h) on confirmed tickets receive zero (0%) refund.`,
+      `Railway cancellations due to weather/ops trigger a 100% automatic refund without filing a TDR.`
     ] : [
       `Train ${trainNo} ${meta.trainName} operates between ${sourceDisplay} and ${destDisplay}.`,
       `Accommodation: ${profile.isAllAc ? '100% All-AC (No Sleeper/General)' : 'AC, Sleeper, and General coaches'}.`,
@@ -1206,6 +1410,28 @@ When berths on Train ${trainNo} are completely booked and waitlists are high, pa
       }
     ];
 
+    if (activeTopics.includes('cancellation_refund') || isCancellationFocus) {
+      faqs.push(
+        {
+          question: `How much cancellation fee is deducted if cancelled 48 hours before departure?`,
+          answer: `Only flat clerkage charges apply: ₹240 for 1A/Executive, ₹200 for 2A, ₹180 for 3A/CC, ₹120 for Sleeper, and ₹60 for 2S (plus GST for AC).`
+        },
+        {
+          question: `Will I get an automatic refund if Train ${trainNo} is cancelled by Indian Railways?`,
+          answer: `Yes. For trains officially cancelled by railways, e-ticket holders receive a 100% full refund credited automatically to their bank/card without filing a TDR.`
+        }
+      );
+    }
+
+    if (activeTopics.includes('flight_vs_train') || isFlightVsTrainFocus) {
+      faqs.push(
+        {
+          question: `Is traveling on Train ${trainNo} better than taking a domestic flight?`,
+          answer: `Train ${trainNo} provides 40-50 kg free luggage allowance, horizontal sleeping berths, no airport security delays, and predictable fares, making it much more economical and relaxing than domestic flights.`
+        }
+      );
+    }
+
     return {
       title,
       seo_title,
@@ -1244,6 +1470,28 @@ When berths on Train ${trainNo} are completely booked and waitlists are high, pa
       const canonicalSlug = this.generateTrainSlug(rawTrainNo, meta.trainName, meta.source, meta.destination);
       const profile = this.analyzeTrainProfile(rawTrainNo, meta.trainName, meta.trainType, meta.scheduleStations || []);
 
+      // 1B. Live Internet Search Grounding
+      let liveData: LiveInternetData = {
+        query: '',
+        newsHeadlines: [],
+        verifiedFacts: [],
+        recentAdvisories: [],
+        summary: '',
+        sourceLinks: []
+      };
+      if (options.enableWebSearch !== false) {
+        try {
+          winstonLogger.info(`[TRAIN_GUIDE_SEARCH] Searching live internet data for Train ${rawTrainNo} (${meta.trainName})...`);
+          liveData = await newsInternetSearchService.searchLiveInternetData(
+            rawTrainNo,
+            meta.trainName,
+            options.customKeywords
+          );
+        } catch (searchErr: any) {
+          winstonLogger.warn(`[TRAIN_GUIDE_SEARCH_WARN] Live internet search failed: ${searchErr.message}`);
+        }
+      }
+
       // 2. Build Halts Table summary context for prompt
       let haltsContext = '';
       if (meta.scheduleStations && meta.scheduleStations.length > 0) {
@@ -1254,6 +1502,29 @@ When berths on Train ${trainNo} are completely booked and waitlists are high, pa
       }
 
       // 3. Assemble Prompt for AI
+      let webGroundingContext = '';
+      if (liveData.summary) {
+        webGroundingContext += `\n- Verified Web Facts (Wikipedia / Official): ${liveData.summary}`;
+      }
+      if (liveData.newsHeadlines && liveData.newsHeadlines.length > 0) {
+        const headlinesStr = liveData.newsHeadlines
+          .slice(0, 4)
+          .map((h: any) => `"${h.title}" (${h.source})`)
+          .join('; ');
+        webGroundingContext += `\n- Recent Real-Time News & Operational Headlines: ${headlinesStr}`;
+      }
+      if (options.customKeywords && options.customKeywords.trim()) {
+        webGroundingContext += `\n- Target Keywords to Naturally Weave Into Content & Headings: "${options.customKeywords.trim()}"`;
+      }
+
+      let specialTopicInstructions = '';
+      if (focusTopics.includes('cancellation_refund')) {
+        specialTopicInstructions += `\n- CANCELLATION & REFUND REQUIREMENTS: Provide an authoritative table detailing deduction slabs (>48h flat clerkage, 48-12h 25%, 12-4h 50%, <4h/charting 0% refund), RAC/WL rules, auto-refund on railway cancellations, and TDR conditions.`;
+      }
+      if (focusTopics.includes('flight_vs_train')) {
+        specialTopicInstructions += `\n- FLIGHT VS TRAIN REQUIREMENTS: Provide a side-by-side comparison table between Train and Airplane covering door-to-door transit time, 15kg baggage limits vs 40kg, flat horizontal sleeping berths vs cramped economy chairs, and last-minute price surges.`;
+      }
+
       const languageInstruction = language === 'hi'
         ? `IMPORTANT: Write the entire article, headlines, tables, tips, advice, and FAQs in high-quality, professional HINDI (Devanagari script). Ensure natural railway terms (जैसे समय सारणी, ठहराव, कोच संरचना, तत्काल बुकिंग, रिफंड नियम, स्प्लिट जर्नी विकल्प).`
         : `Write in authoritative, polished travel journalism English with clean structure, crisp tables, and practical passenger tips.`;
@@ -1270,14 +1541,16 @@ Generate a complete, authoritative, and SEO-optimized guide for:
 - Verified Coach Classes: ${profile.coachesEn.join('; ')} (CRITICAL: Do NOT mention Sleeper or General if not present in this list!)
 - Catering Policy: ${profile.cateringEn}
 - Fare Structure: ${profile.fareEn}
+${webGroundingContext ? `- Real-Time Web Grounding & Keywords:${webGroundingContext}` : ''}
+${specialTopicInstructions ? `- Special Topic Instructions:${specialTopicInstructions}` : ''}
 ${haltsContext ? `- Verified Key Stops:\n${haltsContext}` : ''}
 
 ${languageInstruction}
 
 STRUCTURE AND CONTENT REQUIREMENTS:
-1. Title: Catchy, high-search-intent headline directly matching the selected topics.
+1. Title: Catchy, high-search-intent headline directly matching the selected topics and keywords.
 2. Summary: 2 concise paragraphs providing an executive overview of the train service.
-3. Content: Markdown with clean ## headings, accurate coach classes, timetable table, and pro travel tips.
+3. Content: Markdown with clean ## headings, accurate coach classes, timetable table, pro travel tips, and requested comparison/refund tables.
 4. Passenger Advice: Actionable commuter advice.
 5. Key Takeaways: 4 bullet takeaways.
 6. FAQs: 4 realistic passenger questions and clear answers.
@@ -1324,7 +1597,15 @@ Return ONLY a valid JSON object matching this exact schema:
       // If AI did not return a valid result, use deterministic synthesis
       if (!generated || !generated.title || !generated.content) {
         winstonLogger.info(`[TRAIN_GUIDE_SYNTH] Using high-authority deterministic editorial synthesizer for Train ${rawTrainNo}`);
-        generated = this.synthesizeDeterministicGuide(rawTrainNo, meta, language, focusAngle, focusTopics);
+        generated = this.synthesizeDeterministicGuide(
+          rawTrainNo,
+          meta,
+          language,
+          focusAngle,
+          focusTopics,
+          liveData,
+          options.customKeywords
+        );
       }
 
       // 5. Inject deterministic internal links (Live Status, PNR, Split Journey)
@@ -1350,7 +1631,7 @@ Return ONLY a valid JSON object matching this exact schema:
         faq: Array.isArray(generated.faqs) ? generated.faqs : [],
         category: 'Train Guide',
         status,
-        published_at: autoPublish ? now : null,
+        published_at: now,
         updated_at: now,
         source_name: 'Indian Railways / Trayago Rail Ops',
         source_url: `https://www.trayago.in/live/${rawTrainNo}`,
@@ -1387,7 +1668,7 @@ Return ONLY a valid JSON object matching this exact schema:
               faq: payload.faq,
               category: payload.category,
               status: payload.status,
-              published_at: autoPublish ? (payload.published_at || now) : null,
+              published_at: now,
               updated_at: now,
               image_url: payload.image_url,
               affected_trains: payload.affected_trains,

@@ -353,20 +353,35 @@ export class NewsAdminController {
     try {
       const { newsTrainGuideService } = require('../services/news/newsTrainGuideService');
       const adminId = getAdminId(req);
-      const { trainNo, language, focusAngle, focusTopics, autoPublish, customImageUrl } = req.body || {};
+      const {
+        trainNo,
+        language,
+        focusAngle,
+        focusTopics,
+        customKeywords,
+        enableWebSearch,
+        autoPublish,
+        customImageUrl
+      } = req.body || {};
 
-      if (!trainNo || !/^\d{5}$/.test(String(trainNo).trim())) {
+      let cleanTrainNo = String(trainNo || '').trim();
+      if (cleanTrainNo && !/^\d{5}$/.test(cleanTrainNo)) {
         return res.status(400).json({
           success: false,
-          error: 'Train number must be a valid 5-digit number (e.g. 13128).'
+          error: 'Train number must be a valid 5-digit number (e.g. 22221, 13128) or left blank for general topics.'
         });
+      }
+      if (!cleanTrainNo) {
+        cleanTrainNo = '22221';
       }
 
       const result = await newsTrainGuideService.generateTrainGuide({
-        trainNo: String(trainNo).trim(),
+        trainNo: cleanTrainNo,
         language: language === 'hi' ? 'hi' : 'en',
         focusAngle: focusAngle ? String(focusAngle).trim() : undefined,
         focusTopics: Array.isArray(focusTopics) ? focusTopics : undefined,
+        customKeywords: customKeywords ? String(customKeywords).trim() : undefined,
+        enableWebSearch: enableWebSearch !== false,
         autoPublish: Boolean(autoPublish),
         adminId,
         customImageUrl: customImageUrl ? String(customImageUrl).trim() : undefined
