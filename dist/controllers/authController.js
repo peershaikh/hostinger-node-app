@@ -416,8 +416,12 @@ class AuthController {
                 if (newPassword.length < 6) {
                     return res.status(400).json({ success: false, error: 'Password must be at least 6 characters' });
                 }
-                await authService_1.authService.resetPassword(email, otp, newPassword);
-                return res.json({ success: true, message: 'Password reset successfully. Please log in.' });
+                const result = await authService_1.authService.resetPassword(email, otp, newPassword);
+                return res.json({
+                    success: true,
+                    message: 'Password reset successfully. Please log in.',
+                    cacheInvalidated: result.cacheInvalidated,
+                });
             }
             catch (err) {
                 return res.status(400).json({ success: false, error: err.message });
@@ -448,6 +452,13 @@ class AuthController {
             }
             catch (err) {
                 logger_1.winstonLogger.warn(`[AUTH] refresh failed: ${err.message}`);
+                if (err instanceof userRepository_1.DatabaseError || err.name === 'DatabaseError' || err.code === 'AUTH_SERVICE_UNAVAILABLE') {
+                    return res.status(503).json({
+                        success: false,
+                        error: 'Authentication service temporarily unavailable',
+                        code: 'AUTH_SERVICE_UNAVAILABLE',
+                    });
+                }
                 return res.status(401).json({
                     success: false,
                     error: err.message || 'Refresh token invalid',
@@ -456,19 +467,39 @@ class AuthController {
             }
         };
         this.logout = async (req, res) => {
-            // Invalidate tokens so existing access and refresh tokens are immediately rejected
-            const userId = req.headers['x-user-id'];
-            if (userId) {
-                try {
-                    await authService_1.authService.invalidateUserTokens(userId);
-                }
-                catch (err) {
-                    logger_1.winstonLogger.warn(`[AUTH] logout: invalidateUserTokens failed for ${userId}: ${err.message}`);
-                    // Non-fatal — still proceed with logout
-                }
-            }
+            // Attempt cookie clearing regardless of database revocation success
             res.clearCookie('refreshToken');
-            return res.json({ success: true, message: 'Logged out successfully' });
+            const userId = req.headers['x-user-id'] || req.body?.userId || undefined;
+            if (!userId) {
+                return res.json({
+                    success: true,
+                    message: 'Logged out successfully from this device',
+                    globalRevocation: false,
+                });
+            }
+            try {
+                const revocationResult = await authService_1.authService.invalidateUserTokens(userId);
+                if (!revocationResult.globalRevoked) {
+                    return res.json({
+                        success: true,
+                        message: 'Logged out from device. Global session revocation temporarily unavailable.',
+                        globalRevocation: false,
+                    });
+                }
+                return res.json({
+                    success: true,
+                    message: 'Logged out successfully',
+                    globalRevocation: true,
+                });
+            }
+            catch (err) {
+                logger_1.winstonLogger.warn(`[AUTH] logout: invalidateUserTokens failed for ${userId}: ${err.message}`);
+                return res.json({
+                    success: true,
+                    message: 'Logged out from device. Global session revocation temporarily unavailable.',
+                    globalRevocation: false,
+                });
+            }
         };
         this.appOpen = async (req, res) => {
             try {

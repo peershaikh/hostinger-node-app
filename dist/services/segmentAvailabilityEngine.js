@@ -1159,17 +1159,31 @@ class SegmentAvailabilityEngine {
                     confidence = minChance >= 70 ? 'MEDIUM' : 'LOW';
                     const maxWl = Math.max(leg1Info.wlNumber, leg2Info.wlNumber);
                     score = Math.max(40, Math.round(60 - maxWl / 2));
-                    warning = `Segment includes Waitlist (${text1} / ${text2}). Overall confirmation probability: ~${minChance}%. Direct journey uses GNWL quota.`;
+                    const srcNameClean = srcStop?.Station_Name || sCode;
+                    const hubNameClean = hubStop?.Station_Name || hub;
+                    const destNameClean = destStop?.Station_Name || dCode;
+                    const srcDisplay = srcNameClean !== sCode ? `${srcNameClean} (${sCode})` : sCode;
+                    const hubDisplay = hubNameClean !== hub ? `${hubNameClean} (${hub})` : hub;
+                    const destDisplay = destNameClean !== dCode ? `${destNameClean} (${dCode})` : dCode;
+                    warning = `Segment includes Waitlist (${text1} / ${text2}) between ${srcDisplay} → ${hubDisplay} → ${destDisplay}. Overall confirmation probability: ~${minChance}%. Direct journey uses GNWL quota.`;
                     disclaimer = 'Ye ek AI-based prediction hai, 100% confirmation ki guarantee nahi hai. Final chart preparation par depend karta hai.';
                 }
+                const srcNameClean = srcStop?.Station_Name || sCode;
+                const hubNameClean = hubStop?.Station_Name || hub;
+                const destNameClean = destStop?.Station_Name || dCode;
+                const srcDisplay = srcNameClean !== sCode ? `${srcNameClean} (${sCode})` : sCode;
+                const hubDisplay = hubNameClean !== hub ? `${hubNameClean} (${hub})` : hub;
+                const destDisplay = destNameClean !== dCode ? `${destNameClean} (${dCode})` : dCode;
                 const steps = [
-                    `Book 2 tickets on this same train: first from ${sCode} to ${hub} (${text1}), and second from ${hub} to ${dCode} (${text2}).`,
-                    `When the train reaches ${hub}, simply move to your new seat/berth. You will stay in this seat until your final destination (${dCode}). No other seat changes are required!`
+                    `Book 2 tickets on this same train: first from ${srcDisplay} to ${hubDisplay} (${text1}), and second from ${hubDisplay} to ${destDisplay} (${text2}).`,
+                    `When the train reaches ${hubDisplay}, simply move to your new seat/berth. You will stay in this seat until your final destination ${destDisplay}. No other seat changes are required!`
                 ];
                 const rescue = {
                     isSameTrain: true,
                     rescueType: 'SAME_TRAIN_SEGMENT',
                     hub,
+                    hub_name: hubNameClean,
+                    hubName: hubNameClean,
                     score,
                     confidence,
                     warning,

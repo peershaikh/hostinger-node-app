@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.userRepository = exports.DatabaseError = void 0;
+exports.userRepository = exports.StaleTokenError = exports.DatabaseError = void 0;
 const supabase_1 = require("../config/supabase");
 const logger_1 = require("../middleware/logger");
 class DatabaseError extends Error {
@@ -11,6 +11,13 @@ class DatabaseError extends Error {
     }
 }
 exports.DatabaseError = DatabaseError;
+class StaleTokenError extends Error {
+    constructor(message = 'Token version conflict: refresh token already rotated or stale') {
+        super(message);
+        this.name = 'StaleTokenError';
+    }
+}
+exports.StaleTokenError = StaleTokenError;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 class UserRepository {
     mapToDB(user) {
@@ -274,9 +281,10 @@ class UserRepository {
                 }
                 throw new DatabaseError(error.code, error.message);
             }
-            // data is null when the user exists only in local file store (not yet in Supabase)
-            if (!data)
-                return { id, ...updates };
+            // data is null when no matching row was updated in Supabase
+            if (!data) {
+                throw new DatabaseError('PGRST116', `User record not found in database: ${id}`);
+            }
             return this.mapToApp(data);
         }
         catch (err) {
@@ -378,6 +386,47 @@ class UserRepository {
             if (err instanceof DatabaseError)
                 throw err;
             throw new DatabaseError('UNKNOWN', err.message || 'Failed to update token version');
+        }
+    }
+    /**
+     * Atomic optimistic concurrency control (CAS) for refresh token version rotation.
+     * Updates token_version from currentVersion to nextVersion ONLY if token_version matches currentVersion.
+     *
+     * SQL equivalent:
+     * UPDATE users SET token_version = nextVersion WHERE id = id AND token_version = currentVersion RETURNING *;
+     *
+     * - If row matched and updated: returns the updated User.
+     * - If 0 rows matched (version conflict or user missing): throws StaleTokenError.
+     * - If database connection / query error: throws DatabaseError.
+     */
+    async rotateTokenVersionAtomic(id, currentVersion, nextVersion) {
+        if (!(0, supabase_1.isSupabaseConfigured)()) {
+            throw new DatabaseError('NOT_CONFIGURED', 'Supabase not configured');
+        }
+        if (!id || !UUID_REGEX.test(id)) {
+            throw new DatabaseError('INVALID_UUID', 'Invalid user ID format');
+        }
+        try {
+            const { data, error } = await supabase_1.supabase
+                .from('users')
+                .update({ token_version: nextVersion })
+                .eq('id', id)
+                .eq('token_version', currentVersion)
+                .select()
+                .maybeSingle();
+            if (error) {
+                throw new DatabaseError(error.code, error.message);
+            }
+            // data is null when no row matched (token_version was already bumped by another request or user absent)
+            if (!data) {
+                throw new StaleTokenError(`Token version conflict for user ${id}: expected version ${currentVersion}, but row was already modified or not found`);
+            }
+            return this.mapToApp(data);
+        }
+        catch (err) {
+            if (err instanceof StaleTokenError || err instanceof DatabaseError)
+                throw err;
+            throw new DatabaseError('UNKNOWN', err.message || 'Failed to rotate token version atomically');
         }
     }
     async resetAllLimits() {

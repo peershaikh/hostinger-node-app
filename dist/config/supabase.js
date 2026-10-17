@@ -26,7 +26,12 @@ const path_1 = __importDefault(require("path"));
 // this phase.
 // ---------------------------------------------------------------------------
 const NO_WRITE_MODE = process.env.LOCAL_E2E_NO_WRITE === 'true';
-dotenv_1.default.config({ path: path_1.default.join(__dirname, '../../.env') });
+const skipDefaultDotenv = process.env.SUPABASE_DISABLE_DEFAULT_DOTENV === 'true'
+    || process.env.NODE_ENV === 'test'
+    || (process.env.NODE_ENV === 'staging' && !!process.env.SUPABASE_URL);
+if (!skipDefaultDotenv) {
+    dotenv_1.default.config({ path: path_1.default.join(__dirname, '../../.env') });
+}
 /** Token identifying a request rejected by the no-write boundary. */
 exports.NO_WRITE_ERROR_CODE = 'LOCAL_E2E_NO_WRITE_BLOCKED';
 /** True only when the shell exported LOCAL_E2E_NO_WRITE=true. */

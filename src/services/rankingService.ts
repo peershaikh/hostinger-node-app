@@ -56,6 +56,8 @@ export interface TransferMeta {
 
 export interface SplitJourney {
   hub: string;
+  hub_name?: string;
+  hubName?: string;
   leg1: Leg;
   leg2: Leg;
   bufferMinutes: number;
