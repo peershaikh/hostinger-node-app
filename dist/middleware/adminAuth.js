@@ -11,10 +11,9 @@ const requireAdmin = async (req, res, next) => {
     if (!user || !user.isAdmin) {
         return res.status(403).json({ success: false, error: 'Admin access required' });
     }
-    const tokenVersion = req.headers['x-token-version'];
     const fullUser = await authService_1.authService.getUserById(userId);
-    if (tokenVersion && fullUser && (fullUser.tokenVersion || 1) !== parseInt(tokenVersion, 10)) {
-        return res.status(401).json({ success: false, error: 'invalid_token_version' });
+    if (fullUser?.isBlocked) {
+        return res.status(403).json({ success: false, error: 'account_blocked' });
     }
     next();
 };

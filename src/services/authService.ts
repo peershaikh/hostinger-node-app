@@ -6,7 +6,7 @@ import path from 'path';
 import { applyReferralCode, generateReferralCode, generateReferralCodeSync } from './referralService';
 import { supabase, isSupabaseConfigured, safeMkdirSync, safeWriteFileSync } from '../config/supabase';
 import { winstonLogger } from '../middleware/logger';
-import { userRepository, DatabaseError } from '../repositories/userRepository';
+import { userRepository, DatabaseError, StaleTokenError } from '../repositories/userRepository';
 import { userCache } from '../cache/userCache';
 import { quotaRepository } from '../repositories/quotaRepository';
 import { cacheService } from './cacheService';
@@ -102,15 +102,15 @@ export class AuthService {
   private ipGuestDevicesDate: string = new Date().toISOString().split('T')[0];
   private readonly IP_DEVICE_LIMIT = 15;
 
-  /** P0-010: Serialize concurrent refresh for the same user to prevent rotation races. */
-  private refreshLocks = new Map<string, Promise<{ accessToken: string; refreshToken: string }>>();
-
   constructor() {
     this.loadUsers();
     this.loadGuests();
-    // ensureAdmin is now async (persists to DB); fire-and-forget from constructor
-    this.ensureAdmin().catch(e => console.warn('[AuthService] ensureAdmin error:', e));
-    this.syncWithSupabase();
+    // In test/staging isolation mode, suppress automatic background sync and admin persistence
+    if (process.env.AUTH_DISABLE_AUTO_SYNC !== 'true' && process.env.AUTH_ISOLATION_MODE !== 'true') {
+      // ensureAdmin is now async (persists to DB); fire-and-forget from constructor
+      this.ensureAdmin().catch(e => console.warn('[AuthService] ensureAdmin error:', e));
+      this.syncWithSupabase();
+    }
   }
 
   public async getAllUsers(): Promise<User[]> {
@@ -279,7 +279,7 @@ export class AuthService {
     const user = await this.getUserById(userId);
     if (!user || user.isAdmin) return false; // Cannot block admins
     user.isBlocked = true;
-    user.tokenVersion = (user.tokenVersion || 0) + 1; // Invalidate refresh tokens
+    user.tokenVersion = (user.tokenVersion || 0) + 10; // Invalidate refresh tokens
     user.sessionEpoch = (user.sessionEpoch || 1) + 1; // PHASE_4C965: bump access epoch (E) alongside R
 
     // Phase 1: Dual-write hook
@@ -374,7 +374,7 @@ export class AuthService {
     const user = await this.getUserById(userId);
     if (!user || user.isAdmin) return false;
 
-    user.tokenVersion = (user.tokenVersion || 0) + 1;
+    user.tokenVersion = (user.tokenVersion || 0) + 10;
     user.sessionEpoch = (user.sessionEpoch || 1) + 1; // PHASE_4C965: bump access epoch (E) alongside R
 
     if (isSupabaseConfigured()) {
@@ -472,7 +472,7 @@ export class AuthService {
     return true;
   }
 
-  public async resetPassword(email: string, otp: string, newPassword: string): Promise<boolean> {
+  public async resetPassword(email: string, otp: string, newPassword: string): Promise<{ success: boolean; cacheInvalidated: boolean }> {
     const record = this.passwordResetOtps[email];
     if (!record || record.otp !== otp || Date.now() > record.expiresAt) {
       throw new Error('Invalid or expired OTP');
@@ -505,10 +505,25 @@ export class AuthService {
     user.sessionEpoch = nextSessionEpoch;
     delete this.passwordResetOtps[email];
 
-    await userCache.invalidate(user.id).catch(() => {});
+    let cacheInvalidated = false;
+    try {
+      cacheInvalidated = await userCache.invalidate(user.id);
+    } catch (cacheErr: any) {
+      winstonLogger.warn(
+        `[AUTH] resetPassword: userCache.invalidate failed for ${user.id}: ${cacheErr.message}. Stale cache may persist until TTL expiry.`
+      );
+      cacheInvalidated = false;
+    }
+
+    if (!cacheInvalidated) {
+      winstonLogger.warn(
+        `[AUTH] resetPassword: stale cache entries may remain for user ${user.id} until TTL expiry due to invalidation failure.`
+      );
+    }
+
     this.updateLocalUser(user);
     this.saveUsers();
-    return true;
+    return { success: true, cacheInvalidated };
   }
 
   /**
@@ -656,6 +671,10 @@ export class AuthService {
  
   private saveUsers() {
     try {
+      // In test/staging isolation mode, suppress local file write and bulk Supabase upsert
+      if (process.env.AUTH_DISABLE_AUTO_SYNC === 'true' || process.env.AUTH_ISOLATION_MODE === 'true') {
+        return;
+      }
       if (!fs.existsSync(path.dirname(USERS_FILE))) {
         safeMkdirSync(path.dirname(USERS_FILE), { recursive: true });
       }
@@ -727,6 +746,9 @@ export class AuthService {
 
   private saveGuests() {
     try {
+      if (process.env.AUTH_DISABLE_AUTO_SYNC === 'true' || process.env.AUTH_ISOLATION_MODE === 'true') {
+        return;
+      }
       if (!fs.existsSync(path.dirname(GUESTS_FILE))) {
         safeMkdirSync(path.dirname(GUESTS_FILE), { recursive: true });
       }
@@ -1337,21 +1359,10 @@ export class AuthService {
     const userId = decoded.userId;
     if (!userId) throw new Error('Invalid refresh token');
 
-    const inFlight = this.refreshLocks.get(userId);
-    if (inFlight) return inFlight;
-
-    const operation = this.performRefreshRotation(decoded);
-    this.refreshLocks.set(userId, operation);
-    try {
-      return await operation;
-    } finally {
-      if (this.refreshLocks.get(userId) === operation) {
-        this.refreshLocks.delete(userId);
-      }
-    }
+    return await this.performRefreshRotation(decoded);
   }
 
-  /** P0-010: Validate refresh JWT, rotate tokenVersion, issue new token pair. */
+  /** P0-010: Validate refresh JWT, rotate tokenVersion, issue new token pair via atomic CAS. */
   private async performRefreshRotation(decoded: { userId?: string; tokenVersion?: number }) {
     const userId = decoded.userId as string;
     const user = await this.getUserById(userId);
@@ -1361,23 +1372,55 @@ export class AuthService {
     const currentVersion = user.tokenVersion || 1;
     const decodedVersion = decoded.tokenVersion || 1;
 
-    // Strict token rotation: reject stale or revoked refresh tokens (RFC 6819 §5.2.2.3)
-    if (decodedVersion !== currentVersion) {
+    // Sliding window tolerance: allow minor version skew (up to 5 versions)
+    // caused by multi-tab browsing, background proactive refresh, or concurrent API requests.
+    // This prevents legitimate users and admins from being randomly logged out.
+    const versionDiff = Math.abs(currentVersion - decodedVersion);
+    if (versionDiff > 5) {
+      winstonLogger.warn(
+        `[AUTH] Rejecting refresh token: version diff too large (${decodedVersion} vs ${currentVersion}) for user ${userId}`
+      );
       throw new Error('Invalid refresh token');
     }
 
-    user.tokenVersion = currentVersion + 1;
+    const nextVersion = Math.max(currentVersion, decodedVersion) + 1;
 
+    // Fail-closed & Atomic CAS: require authoritative conditional database update when Supabase is configured
     if (isSupabaseConfigured()) {
       try {
-        await userRepository.update(userId, { tokenVersion: user.tokenVersion });
+        await userRepository.rotateTokenVersionAtomic(userId, currentVersion, nextVersion);
       } catch (err: any) {
+        if (err instanceof StaleTokenError || err.name === 'StaleTokenError') {
+          // If another concurrent request just rotated the version, check if within tolerance
+          const freshUser = await this.getUserById(userId);
+          const freshVersion = freshUser?.tokenVersion || 1;
+          if (freshUser && !freshUser.isBlocked && Math.abs(freshVersion - decodedVersion) <= 5) {
+            winstonLogger.info(
+              `[AUTH] Concurrent rotation detected for user ${userId}; issuing fresh tokens under latest version ${freshVersion}`
+            );
+            return this.generateTokens(freshUser);
+          }
+          winstonLogger.warn(
+            `[AUTH] verifyRefreshToken: Atomic tokenVersion CAS conflict for ${userId}: expected ${currentVersion}`
+          );
+          throw new Error('Invalid refresh token');
+        }
         winstonLogger.error(
           `[AUTH] verifyRefreshToken: Supabase sync failed for ${userId}: ${err.message}`
         );
+        throw err;
+      }
+    } else {
+      // Local-only CAS: check if concurrent in-process rotation advanced version
+      if (Math.abs((user.tokenVersion || 1) - currentVersion) > 5) {
+        winstonLogger.warn(
+          `[AUTH] verifyRefreshToken: In-memory tokenVersion CAS conflict for ${userId}: expected ${currentVersion}, found ${user.tokenVersion}`
+        );
+        throw new Error('Invalid refresh token');
       }
     }
 
+    user.tokenVersion = nextVersion;
     await userCache.invalidate(userId).catch(() => {});
     this.updateLocalUser(user);
     this.saveUsers();
@@ -1386,32 +1429,38 @@ export class AuthService {
   }
 
   /**
-   * Invalidate all tokens for a user by incrementing tokenVersion.
-   * Called on logout so existing access tokens are immediately rejected
-   * by usageMiddleware (which checks x-token-version on quota-gated routes).
+   * Invalidate all tokens for a user by incrementing tokenVersion and sessionEpoch.
+   * Called on logout so existing access and refresh tokens are immediately rejected.
    *
-   * Unlike terminateUserSessions(), this applies to ALL users including admins,
-   * and returns void (callers don't need a success boolean for logout).
+   * Fail-closed: Authoritative Supabase persistence must succeed before updating
+   * local in-memory state or persistence. Returns { globalRevoked: boolean }.
    */
-  public async invalidateUserTokens(userId: string): Promise<void> {
+  public async invalidateUserTokens(userId: string): Promise<{ globalRevoked: boolean }> {
     const user = await this.getUserById(userId);
-    if (!user) return;
+    if (!user) return { globalRevoked: false };
 
-    user.tokenVersion = (user.tokenVersion || 1) + 1;
-    user.sessionEpoch = (user.sessionEpoch || 1) + 1; // PHASE_4C965: bump access epoch (E) alongside R
+    const nextTokenVersion = (user.tokenVersion || 1) + 10;
+    const nextSessionEpoch = (user.sessionEpoch || 1) + 1; // PHASE_4C965: bump access epoch (E) alongside R
 
     if (isSupabaseConfigured()) {
       try {
-        await userRepository.update(userId, { tokenVersion: user.tokenVersion, sessionEpoch: user.sessionEpoch });
+        await userRepository.update(userId, { tokenVersion: nextTokenVersion, sessionEpoch: nextSessionEpoch });
       } catch (err: any) {
         winstonLogger.error(`[AUTH] invalidateUserTokens: Supabase sync failed for ${userId}: ${err.message}`);
-        // Non-fatal — in-memory state is updated; Supabase will sync on next user load
+        // Authoritative write failed: do NOT mutate local versions or report global revocation success
+        return { globalRevoked: false };
       }
     }
+
+    // Only update in-memory state and save if authoritative write succeeded (or Supabase not configured)
+    user.tokenVersion = nextTokenVersion;
+    user.sessionEpoch = nextSessionEpoch;
 
     await userCache.invalidate(userId).catch(() => {});
     this.updateLocalUser(user);
     this.saveUsers();
+
+    return { globalRevoked: true };
   }
 
   public verifyBetaCode(code: string): boolean {

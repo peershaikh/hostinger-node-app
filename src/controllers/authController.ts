@@ -8,7 +8,7 @@ import {
   hasLegacyUserIdQuery,
 } from '../utils/requestIdentity';
 import { supabase, isSupabaseConfigured } from '../config/supabase';
-import { userRepository } from '../repositories/userRepository';
+import { userRepository, DatabaseError } from '../repositories/userRepository';
 import { winstonLogger } from '../middleware/logger';
 import fs from 'fs';
 import path from 'path';
@@ -427,8 +427,12 @@ export class AuthController {
       if (newPassword.length < 6) {
         return res.status(400).json({ success: false, error: 'Password must be at least 6 characters' });
       }
-      await authService.resetPassword(email, otp, newPassword);
-      return res.json({ success: true, message: 'Password reset successfully. Please log in.' });
+      const result = await authService.resetPassword(email, otp, newPassword);
+      return res.json({
+        success: true,
+        message: 'Password reset successfully. Please log in.',
+        cacheInvalidated: result.cacheInvalidated,
+      });
     } catch (err: any) {
       return res.status(400).json({ success: false, error: err.message });
     }
@@ -436,10 +440,10 @@ export class AuthController {
 
   refresh = async (req: Request, res: Response) => {
     try {
-      // Dual-mode: cookie (web) first, then Authorization header, then JSON body (mobile)
+      // Dual-mode: body (mobile/cross-origin) or cookie (web) first, then Authorization header fallback
       const authHeader = req.headers['authorization'];
       const headerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-      const token = req.cookies?.refreshToken || headerToken || req.body?.refreshToken;
+      const token = req.body?.refreshToken || req.cookies?.refreshToken || headerToken;
       if (!token) {
         return res.status(401).json({
           success: false,
@@ -461,6 +465,13 @@ export class AuthController {
       });
     } catch (err: any) {
       winstonLogger.warn(`[AUTH] refresh failed: ${err.message}`);
+      if (err instanceof DatabaseError || err.name === 'DatabaseError' || err.code === 'AUTH_SERVICE_UNAVAILABLE') {
+        return res.status(503).json({
+          success: false,
+          error: 'Authentication service temporarily unavailable',
+          code: 'AUTH_SERVICE_UNAVAILABLE',
+        });
+      }
       return res.status(401).json({
         success: false,
         error: err.message || 'Refresh token invalid',
@@ -470,18 +481,40 @@ export class AuthController {
   };
 
   logout = async (req: Request, res: Response) => {
-    // Invalidate tokens so existing access and refresh tokens are immediately rejected
-    const userId = req.headers['x-user-id'] as string | undefined;
-    if (userId) {
-      try {
-        await authService.invalidateUserTokens(userId);
-      } catch (err: any) {
-        winstonLogger.warn(`[AUTH] logout: invalidateUserTokens failed for ${userId}: ${err.message}`);
-        // Non-fatal — still proceed with logout
-      }
-    }
+    // Attempt cookie clearing regardless of database revocation success
     res.clearCookie('refreshToken');
-    return res.json({ success: true, message: 'Logged out successfully' });
+
+    const userId = (req.headers['x-user-id'] as string) || (req.body?.userId as string) || undefined;
+    if (!userId) {
+      return res.json({
+        success: true,
+        message: 'Logged out successfully from this device',
+        globalRevocation: false,
+      });
+    }
+
+    try {
+      const revocationResult = await authService.invalidateUserTokens(userId);
+      if (!revocationResult.globalRevoked) {
+        return res.json({
+          success: true,
+          message: 'Logged out from device. Global session revocation temporarily unavailable.',
+          globalRevocation: false,
+        });
+      }
+      return res.json({
+        success: true,
+        message: 'Logged out successfully',
+        globalRevocation: true,
+      });
+    } catch (err: any) {
+      winstonLogger.warn(`[AUTH] logout: invalidateUserTokens failed for ${userId}: ${err.message}`);
+      return res.json({
+        success: true,
+        message: 'Logged out from device. Global session revocation temporarily unavailable.',
+        globalRevocation: false,
+      });
+    }
   };
 
   appOpen = async (req: Request, res: Response) => {

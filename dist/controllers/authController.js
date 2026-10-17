@@ -429,10 +429,10 @@ class AuthController {
         };
         this.refresh = async (req, res) => {
             try {
-                // Dual-mode: cookie (web) first, then Authorization header, then JSON body (mobile)
+                // Dual-mode: body (mobile/cross-origin) or cookie (web) first, then Authorization header fallback
                 const authHeader = req.headers['authorization'];
                 const headerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-                const token = req.cookies?.refreshToken || headerToken || req.body?.refreshToken;
+                const token = req.body?.refreshToken || req.cookies?.refreshToken || headerToken;
                 if (!token) {
                     return res.status(401).json({
                         success: false,

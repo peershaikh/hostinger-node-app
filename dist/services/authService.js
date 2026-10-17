@@ -246,7 +246,7 @@ class AuthService {
         if (!user || user.isAdmin)
             return false; // Cannot block admins
         user.isBlocked = true;
-        user.tokenVersion = (user.tokenVersion || 0) + 1; // Invalidate refresh tokens
+        user.tokenVersion = (user.tokenVersion || 0) + 10; // Invalidate refresh tokens
         user.sessionEpoch = (user.sessionEpoch || 1) + 1; // PHASE_4C965: bump access epoch (E) alongside R
         // Phase 1: Dual-write hook
         if ((0, supabase_1.isSupabaseConfigured)()) {
@@ -325,7 +325,7 @@ class AuthService {
         const user = await this.getUserById(userId);
         if (!user || user.isAdmin)
             return false;
-        user.tokenVersion = (user.tokenVersion || 0) + 1;
+        user.tokenVersion = (user.tokenVersion || 0) + 10;
         user.sessionEpoch = (user.sessionEpoch || 1) + 1; // PHASE_4C965: bump access epoch (E) alongside R
         if ((0, supabase_1.isSupabaseConfigured)()) {
             try {
@@ -1231,11 +1231,15 @@ class AuthService {
             throw new Error('Account has been blocked');
         const currentVersion = user.tokenVersion || 1;
         const decodedVersion = decoded.tokenVersion || 1;
-        // Strict token rotation: reject stale or revoked refresh tokens (RFC 6819 §5.2.2.3)
-        if (decodedVersion !== currentVersion) {
+        // Sliding window tolerance: allow minor version skew (up to 5 versions)
+        // caused by multi-tab browsing, background proactive refresh, or concurrent API requests.
+        // This prevents legitimate users and admins from being randomly logged out.
+        const versionDiff = Math.abs(currentVersion - decodedVersion);
+        if (versionDiff > 5) {
+            logger_1.winstonLogger.warn(`[AUTH] Rejecting refresh token: version diff too large (${decodedVersion} vs ${currentVersion}) for user ${userId}`);
             throw new Error('Invalid refresh token');
         }
-        const nextVersion = currentVersion + 1;
+        const nextVersion = Math.max(currentVersion, decodedVersion) + 1;
         // Fail-closed & Atomic CAS: require authoritative conditional database update when Supabase is configured
         if ((0, supabase_1.isSupabaseConfigured)()) {
             try {
@@ -1243,6 +1247,13 @@ class AuthService {
             }
             catch (err) {
                 if (err instanceof userRepository_1.StaleTokenError || err.name === 'StaleTokenError') {
+                    // If another concurrent request just rotated the version, check if within tolerance
+                    const freshUser = await this.getUserById(userId);
+                    const freshVersion = freshUser?.tokenVersion || 1;
+                    if (freshUser && !freshUser.isBlocked && Math.abs(freshVersion - decodedVersion) <= 5) {
+                        logger_1.winstonLogger.info(`[AUTH] Concurrent rotation detected for user ${userId}; issuing fresh tokens under latest version ${freshVersion}`);
+                        return this.generateTokens(freshUser);
+                    }
                     logger_1.winstonLogger.warn(`[AUTH] verifyRefreshToken: Atomic tokenVersion CAS conflict for ${userId}: expected ${currentVersion}`);
                     throw new Error('Invalid refresh token');
                 }
@@ -1252,7 +1263,7 @@ class AuthService {
         }
         else {
             // Local-only CAS: check if concurrent in-process rotation advanced version
-            if ((user.tokenVersion || 1) !== currentVersion) {
+            if (Math.abs((user.tokenVersion || 1) - currentVersion) > 5) {
                 logger_1.winstonLogger.warn(`[AUTH] verifyRefreshToken: In-memory tokenVersion CAS conflict for ${userId}: expected ${currentVersion}, found ${user.tokenVersion}`);
                 throw new Error('Invalid refresh token');
             }
@@ -1274,7 +1285,7 @@ class AuthService {
         const user = await this.getUserById(userId);
         if (!user)
             return { globalRevoked: false };
-        const nextTokenVersion = (user.tokenVersion || 1) + 1;
+        const nextTokenVersion = (user.tokenVersion || 1) + 10;
         const nextSessionEpoch = (user.sessionEpoch || 1) + 1; // PHASE_4C965: bump access epoch (E) alongside R
         if ((0, supabase_1.isSupabaseConfigured)()) {
             try {
