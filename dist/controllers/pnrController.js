@@ -17,12 +17,32 @@ class PnrController {
             if (!pnr || pnr.length !== 10) {
                 return res.status(400).json({ error: 'Valid 10-digit PNR is required' });
             }
+            let userId = req.headers['x-user-id'] || null;
+            if (!userId && req.headers.authorization?.startsWith('Bearer ')) {
+                try {
+                    const jwt = require('jsonwebtoken');
+                    const token = req.headers.authorization.split(' ')[1];
+                    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                    if (decoded?.userId) {
+                        userId = decoded.userId;
+                    }
+                }
+                catch (e) { }
+            }
+            const deviceId = req.headers['x-device-id'];
+            const betaCode = req.headers['x-beta-code'];
+            const { authService } = require('../services/authService');
+            const isEntitledToPrediction = await authService.canUsePnrPrediction(userId, betaCode);
             const cachedResponse = cacheService_1.cacheService.getCachedPNR(pnr);
             if (cachedResponse) {
                 const cData = cachedResponse.data || cachedResponse;
                 if (cData && (cData.train_name || cData.train_no) && Array.isArray(cData.passengers) && cData.passengers[0]?.booking_status !== undefined) {
-                    logger_1.winstonLogger.info(`[PNR_CONTROLLER] Cache hit for PNR: ${pnr}`);
-                    return res.status(200).json(cachedResponse.success ? cachedResponse : { success: true, data_source: 'cache', data: cData });
+                    // If caller is an Admin / Pro user, but the cached response does not have prediction or lacks pro details:
+                    const needsProEnrichment = isEntitledToPrediction && (!cData.prediction || !cData.prediction.is_pro);
+                    if (!needsProEnrichment && cData.prediction) {
+                        logger_1.winstonLogger.info(`[PNR_CONTROLLER] Cache hit for PNR: ${pnr}`);
+                        return res.status(200).json(cachedResponse.success ? cachedResponse : { success: true, data_source: 'cache', data: cData });
+                    }
                 }
                 else if (this.isValidPnrResponse(cachedResponse)) {
                     try {
@@ -57,10 +77,6 @@ class PnrController {
                 }
             }
             try {
-                const userId = req.headers['x-user-id'] || null;
-                const deviceId = req.headers['x-device-id'];
-                const betaCode = req.headers['x-beta-code'];
-                const { authService } = require('../services/authService');
                 if (userId || betaCode) {
                     // Authenticated user or beta - check usage limits
                     const canUse = await authService.canUseFeature(userId, 'pnr', betaCode);
@@ -230,108 +246,190 @@ class PnrController {
                 });
                 const totalPassengers = cleanedPassengers.length;
                 const isPartiallyConfirmed = cnfCount > 0 && cnfCount < totalPassengers;
-                // 3. AI Prediction Logic (Strict Entitlement Gating — Phase 039)
-                const isEntitledToPrediction = await authService.canUsePnrPrediction(userId, betaCode);
+                // 3. AI Prediction Logic (Calculated for all users; enriched with LLM for Pro/Admin)
                 let prediction = null;
-                if (isEntitledToPrediction) {
-                    let probability = "100%";
-                    let predictionText = "Confirmed";
-                    let advice = "Enjoy your journey!";
-                    let explanation = '';
-                    let showPrediction = false;
-                    // Resolve travel details using the passenger with worst waitlist status (P1 multi-passenger fix)
-                    const targetPassenger = cleanedPassengers.find(p => {
-                        const s = (p.current_status || p.booking_status || '').toUpperCase();
-                        return isWlStatus(s) || isRacStatus(s);
-                    }) || cleanedPassengers[0];
-                    let predictionSource = "SYSTEM"; // Default for CNF/RAC
-                    const isChartPrepared = normalized.chart_status &&
-                        normalized.chart_status.toUpperCase().includes('PREPARED') &&
-                        !normalized.chart_status.toUpperCase().includes('NOT PREPARED');
-                    const isConfirmed = cnfCount === totalPassengers;
-                    if (isChartPrepared) {
-                        if (isConfirmed) {
-                            predictionText = "Confirmed";
-                            advice = "All passengers confirmed.";
-                        }
-                        else if (isPartiallyConfirmed) {
-                            predictionText = "Partially Confirmed";
-                            advice = `Chart Prepared. ${cnfCount} of ${totalPassengers} passengers are confirmed. Remaining passengers are waitlisted.`;
-                        }
-                        else {
-                            predictionText = worstStatusType === 'RAC' ? "RAC (Seat Allocated)" : "Not Confirmed (WL)";
-                            advice = "No passengers confirmed.";
+                let probability = "100%";
+                let predictionText = "Confirmed";
+                let advice = "Enjoy your journey!";
+                let explanation = '';
+                let showPrediction = false;
+                // Resolve travel details using the passenger with worst waitlist status (P1 multi-passenger fix)
+                const targetPassenger = cleanedPassengers.find(p => {
+                    const s = (p.current_status || p.booking_status || '').toUpperCase();
+                    return isWlStatus(s) || isRacStatus(s);
+                }) || cleanedPassengers[0];
+                let predictionSource = "SYSTEM"; // Default for CNF/RAC
+                const isChartPrepared = normalized.chart_status &&
+                    normalized.chart_status.toUpperCase().includes('PREPARED') &&
+                    !normalized.chart_status.toUpperCase().includes('NOT PREPARED');
+                const isConfirmed = cnfCount === totalPassengers;
+                if (isChartPrepared) {
+                    if (isConfirmed) {
+                        predictionText = "Confirmed";
+                        advice = "All passengers confirmed.";
+                    }
+                    else if (isPartiallyConfirmed) {
+                        predictionText = "Partially Confirmed";
+                        advice = `Chart Prepared. ${cnfCount} of ${totalPassengers} passengers are confirmed. Remaining passengers are waitlisted.`;
+                    }
+                    else {
+                        predictionText = worstStatusType === 'RAC' ? "RAC (Seat Allocated)" : "Not Confirmed (WL)";
+                        advice = "No passengers confirmed.";
+                    }
+                }
+                else if (isPartiallyConfirmed || worstStatusType === 'WL' || worstStatusType === 'RAC') {
+                    showPrediction = true;
+                    const travelClass = normalized.class || (targetPassenger?.booking_status ? targetPassenger.booking_status.split('/')[0] : 'Unknown');
+                    // ── WL Type Extraction (4C301 / P1 fix) ─────────────────────────────────
+                    const WL_TYPE_REGEX = /\b(GNWL|TQWL|RLWL|PQWL|CKWL|RSWL)\b/i;
+                    const bookingStr = (targetPassenger?.booking_status || '').toUpperCase();
+                    const currentStr = (targetPassenger?.current_status || '').toUpperCase();
+                    const wlTypeMatchBkg = bookingStr.match(WL_TYPE_REGEX);
+                    const wlTypeMatchCur = currentStr.match(WL_TYPE_REGEX);
+                    const wlTypeFallback = worstStatusType === 'RAC'
+                        ? 'RAC'
+                        : (normalized.quota === 'TQ' ? 'TQWL' : normalized.quota === 'RL' ? 'RLWL' : normalized.quota === 'PQ' ? 'PQWL' : 'GNWL');
+                    const wlType = (wlTypeMatchBkg?.[1] || wlTypeMatchCur?.[1] || wlTypeFallback).toUpperCase();
+                    // ─────────────────────────────────────────────────────────────────────────
+                    const wlPosition = minWLPos === 999 ? 0 : minWLPos;
+                    const quota = normalized.quota || (wlType === 'TQWL' ? 'TQ' : wlType === 'RLWL' ? 'RL' : wlType === 'PQWL' ? 'PQ' : 'GN');
+                    // Step 6: Fetch historical conversion pattern for the waitlisted passenger
+                    let historicalRate = null;
+                    try {
+                        const { pnrHistoryService: pnrHist } = require('../services/pnrHistoryService');
+                        const historicalData = await pnrHist.getHistoricalDataForPrediction(normalized.source_code || normalized.source_name || '', normalized.destination_code || normalized.destination_name || '', targetPassenger?.current_status || targetPassenger?.booking_status || '', pnr);
+                        // Distinguish reliable historical evidence vs insufficient evidence
+                        // Requires at least 5 completed records; for 0% outcome, requires at least 10 completed records
+                        if (historicalData && historicalData.totalCount >= 5) {
+                            if (historicalData.successRate > 0 || historicalData.totalCount >= 10) {
+                                historicalRate = historicalData.successRate;
+                            }
                         }
                     }
-                    else if (isPartiallyConfirmed || worstStatusType === 'WL' || worstStatusType === 'RAC') {
-                        showPrediction = true;
-                        const travelClass = normalized.class || (targetPassenger?.booking_status ? targetPassenger.booking_status.split('/')[0] : 'Unknown');
-                        // ── WL Type Extraction (4C301 / P1 fix) ─────────────────────────────────
-                        const WL_TYPE_REGEX = /\b(GNWL|TQWL|RLWL|PQWL|CKWL|RSWL)\b/i;
-                        const bookingStr = (targetPassenger?.booking_status || '').toUpperCase();
-                        const currentStr = (targetPassenger?.current_status || '').toUpperCase();
-                        const wlTypeMatchBkg = bookingStr.match(WL_TYPE_REGEX);
-                        const wlTypeMatchCur = currentStr.match(WL_TYPE_REGEX);
-                        const wlTypeFallback = worstStatusType === 'RAC'
-                            ? 'RAC'
-                            : (normalized.quota === 'TQ' ? 'TQWL' : normalized.quota === 'RL' ? 'RLWL' : normalized.quota === 'PQ' ? 'PQWL' : 'GNWL');
-                        const wlType = (wlTypeMatchBkg?.[1] || wlTypeMatchCur?.[1] || wlTypeFallback).toUpperCase();
-                        // ─────────────────────────────────────────────────────────────────────────
-                        const wlPosition = minWLPos === 999 ? 0 : minWLPos;
-                        const quota = normalized.quota || (wlType === 'TQWL' ? 'TQ' : wlType === 'RLWL' ? 'RL' : wlType === 'PQWL' ? 'PQ' : 'GN');
-                        // Step 6: Fetch historical conversion pattern for the waitlisted passenger
-                        let historicalRate = null;
+                    catch (e) { }
+                    const heuristicProb = (type, pos) => {
+                        switch (type) {
+                            case 'GNWL':
+                                if (pos <= 10)
+                                    return 88;
+                                if (pos <= 20)
+                                    return 78;
+                                if (pos <= 35)
+                                    return 62;
+                                if (pos <= 60)
+                                    return 42;
+                                return 22;
+                            case 'PQWL':
+                                if (pos <= 5)
+                                    return 55;
+                                if (pos <= 10)
+                                    return 38;
+                                if (pos <= 20)
+                                    return 22;
+                                return 12;
+                            case 'RLWL':
+                                if (pos <= 8)
+                                    return 65;
+                                if (pos <= 18)
+                                    return 45;
+                                if (pos <= 30)
+                                    return 28;
+                                return 15;
+                            case 'TQWL':
+                                if (pos <= 3)
+                                    return 22;
+                                if (pos <= 8)
+                                    return 12;
+                                return 6;
+                            default:
+                                if (pos <= 15)
+                                    return 70;
+                                if (pos <= 40)
+                                    return 45;
+                                return 20;
+                        }
+                    };
+                    const heuristicCeiling = (type, pos) => {
+                        switch (type) {
+                            case 'GNWL': return pos <= 10 ? 88 : pos <= 20 ? 78 : pos <= 35 ? 62 : pos <= 60 ? 42 : 22;
+                            case 'PQWL': return pos <= 5 ? 55 : pos <= 10 ? 38 : pos <= 20 ? 22 : 12;
+                            case 'RLWL': return pos <= 8 ? 65 : pos <= 18 ? 45 : pos <= 30 ? 28 : 15;
+                            case 'TQWL': return pos <= 3 ? 22 : pos <= 8 ? 12 : 6;
+                            default: return pos <= 15 ? 70 : pos <= 40 ? 45 : 20;
+                        }
+                    };
+                    const routeStr = `${normalized.source_code || 'Origin'} to ${normalized.destination_code || 'Destination'}`;
+                    // 1. Establish baseline prediction from historical learning engine or calibrated heuristic
+                    if (historicalRate !== null) {
+                        probability = `${historicalRate}%`;
+                        predictionText = historicalRate > 70 ? "Strong Chance (Historical)" : historicalRate > 40 ? "Medium Chance (Historical)" : "Low Chance (Historical)";
+                        advice = `Based on our learning engine, this specific waitlist confirms ${historicalRate}% of the time.`;
+                        predictionSource = "HISTORICAL_DB";
+                        explanation = `Historical records on the ${routeStr} route indicate a ${historicalRate}% confirmation rate for ${wlType} tickets at position ${wlPosition}.`;
+                    }
+                    else if (worstStatusType === 'WL') {
+                        const targetBookingStr = (targetPassenger?.booking_status || targetPassenger?.current_status || '').toUpperCase();
+                        const wlTypeMatch = targetBookingStr.match(/\b(GNWL|TQWL|RLWL|PQWL|CKWL|RSWL)\b/);
+                        const fallbackWlType = wlTypeMatch ? wlTypeMatch[1] : wlType;
+                        const pct = heuristicProb(fallbackWlType, minWLPos);
+                        probability = `${pct}%`;
+                        predictionText = pct >= 70
+                            ? `Strong Chance (${fallbackWlType}/${minWLPos})`
+                            : pct >= 40
+                                ? `Moderate Chance (${fallbackWlType}/${minWLPos})`
+                                : `Low Chance (${fallbackWlType}/${minWLPos})`;
+                        advice = "Keep monitoring — chart preparation updates status 4-6 hours before departure.";
+                        predictionSource = "HEURISTIC/CALIBRATED";
+                        explanation = `${wlType} tickets at position ${minWLPos} on Train ${normalized.train_no} (${routeStr}) have a calibrated ${probability} confirmation probability under ${quota} quota rules. Charting updates final allocations 4-6 hours prior to departure.`;
+                    }
+                    else {
+                        probability = "92%";
+                        predictionText = "RAC (Seat Allocated, Berth Probable)";
+                        advice = "RAC allocations automatically guarantee travel on the train.";
+                        predictionSource = "HEURISTIC/CALIBRATED";
+                        explanation = `RAC allocations automatically guarantee travel on the train, with a 92% likelihood of upgrading to a full berth during chart preparation.`;
+                    }
+                    // 2. If caller is entitled (Admin / Pro / Paid), enrich with AI LLM service
+                    if (isEntitledToPrediction) {
                         try {
-                            const { pnrHistoryService: pnrHist } = require('../services/pnrHistoryService');
-                            const historicalData = await pnrHist.getHistoricalDataForPrediction(normalized.source_code || normalized.source_name || '', normalized.destination_code || normalized.destination_name || '', targetPassenger?.current_status || targetPassenger?.booking_status || '', pnr);
-                            // Distinguish reliable historical evidence vs insufficient evidence
-                            // Requires at least 5 completed records; for 0% outcome, requires at least 10 completed records
-                            if (historicalData && historicalData.totalCount >= 5) {
-                                if (historicalData.successRate > 0 || historicalData.totalCount >= 10) {
-                                    historicalRate = historicalData.successRate;
+                            // Fetch learning aggregates and feedback drift
+                            let enrichmentContext = null;
+                            try {
+                                const { learningService } = require('../services/learningService');
+                                const routeVal = `${normalized.source_code || 'Unknown'}-${normalized.destination_code || 'Unknown'}`;
+                                const trainVal = normalized.train_no;
+                                const [routeAgg, trainAgg, quotaAgg, wlTypeAgg, feedbackDrift] = await Promise.all([
+                                    learningService.getLearningAggregate('route', routeVal),
+                                    learningService.getLearningAggregate('train', trainVal),
+                                    learningService.getLearningAggregate('quota', quota),
+                                    learningService.getLearningAggregate('wl_type', wlType),
+                                    learningService.getFeedbackDrift()
+                                ]);
+                                const historicalData = {};
+                                if (trainAgg) {
+                                    const trainConfidence = trainAgg.sampleSize > 100 ? 'HIGH' : trainAgg.sampleSize > 20 ? 'MEDIUM' : 'LOW';
+                                    historicalData.train_quota_success_rate = `${trainAgg.successRate}% (based on ${trainAgg.sampleSize} bookings of Train ${trainVal}, confidence=${trainConfidence})`;
                                 }
-                            }
-                        }
-                        catch (e) { }
-                        // Fetch learning aggregates and feedback drift
-                        let enrichmentContext = null;
-                        try {
-                            const { learningService } = require('../services/learningService');
-                            const routeVal = `${normalized.source_code || 'Unknown'}-${normalized.destination_code || 'Unknown'}`;
-                            const trainVal = normalized.train_no;
-                            const [routeAgg, trainAgg, quotaAgg, wlTypeAgg, feedbackDrift] = await Promise.all([
-                                learningService.getLearningAggregate('route', routeVal),
-                                learningService.getLearningAggregate('train', trainVal),
-                                learningService.getLearningAggregate('quota', quota),
-                                learningService.getLearningAggregate('wl_type', wlType),
-                                learningService.getFeedbackDrift()
-                            ]);
-                            const historicalData = {};
-                            if (trainAgg) {
-                                const trainConfidence = trainAgg.sampleSize > 100 ? 'HIGH' : trainAgg.sampleSize > 20 ? 'MEDIUM' : 'LOW';
-                                historicalData.train_quota_success_rate = `${trainAgg.successRate}% (based on ${trainAgg.sampleSize} bookings of Train ${trainVal}, confidence=${trainConfidence})`;
-                            }
-                            if (routeAgg) {
-                                const routeConfidence = routeAgg.sampleSize > 100 ? 'HIGH' : routeAgg.sampleSize > 20 ? 'MEDIUM' : 'LOW';
-                                historicalData.route_quota_success_rate = `${routeAgg.successRate}% (based on ${routeAgg.sampleSize} bookings from ${routeVal.replace('-', ' to ')}, confidence=${routeConfidence})`;
-                            }
-                            if (quotaAgg || wlTypeAgg) {
-                                const globalRate = wlTypeAgg?.successRate || quotaAgg?.successRate || 50;
-                                const globalCount = wlTypeAgg?.sampleSize || quotaAgg?.sampleSize || 10;
-                                const globalConfidence = globalCount > 100 ? 'HIGH' : globalCount > 20 ? 'MEDIUM' : 'LOW';
-                                historicalData.global_quota_success_rate = `${wlType} tickets have a global confirmation rate of ${globalRate}% (based on ${globalCount} samples, confidence=${globalConfidence})`;
-                            }
-                            enrichmentContext = {
-                                historical_data: historicalData,
-                                user_feedback_drift: {
-                                    recent_discrepancies: feedbackDrift
+                                if (routeAgg) {
+                                    const routeConfidence = routeAgg.sampleSize > 100 ? 'HIGH' : routeAgg.sampleSize > 20 ? 'MEDIUM' : 'LOW';
+                                    historicalData.route_quota_success_rate = `${routeAgg.successRate}% (based on ${routeAgg.sampleSize} bookings from ${routeVal.replace('-', ' to ')}, confidence=${routeConfidence})`;
                                 }
-                            };
-                        }
-                        catch (err) {
-                            logger_1.winstonLogger.warn(`[PNR_CONTROLLER] Learning context enrichment failed: ${err.message}`);
-                        }
-                        try {
+                                if (quotaAgg || wlTypeAgg) {
+                                    const globalRate = wlTypeAgg?.successRate || quotaAgg?.successRate || 50;
+                                    const globalCount = wlTypeAgg?.sampleSize || quotaAgg?.sampleSize || 10;
+                                    const globalConfidence = globalCount > 100 ? 'HIGH' : globalCount > 20 ? 'MEDIUM' : 'LOW';
+                                    historicalData.global_quota_success_rate = `${wlType} tickets have a global confirmation rate of ${globalRate}% (based on ${globalCount} samples, confidence=${globalConfidence})`;
+                                }
+                                enrichmentContext = {
+                                    historical_data: historicalData,
+                                    user_feedback_drift: {
+                                        recent_discrepancies: feedbackDrift
+                                    }
+                                };
+                            }
+                            catch (err) {
+                                logger_1.winstonLogger.warn(`[PNR_CONTROLLER] Learning context enrichment failed: ${err.message}`);
+                            }
                             const aiPrediction = await llmService_1.llmService.predictPNRConfirmation({
                                 pnr,
                                 train_no: normalized.train_no,
@@ -341,22 +439,7 @@ class PnrController {
                                 wl_position: wlPosition,
                                 enrichmentContext
                             });
-                            if (historicalRate !== null) {
-                                probability = `${historicalRate}%`;
-                                predictionText = historicalRate > 70 ? "Strong Chance (Historical)" : historicalRate > 40 ? "Medium Chance (Historical)" : "Low Chance (Historical)";
-                                advice = `Based on our learning engine, this specific waitlist confirms ${historicalRate}% of the time.`;
-                                predictionSource = "HISTORICAL_DB";
-                            }
-                            else {
-                                const heuristicCeiling = (type, pos) => {
-                                    switch (type) {
-                                        case 'GNWL': return pos <= 10 ? 88 : pos <= 20 ? 78 : pos <= 35 ? 62 : pos <= 60 ? 42 : 22;
-                                        case 'PQWL': return pos <= 5 ? 55 : pos <= 10 ? 38 : pos <= 20 ? 22 : 12;
-                                        case 'RLWL': return pos <= 8 ? 65 : pos <= 18 ? 45 : pos <= 30 ? 28 : 15;
-                                        case 'TQWL': return pos <= 3 ? 22 : pos <= 8 ? 12 : 6;
-                                        default: return pos <= 15 ? 70 : pos <= 40 ? 45 : 20;
-                                    }
-                                };
+                            if (historicalRate === null) {
                                 const rawProb = parseInt(String(aiPrediction.probability).replace('%', ''), 10) || 50;
                                 const ceiling = worstStatusType === 'WL' ? heuristicCeiling(wlType, wlPosition) : 95;
                                 const CEILING_TOLERANCE = 15;
@@ -365,7 +448,7 @@ class PnrController {
                                     finalProb = ceiling + 5; // soft clamp
                                     logger_1.winstonLogger.warn(`[PNR_PREDICTION_CAP] AI gave ${rawProb}% for ${wlType}/${wlPosition} (ceiling=${ceiling}). Clamped to ${finalProb}%.`);
                                 }
-                                probability = String(finalProb);
+                                probability = `${finalProb}%`;
                                 predictionText = aiPrediction.prediction;
                                 advice = aiPrediction.advice;
                                 const activeProvider = (aiPrediction.providerId || '').toUpperCase();
@@ -373,121 +456,50 @@ class PnrController {
                                     ? "DEEPSEEK"
                                     : (activeProvider.includes('GEMINI') ? "GEMINI" : "AI_MODEL");
                             }
-                            explanation = aiPrediction.explanation || '';
-                        }
-                        catch (err) {
-                            // ── WL-TYPE-AWARE HEURISTIC FALLBACK ───────
-                            if (historicalRate !== null) {
-                                probability = `${historicalRate}%`;
-                                predictionText = historicalRate > 70 ? "Strong Chance (Historical)" : historicalRate > 40 ? "Medium Chance (Historical)" : "Low Chance (Historical)";
-                                advice = `Based on our learning engine, this specific waitlist confirms ${historicalRate}% of the time.`;
-                                predictionSource = "HISTORICAL_DB";
+                            if (aiPrediction.explanation) {
+                                explanation = aiPrediction.explanation;
                             }
-                            else if (worstStatusType === 'WL') {
-                                const targetBookingStr = (targetPassenger?.booking_status || targetPassenger?.current_status || '').toUpperCase();
-                                const wlTypeMatch = targetBookingStr.match(/\b(GNWL|TQWL|RLWL|PQWL|CKWL|RSWL)\b/);
-                                const fallbackWlType = wlTypeMatch ? wlTypeMatch[1] : wlType;
-                                const heuristicProb = (type, pos) => {
-                                    switch (type) {
-                                        case 'GNWL':
-                                            if (pos <= 10)
-                                                return 88;
-                                            if (pos <= 20)
-                                                return 78;
-                                            if (pos <= 35)
-                                                return 62;
-                                            if (pos <= 60)
-                                                return 42;
-                                            return 22;
-                                        case 'PQWL':
-                                            if (pos <= 5)
-                                                return 55;
-                                            if (pos <= 10)
-                                                return 38;
-                                            if (pos <= 20)
-                                                return 22;
-                                            return 12;
-                                        case 'RLWL':
-                                            if (pos <= 8)
-                                                return 65;
-                                            if (pos <= 18)
-                                                return 45;
-                                            if (pos <= 30)
-                                                return 28;
-                                            return 15;
-                                        case 'TQWL':
-                                            if (pos <= 3)
-                                                return 22;
-                                            if (pos <= 8)
-                                                return 12;
-                                            return 6;
-                                        default:
-                                            if (pos <= 15)
-                                                return 70;
-                                            if (pos <= 40)
-                                                return 45;
-                                            return 20;
-                                    }
-                                };
-                                const pct = heuristicProb(fallbackWlType, minWLPos);
-                                probability = `${pct}%`;
-                                predictionText = pct >= 70
-                                    ? `Strong Chance (${fallbackWlType}/${minWLPos})`
-                                    : pct >= 40
-                                        ? `Moderate Chance (${fallbackWlType}/${minWLPos})`
-                                        : `Low Chance (${fallbackWlType}/${minWLPos})`;
-                                advice = "Keep monitoring — chart preparation updates status 4-6 hours before departure.";
-                                predictionSource = "HEURISTIC/CALIBRATED";
-                            }
-                            else {
-                                probability = "92%";
-                                predictionText = "RAC (Seat Allocated, Berth Probable)";
-                                advice = "RAC allocations automatically guarantee travel on the train.";
-                                predictionSource = "HEURISTIC/CALIBRATED";
-                            }
-                            const routeStr = `${normalized.source_code || 'Origin'} to ${normalized.destination_code || 'Destination'}`;
-                            explanation = historicalRate !== null
-                                ? `Historical records on the ${routeStr} route indicate a ${historicalRate}% confirmation rate for ${wlType} tickets at position ${wlPosition}.`
-                                : worstStatusType === 'RAC'
-                                    ? `RAC allocations automatically guarantee travel on the train, with a ${probability} likelihood of upgrading to a full berth during chart preparation.`
-                                    : `${wlType} tickets at position ${minWLPos} on Train ${normalized.train_no} (${routeStr}) have a calibrated ${probability} confirmation probability under ${quota} quota rules. Charting updates final allocations 4-6 hours prior to departure.`;
                         }
-                        if (!isChartPrepared && isPartiallyConfirmed) {
-                            predictionText = "Partially Confirmed";
-                            advice = `Partially Confirmed. ${cnfCount} of ${totalPassengers} passengers are confirmed. Prediction for waitlist: ${probability} chance of confirmation.`;
-                        }
-                        // Save prediction log
-                        try {
-                            const { learningService } = require('../services/learningService');
-                            const numericProb = parseInt(String(probability).replace('%', ''), 10) || 50;
-                            await learningService.logPrediction(pnr, normalized.train_no, `${normalized.source_code || 'Unknown'}-${normalized.destination_code || 'Unknown'}`, quota, travelClass, wlType, wlPosition, numericProb, predictionSource);
-                        }
-                        catch (logErr) {
-                            logger_1.winstonLogger.error(`[PNR_PREDICTION_LOG_FAIL] Error saving prediction log: ${logErr.message}`);
+                        catch (aiErr) {
+                            logger_1.winstonLogger.warn(`[PNR_CONTROLLER] LLM prediction fallback to calibrated: ${aiErr.message}`);
                         }
                     }
-                    // Compute numeric prob for confidence label mapping
-                    const numericProb = showPrediction
-                        ? (parseInt(String(probability).replace('%', ''), 10) || null)
-                        : null;
-                    const bookingWLMatch = (targetPassenger?.booking_status || '').match(/\d+/);
-                    const bookingWLPos = bookingWLMatch ? parseInt(bookingWLMatch[0], 10) : null;
-                    const isPredictionAvailable = Boolean(showPrediction && probability && probability !== 'N/A' && probability !== '' && predictionSource !== 'UNAVAILABLE');
-                    prediction = {
-                        text: predictionText,
-                        confidence_label: isChartPrepared
-                            ? (isPartiallyConfirmed ? `Partially Confirmed — ${cnfCount}/${totalPassengers} Confirmed` : (worstStatusType === 'RAC' ? 'RAC Seat Allocated' : worstStatusType === 'WL' ? 'Waitlist Finalized' : 'Confirmed — Enjoy Your Journey'))
-                            : (isPartiallyConfirmed ? `Partially Confirmed — ${cnfCount}/${totalPassengers} Confirmed` : this.getConfidenceLabel(numericProb, worstStatusType)),
-                        advice,
-                        ...(explanation ? { explanation } : {}),
-                        worst_pos: minWLPos === 999 ? null : minWLPos,
-                        booking_pos: bookingWLPos,
-                        prediction_available: isPredictionAvailable,
-                        prediction_source: predictionSource
-                    };
-                    if (showPrediction) {
-                        prediction.probability = probability;
+                    if (!isChartPrepared && isPartiallyConfirmed) {
+                        predictionText = "Partially Confirmed";
+                        advice = `Partially Confirmed. ${cnfCount} of ${totalPassengers} passengers are confirmed. Prediction for waitlist: ${probability} chance of confirmation.`;
                     }
+                    // Save prediction log for learning engine
+                    try {
+                        const { learningService } = require('../services/learningService');
+                        const numericProb = parseInt(String(probability).replace('%', ''), 10) || 50;
+                        await learningService.logPrediction(pnr, normalized.train_no, `${normalized.source_code || 'Unknown'}-${normalized.destination_code || 'Unknown'}`, quota, travelClass, wlType, wlPosition, numericProb, predictionSource);
+                    }
+                    catch (logErr) {
+                        logger_1.winstonLogger.error(`[PNR_PREDICTION_LOG_FAIL] Error saving prediction log: ${logErr.message}`);
+                    }
+                }
+                // Compute numeric prob for confidence label mapping
+                const numericProb = showPrediction
+                    ? (parseInt(String(probability).replace('%', ''), 10) || null)
+                    : null;
+                const bookingWLMatch = (targetPassenger?.booking_status || '').match(/\d+/);
+                const bookingWLPos = bookingWLMatch ? parseInt(bookingWLMatch[0], 10) : null;
+                const isPredictionAvailable = Boolean(showPrediction && probability && probability !== 'N/A' && probability !== '' && predictionSource !== 'UNAVAILABLE');
+                prediction = {
+                    text: predictionText,
+                    confidence_label: isChartPrepared
+                        ? (isPartiallyConfirmed ? `Partially Confirmed — ${cnfCount}/${totalPassengers} Confirmed` : (worstStatusType === 'RAC' ? 'RAC Seat Allocated' : worstStatusType === 'WL' ? 'Waitlist Finalized' : 'Confirmed — Enjoy Your Journey'))
+                        : (isPartiallyConfirmed ? `Partially Confirmed — ${cnfCount}/${totalPassengers} Confirmed` : this.getConfidenceLabel(numericProb, worstStatusType)),
+                    advice,
+                    ...(explanation ? { explanation } : {}),
+                    worst_pos: minWLPos === 999 ? null : minWLPos,
+                    booking_pos: bookingWLPos,
+                    prediction_available: isPredictionAvailable,
+                    prediction_source: predictionSource,
+                    is_pro: isEntitledToPrediction
+                };
+                if (showPrediction) {
+                    prediction.probability = String(probability).endsWith('%') ? String(probability) : `${probability}%`;
                 }
                 const cleanResponse = {
                     success: true,
@@ -506,6 +518,7 @@ class PnrController {
                         quota: normalized.quota || 'GN',
                         fare: rawStatus.data?.booking?.fare || rawStatus.data?.booking?.ticketFare || rawStatus.data?.ticket_fare || rawStatus.fare || rawStatus.ticket_fare || null,
                         ...(prediction ? { prediction } : {}),
+                        is_pro: isEntitledToPrediction,
                         twitter_complaint_url: trainService_1.trainService.generateTwitterUrl(normalized.train_no, "N/A", "Journey Issue")
                     }
                 };
