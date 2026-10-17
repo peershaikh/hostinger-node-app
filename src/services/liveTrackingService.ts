@@ -296,22 +296,20 @@ export class LiveTrackingService {
       const binary = normalizeRunningDays(runningDays) ?? [1, 1, 1, 1, 1, 1, 1];
 
       const now = new Date();
-      const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
-      const istNowMs = utcMs + 5.5 * 3600000;
 
       const getIstDateForOffset = (offset: number): { dateStr: string; dateObj: Date } => {
-        const targetMs = istNowMs + offset * 86400000;
-        const d = new Date(targetMs);
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, '0');
-        const dd = String(d.getDate()).padStart(2, '0');
+        const todayIst = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+        const [y, m, d] = todayIst.split('-').map(Number);
+        const targetUtc = Date.UTC(y, m - 1, d + offset);
+        const targetD = new Date(targetUtc);
+        const yyyy = targetD.getUTCFullYear();
+        const mm = String(targetD.getUTCMonth() + 1).padStart(2, '0');
+        const dd = String(targetD.getUTCDate()).padStart(2, '0');
         const dateStr = `${yyyy}-${mm}-${dd}`;
         const dateObj = new Date(`${dateStr}T00:00:00+05:30`);
         return { dateStr, dateObj };
       };
 
-      const candidates = [0, -1, -2, -3];
-      
       const parseTimeToMins = (time: string): number => {
         if (!time || time === '--:--') return 0;
         const [h, m] = time.split(':').map(Number);
@@ -327,7 +325,8 @@ export class LiveTrackingService {
       const lastArrMins = parseTimeToMins(lastStop.arrival_time);
       const lastDay = lastStop.day || 1;
 
-      for (const offset of candidates) {
+      // Pass 1: Find the most recent run that has ALREADY departed and is still actively en route
+      for (const offset of [0, -1, -2, -3]) {
         const { dateStr, dateObj } = getIstDateForOffset(offset);
 
         if (!isDayActive(binary, dateStr)) {
@@ -336,11 +335,26 @@ export class LiveTrackingService {
 
         const depMs = dateObj.getTime() + firstDepMins * 60 * 1000;
         const arrMs = dateObj.getTime() + ((lastDay - 1) * 24 * 60 + lastArrMins) * 60 * 1000;
-
-        const startRange = depMs - 2 * 60 * 60 * 1000;
         const endRange = arrMs + 12 * 60 * 60 * 1000; // 12 hours buffer for multi-day and overnight Indian train delays
 
-        if (now.getTime() >= startRange && now.getTime() <= endRange) {
+        // Train has already departed and has not exceeded destination arrival + buffer
+        if (now.getTime() >= depMs && now.getTime() <= endRange) {
+          return dateStr;
+        }
+      }
+
+      // Pass 2: If no run is currently rolling on track, check for an upcoming run departing soon (within 2h)
+      for (const offset of [0, 1]) {
+        const { dateStr, dateObj } = getIstDateForOffset(offset);
+
+        if (!isDayActive(binary, dateStr)) {
+          continue;
+        }
+
+        const depMs = dateObj.getTime() + firstDepMins * 60 * 1000;
+        const startRange = depMs - 2 * 60 * 60 * 1000;
+
+        if (now.getTime() >= startRange && now.getTime() < depMs) {
           return dateStr;
         }
       }
@@ -707,10 +721,10 @@ export class LiveTrackingService {
 
             winstonLogger.info(`[DB_SCHED_FALLBACK] ${trainNo}: simulating live status from ${scheduleWithDays.length} stops`);
 
-            const targetDateStr = date || activeDate || new Date().toLocaleDateString('en-CA');
+            const targetDateStr = date || activeDate || todayIstStr;
             const targetDate = new Date(`${targetDateStr}T00:00:00+05:30`);
             const now = new Date();
-            const nowMs = now.getTime() + (now.getTimezoneOffset() * 60000) + (5.5 * 3600000); // IST now
+            const nowMs = now.getTime();
 
             const parseToMins = (time: string) => {
               if (!time || time === '--:--') return 0;

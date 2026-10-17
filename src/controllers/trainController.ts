@@ -527,9 +527,10 @@ export class TrainController {
     }
 
     try {
+      const requestedDate = typeof date === 'string' && date.trim() ? date.trim() : undefined;
       const live = await liveTrackingService.getTrainRunningStatus(
         trainNo,
-        (date || new Date().toISOString().split('T')[0]) as string
+        requestedDate
       );
 
       if (live) {

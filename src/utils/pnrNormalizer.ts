@@ -66,7 +66,8 @@ export function normalizeRawPnr(rawStatus: any): NormalizedPnrResponse {
   const rawPassengers = Array.isArray(pData.passengers) ? pData.passengers : Array.isArray(pData.data?.passengers) ? pData.data.passengers : [];
 
   const passengers = rawPassengers.map((p: any, idx: number) => {
-    const name = String(p.serialNumber || p.passengerName || p.name || `Passenger ${idx + 1}`).trim();
+    // Enforce strict anonymous passenger labels to eliminate PII leakage on public endpoints
+    const name = `Passenger ${idx + 1}`;
     
     // Booking status
     let booking_status = "Unknown";
@@ -110,4 +111,66 @@ export function normalizeRawPnr(rawStatus: any): NormalizedPnrResponse {
     quota,
     passengers
   };
+}
+
+/**
+ * Sanitizes raw and parsed PNR payloads before logging.
+ * Strips all passenger names, contact numbers, emails, addresses, and auth credentials.
+ */
+export function sanitizePnrPayloadForLogging(payload: any): any {
+  if (!payload || typeof payload !== 'object') {
+    return payload;
+  }
+
+  const SENSITIVE_KEY_REGEX = /name|passenger|phone|mobile|email|token|secret|password|apikey|auth|credential|address|dob/i;
+
+  const sanitizeRecursive = (val: any, parentKey?: string): any => {
+    if (val === null || val === undefined) return val;
+
+    if (Array.isArray(val)) {
+      const lowerParent = (parentKey || '').toLowerCase();
+      if (lowerParent.includes('passenger')) {
+        return val.map((item: any, idx: number) => {
+          if (item && typeof item === 'object') {
+            return {
+              name: `Passenger ${idx + 1}`,
+              booking_status: item.booking_status || item.bookingStatus || item.status || 'Unknown',
+              current_status: item.current_status || item.currentStatus || item.status || 'Unknown'
+            };
+          }
+          return `Passenger ${idx + 1}`;
+        });
+      }
+      return val.map(item => sanitizeRecursive(item, parentKey));
+    }
+
+    if (typeof val === 'object') {
+      const sanitizedObj: Record<string, any> = {};
+      for (const [k, v] of Object.entries(val)) {
+        const lowerK = k.toLowerCase();
+        // Allow safe train metadata fields that contain the word "name"
+        if (lowerK === 'trainname' || lowerK === 'train_name' || lowerK === 'sourcename' || lowerK === 'source_name' || lowerK === 'destinationname' || lowerK === 'destination_name' || lowerK === 'stationname' || lowerK === 'station_name') {
+          sanitizedObj[k] = v;
+          continue;
+        }
+
+        // Handle passengers array explicitly to preserve anonymous status while stripping PII
+        if (lowerK === 'passengers') {
+          sanitizedObj[k] = sanitizeRecursive(v, k);
+          continue;
+        }
+
+        if (SENSITIVE_KEY_REGEX.test(k)) {
+          sanitizedObj[k] = '[REDACTED]';
+        } else {
+          sanitizedObj[k] = sanitizeRecursive(v, k);
+        }
+      }
+      return sanitizedObj;
+    }
+
+    return val;
+  };
+
+  return sanitizeRecursive(payload);
 }

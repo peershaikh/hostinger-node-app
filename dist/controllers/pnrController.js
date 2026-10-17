@@ -103,7 +103,7 @@ class PnrController {
                     try {
                         logger_1.winstonLogger.info(`[PNR_CONTROLLER] Trying ${provider.providerId} for PNR lookup`);
                         const res = await provider.getPNRStatus({ pnr });
-                        logger_1.winstonLogger.info(`[PNR_${provider.providerId}_DEBUG] rawStatus: ${JSON.stringify(res)}`);
+                        logger_1.winstonLogger.info(`[PNR_${provider.providerId}_DEBUG] rawStatus: ${JSON.stringify((0, pnrNormalizer_1.sanitizePnrPayloadForLogging)(res))}`);
                         if (res && this.isValidPnrResponse(res)) {
                             rawStatus = res;
                             pnrSource = provider.providerId;
@@ -168,8 +168,8 @@ class PnrController {
                     catch (e) { }
                     return res.status(200).json(this.buildPnrFallback(pnr));
                 }
-                // LOG RAW RESPONSE FOR DEBUGGING
-                logger_1.winstonLogger.info(`[PNR RAW RESPONSE] source=${pnrSource} pnr=${pnr}: ${JSON.stringify(rawStatus)}`);
+                // LOG RAW RESPONSE FOR DEBUGGING (Sanitized of all passenger PII and credentials)
+                logger_1.winstonLogger.info(`[PNR RAW RESPONSE] source=${pnrSource} pnr=${pnr}: ${JSON.stringify((0, pnrNormalizer_1.sanitizePnrPayloadForLogging)(rawStatus))}`);
                 // Normalize the raw data for mapping using our shared helper
                 const normalized = (0, pnrNormalizer_1.normalizeRawPnr)(rawStatus);
                 // 0. Journey Date Expiry Validation (Issue 1)
@@ -550,8 +550,8 @@ class PnrController {
                 catch (histError) {
                     logger_1.winstonLogger.warn(`[PNR_HISTORY] Failed to save history for PNR: ${pnr}: ${histError.message}`);
                 }
-                // LOG PARSED OUTPUT
-                logger_1.winstonLogger.info(`[PNR PARSED OUTPUT] pnr=${pnr}: ${JSON.stringify(cleanResponse)}`);
+                // LOG PARSED OUTPUT (Sanitized of all passenger PII and credentials)
+                logger_1.winstonLogger.info(`[PNR PARSED OUTPUT] pnr=${pnr}: ${JSON.stringify((0, pnrNormalizer_1.sanitizePnrPayloadForLogging)(cleanResponse))}`);
                 cacheService_1.cacheService.cachePNR(pnr, cleanResponse);
                 res.status(200).json(cleanResponse);
             }

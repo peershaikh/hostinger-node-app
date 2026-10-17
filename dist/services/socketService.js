@@ -230,7 +230,7 @@ class SocketService {
             for (const [trainNo, sockets] of this.activeTrainSubscriptions.entries()) {
                 if (sockets.size > 0) {
                     try {
-                        const trainData = await liveTrackingService_1.liveTrackingService.getTrainRunningStatus(trainNo, new Date().toISOString().split('T')[0]);
+                        const trainData = await liveTrackingService_1.liveTrackingService.getTrainRunningStatus(trainNo);
                         if (trainData) {
                             await this.emitTrainUpdate(trainNo, trainData);
                         }

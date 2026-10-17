@@ -139,7 +139,10 @@ class PnrTrackingService {
             }
             if (error)
                 throw error;
-            logger_1.winstonLogger.info(`[PNR_TRACE] Tracked/Updated PNR ${data.pnr_number} (email=${data.email || 'none'})`);
+            const maskedEmail = data.email
+                ? `${data.email.charAt(0)}***@${data.email.split('@')[1] || '***'}`
+                : 'none';
+            logger_1.winstonLogger.info(`[PNR_TRACE] Tracked/Updated PNR ${data.pnr_number} (email=${maskedEmail})`);
             return { success: true, pnr: data.pnr_number };
         }
         catch (err) {

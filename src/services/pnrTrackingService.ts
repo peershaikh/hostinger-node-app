@@ -122,7 +122,10 @@ export class PnrTrackingService {
 
       if (error) throw error;
 
-      winstonLogger.info(`[PNR_TRACE] Tracked/Updated PNR ${data.pnr_number} (email=${data.email || 'none'})`);
+      const maskedEmail = data.email
+        ? `${data.email.charAt(0)}***@${data.email.split('@')[1] || '***'}`
+        : 'none';
+      winstonLogger.info(`[PNR_TRACE] Tracked/Updated PNR ${data.pnr_number} (email=${maskedEmail})`);
       return { success: true, pnr: data.pnr_number };
     } catch (err: any) {
       winstonLogger.error(`[PNR_TRACE] Failed for ${data.pnr_number}: ${err.message}`);

@@ -6,7 +6,7 @@ import { providerConfigService } from '../services/providerConfigService';
 import { railProviderResolver } from '../services/railProviderResolver';
 import { rapidApiService } from '../services/rapidApiService';
 import { trainService } from '../services/trainService';
-import { normalizeRawPnr } from '../utils/pnrNormalizer';
+import { normalizeRawPnr, sanitizePnrPayloadForLogging } from '../utils/pnrNormalizer';
 import { cacheService } from '../services/cacheService';
 
 export class PnrController {
@@ -224,7 +224,7 @@ export class PnrController {
         try {
           winstonLogger.info(`[PNR_CONTROLLER] Trying ${provider.providerId} for PNR lookup`);
           const res = await provider.getPNRStatus({ pnr });
-          winstonLogger.info(`[PNR_${provider.providerId}_DEBUG] rawStatus: ${JSON.stringify(res)}`);
+          winstonLogger.info(`[PNR_${provider.providerId}_DEBUG] rawStatus: ${JSON.stringify(sanitizePnrPayloadForLogging(res))}`);
 
           if (res && this.isValidPnrResponse(res)) {
             rawStatus = res;
@@ -292,8 +292,8 @@ export class PnrController {
         return res.status(200).json(this.buildPnrFallback(pnr));
       }
 
-      // LOG RAW RESPONSE FOR DEBUGGING
-      winstonLogger.info(`[PNR RAW RESPONSE] source=${pnrSource} pnr=${pnr}: ${JSON.stringify(rawStatus)}`);
+      // LOG RAW RESPONSE FOR DEBUGGING (Sanitized of all passenger PII and credentials)
+      winstonLogger.info(`[PNR RAW RESPONSE] source=${pnrSource} pnr=${pnr}: ${JSON.stringify(sanitizePnrPayloadForLogging(rawStatus))}`);
 
       // Normalize the raw data for mapping using our shared helper
       const normalized = normalizeRawPnr(rawStatus);
@@ -704,8 +704,8 @@ export class PnrController {
         winstonLogger.warn(`[PNR_HISTORY] Failed to save history for PNR: ${pnr}: ${histError.message}`);
       }
 
-      // LOG PARSED OUTPUT
-      winstonLogger.info(`[PNR PARSED OUTPUT] pnr=${pnr}: ${JSON.stringify(cleanResponse)}`);
+      // LOG PARSED OUTPUT (Sanitized of all passenger PII and credentials)
+      winstonLogger.info(`[PNR PARSED OUTPUT] pnr=${pnr}: ${JSON.stringify(sanitizePnrPayloadForLogging(cleanResponse))}`);
       cacheService.cachePNR(pnr, cleanResponse);
       res.status(200).json(cleanResponse);
     } catch (err: any) {

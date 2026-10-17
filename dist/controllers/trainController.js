@@ -487,7 +487,8 @@ class TrainController {
                 // Guest user
             }
             try {
-                const live = await liveTrackingService_1.liveTrackingService.getTrainRunningStatus(trainNo, (date || new Date().toISOString().split('T')[0]));
+                const requestedDate = typeof date === 'string' && date.trim() ? date.trim() : undefined;
+                const live = await liveTrackingService_1.liveTrackingService.getTrainRunningStatus(trainNo, requestedDate);
                 if (live) {
                     const normalizedLive = (0, normalizeLiveTrain_1.normalizeLiveTrainData)(live);
                     try {
