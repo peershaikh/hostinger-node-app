@@ -65,6 +65,13 @@ const REFRESH_COOKIE_OPTIONS = {
     maxAge: 180 * 24 * 60 * 60 * 1000, // 180 days (matches 180d refreshToken)
     ...(cookieDomain ? { domain: cookieDomain } : {})
 };
+const CLEAR_COOKIE_OPTIONS = {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: (isProd ? 'none' : 'lax'),
+    path: '/',
+    ...(cookieDomain ? { domain: cookieDomain } : {})
+};
 class AuthController {
     constructor() {
         this.googleLogin = async (req, res) => {
@@ -424,6 +431,14 @@ class AuthController {
                 });
             }
             catch (err) {
+                if (err instanceof userRepository_1.DatabaseError || err.name === 'DatabaseError' || err.code === 'AUTH_SERVICE_UNAVAILABLE') {
+                    logger_1.winstonLogger.error(`[AUTH] resetPassword database failure: ${err.message}`);
+                    return res.status(503).json({
+                        success: false,
+                        error: 'Authentication service temporarily unavailable',
+                        code: 'AUTH_SERVICE_UNAVAILABLE',
+                    });
+                }
                 return res.status(400).json({ success: false, error: err.message });
             }
         };
@@ -467,9 +482,10 @@ class AuthController {
             }
         };
         this.logout = async (req, res) => {
-            // Attempt cookie clearing regardless of database revocation success
-            res.clearCookie('refreshToken');
-            const userId = req.headers['x-user-id'] || req.body?.userId || undefined;
+            // Attempt cookie clearing regardless of database revocation success with RFC 6265 parity
+            res.clearCookie('refreshToken', CLEAR_COOKIE_OPTIONS);
+            // Authenticated identity from verified reverse-proxy header or token middleware
+            const userId = req.headers['x-user-id'] || req.user?.id || undefined;
             if (!userId) {
                 return res.json({
                     success: true,
@@ -847,7 +863,7 @@ class AuthController {
                     return res.status(401).json({ success: false, error: 'Unauthorized' });
                 }
                 await authService_1.authService.deleteUserAccount(userId);
-                res.clearCookie('refreshToken');
+                res.clearCookie('refreshToken', CLEAR_COOKIE_OPTIONS);
                 return res.json({
                     success: true,
                     message: 'Account deleted successfully'

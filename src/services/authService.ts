@@ -495,7 +495,8 @@ export class AuthService {
         });
       } catch (err: any) {
         winstonLogger.error(`[AUTH] Failed to sync resetPassword to Supabase: ${err.message}`);
-        throw new Error(`Failed to update password in database: ${err.message}`);
+        const errorCode = err instanceof DatabaseError || err?.name === 'DatabaseError' ? err.code : 'AUTH_SERVICE_UNAVAILABLE';
+        throw new DatabaseError(errorCode, `Failed to update password in database: ${err.message}`);
       }
     }
 

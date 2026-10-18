@@ -434,7 +434,8 @@ class AuthService {
             }
             catch (err) {
                 logger_1.winstonLogger.error(`[AUTH] Failed to sync resetPassword to Supabase: ${err.message}`);
-                throw new Error(`Failed to update password in database: ${err.message}`);
+                const errorCode = err instanceof userRepository_1.DatabaseError || err?.name === 'DatabaseError' ? err.code : 'AUTH_SERVICE_UNAVAILABLE';
+                throw new userRepository_1.DatabaseError(errorCode, `Failed to update password in database: ${err.message}`);
             }
         }
         // Only update in-memory state and consume OTP after persistence succeeds

@@ -33,6 +33,13 @@ const REFRESH_COOKIE_OPTIONS = {
   maxAge: 180 * 24 * 60 * 60 * 1000, // 180 days (matches 180d refreshToken)
   ...(cookieDomain ? { domain: cookieDomain } : {})
 };
+const CLEAR_COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: isProd,
+  sameSite: (isProd ? 'none' : 'lax') as 'none' | 'lax',
+  path: '/',
+  ...(cookieDomain ? { domain: cookieDomain } : {})
+};
 
 export class AuthController {
   googleLogin = async (req: Request, res: Response) => {
@@ -434,6 +441,14 @@ export class AuthController {
         cacheInvalidated: result.cacheInvalidated,
       });
     } catch (err: any) {
+      if (err instanceof DatabaseError || err.name === 'DatabaseError' || err.code === 'AUTH_SERVICE_UNAVAILABLE') {
+        winstonLogger.error(`[AUTH] resetPassword database failure: ${err.message}`);
+        return res.status(503).json({
+          success: false,
+          error: 'Authentication service temporarily unavailable',
+          code: 'AUTH_SERVICE_UNAVAILABLE',
+        });
+      }
       return res.status(400).json({ success: false, error: err.message });
     }
   };
@@ -481,10 +496,11 @@ export class AuthController {
   };
 
   logout = async (req: Request, res: Response) => {
-    // Attempt cookie clearing regardless of database revocation success
-    res.clearCookie('refreshToken');
+    // Attempt cookie clearing regardless of database revocation success with RFC 6265 parity
+    res.clearCookie('refreshToken', CLEAR_COOKIE_OPTIONS);
 
-    const userId = (req.headers['x-user-id'] as string) || (req.body?.userId as string) || undefined;
+    // Authenticated identity from verified reverse-proxy header or token middleware
+    const userId = (req.headers['x-user-id'] as string) || (req as any).user?.id || undefined;
     if (!userId) {
       return res.json({
         success: true,
@@ -904,7 +920,7 @@ export class AuthController {
       }
 
       await authService.deleteUserAccount(userId);
-      res.clearCookie('refreshToken');
+      res.clearCookie('refreshToken', CLEAR_COOKIE_OPTIONS);
       
       return res.json({
         success: true,
