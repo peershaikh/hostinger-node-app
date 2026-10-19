@@ -30,6 +30,7 @@ export interface WhatsAppSendResult {
     fbtrace_id?: string;
   };
   attempts?: number;
+  simulated?: boolean;
 }
 
 export interface TemplateComponentParameter {
@@ -71,6 +72,7 @@ export interface OutboundPersistenceContext {
   userId?: string;
   conversationId?: string;
   metadata?: Record<string, any>;
+  dryRun?: boolean;
 }
 
 export interface WhatsAppConfig {
@@ -192,6 +194,24 @@ export class WhatsAppService {
     if (process.env.ENABLE_WHATSAPP_SMART_ALERTS !== 'true') {
       winstonLogger.info('[WHATSAPP_SERVICE] Smart alert skipped — ENABLE_WHATSAPP_SMART_ALERTS is false.');
       return { success: false, reason: 'WHATSAPP_SMART_ALERTS_DISABLED' };
+    }
+
+    // STEP 5.10BQ: Pre-send deduplication check by smartAlertId
+    if (smartAlertId) {
+      try {
+        const { data: existingMsg } = await supabase
+          .from('whatsapp_messages')
+          .select('id, wamid')
+          .eq('smart_alert_id', smartAlertId)
+          .maybeSingle();
+
+        if (existingMsg?.id) {
+          winstonLogger.info(`[WHATSAPP_SERVICE] Smart alert ${smartAlertId} already dispatched (WAMID: ${existingMsg.wamid}). Skipping send.`);
+          return { success: true, wamid: existingMsg.wamid, attempts: 0 };
+        }
+      } catch (dedupErr: any) {
+        winstonLogger.warn(`[WHATSAPP_SERVICE] Pre-send deduplication check non-fatal error: ${dedupErr?.message}`);
+      }
     }
 
     const templateName = this.resolveSmartAlertTemplateName(alertType);
@@ -637,14 +657,42 @@ export class WhatsAppService {
     payload: Record<string, any>,
     context?: OutboundPersistenceContext
   ): Promise<WhatsAppSendResult> {
+    // ── STEP 5.10BQ: Defense-in-depth Canary Restriction ───────────────────────
+    if (process.env.WHATSAPP_CANARY_MODE === 'true') {
+      const canaryPhone = normalizeIndianPhoneNumber(process.env.WHATSAPP_CANARY_PHONE);
+      if (!canaryPhone) {
+        winstonLogger.warn('[WHATSAPP_SERVICE] Canary mode active but WHATSAPP_CANARY_PHONE is invalid or unset. Aborting send fail-closed.');
+        return { success: false, reason: 'CANARY_CONFIG_MISSING' };
+      }
+      if (normalizedPhone !== canaryPhone) {
+        winstonLogger.warn(`[WHATSAPP_SERVICE] Send aborted fail-closed: ${maskPhoneNumber(normalizedPhone)} is not authorized canary recipient.`);
+        return { success: false, reason: 'CANARY_RECIPIENT_MISMATCH' };
+      }
+    }
+
     const { config, error: configError } = this.getConfig();
     if (configError || !config) {
       winstonLogger.error(`[WHATSAPP_SERVICE] Configuration error: ${configError}`);
       return { success: false, reason: 'CONFIGURATION_ERROR' };
     }
 
-    const url = `https://graph.facebook.com/${config.graphApiVersion}/${config.phoneNumberId}/messages`;
     const maskedPhone = maskPhoneNumber(normalizedPhone);
+
+    // ── STEP 5.10BQ: Safe Dry-Run Interceptor ──────────────────────────────────
+    if (process.env.WHATSAPP_DRY_RUN === 'true' || context?.dryRun === true) {
+      winstonLogger.info(
+        `[WHATSAPP_DRY_RUN] SIMULATED DISPATCH to ${maskedPhone} for template ${payload?.template?.name || payload?.type}. Zero HTTP calls executed.`
+      );
+      return {
+        success: false,
+        reason: 'DRY_RUN_SIMULATED',
+        simulated: true,
+        wamid: `wamid.DRY_RUN_SIMULATED_${Date.now()}`,
+        attempts: 0
+      };
+    }
+
+    const url = `https://graph.facebook.com/${config.graphApiVersion}/${config.phoneNumberId}/messages`;
 
     const MAX_ATTEMPTS = 3;
     let attempt = 0;

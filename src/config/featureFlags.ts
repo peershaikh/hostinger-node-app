@@ -92,4 +92,11 @@ export const featureFlags = {
   whatsappSmartAlerts: process.env.ENABLE_WHATSAPP_SMART_ALERTS === 'true',
   /** Gates WhatsApp OTP channel in authService */
   whatsappOtp: process.env.ENABLE_WHATSAPP_OTP === 'true',
+
+  // ── STEP 5.10BQ — WhatsApp Canary & Safety Hardening (all default OFF) ───────
+  /** Gates canary restriction mode: only WHATSAPP_CANARY_PHONE receives messages */
+  whatsappCanaryMode: process.env.WHATSAPP_CANARY_MODE === 'true',
+  /** Gates dry-run mode: intercepts Meta Graph API calls and database writes */
+  whatsappDryRun: process.env.WHATSAPP_DRY_RUN === 'true',
 };
+
