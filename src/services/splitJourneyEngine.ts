@@ -1716,13 +1716,18 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   // —— Lucknow corridors ——
   "lucknow-mumbai": ["CNB", "VGLJ", "BPL", "ET", "BSL", "JHS", "BINA", "ORAI", "ST", "KOTA"],
   "lucknow-kolkata": ["PRYJ", "DDU", "GAYA", "ASN"],
-  "lucknow-chennai": ["CNB", "PRYJ", "BSB", "HWH", "BZA", "MAS"],
+  "lucknow-chennai": ["CNB", "VGLJ", "BPL", "ET", "NGP", "BZA"],
   "lucknow-hyderabad": ["CNB", "ET", "NGP"],
-  "lucknow-patna": ["PRYJ", "DDU", "GAYA"],
+  "lucknow-patna": ["PRYJ", "DDU", "BXR", "ARA"],
   "patna-lucknow": ["DDU", "BSB", "PRYJ", "CNB"],
-  "lucknow-guwahati": ["PNBE", "KGP", "NJP", "GHY"],
-  "lucknow-ahmedabad": ["JHS", "KOTA", "RTM"],
+  "lucknow-guwahati": ["CPR", "BJU", "PNBE", "KIR", "NJP"],
+  "guwahati-lucknow": ["NJP", "KIR", "PNBE", "BJU", "CPR"],
+  "lucknow-ahmedabad": ["CNB", "VGLJ", "BPL", "KOTA", "RTM"],
   "lucknow-jaipur": ["CNB", "AGC"],
+  "lucknow-varanasi": ["PRYJ", "AYC", "SLN", "DDU"],
+  "varanasi-lucknow": ["DDU", "SLN", "AYC", "PRYJ"],
+  "lucknow-pune": ["CNB", "VGLJ", "BPL", "ET", "BSL", "MMR"],
+  "pune-lucknow": ["MMR", "BSL", "ET", "BPL", "VGLJ", "CNB"],
 
   // —— Jaipur corridors ——
   "jaipur-mumbai": ["SWM", "KOTA", "BRC", "RTM", "ST", "AII", "ABR", "ADI"],
