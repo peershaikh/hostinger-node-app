@@ -341,9 +341,9 @@ class ProviderConfigService {
             return [];
         }
         else if (nameUpper === 'RAILRADAR') {
-            const k = process.env.RAILRADAR_API_KEY || 'rg_1779d71c5040d3f2fc60f64be806085a';
-            if (k)
-                keys.push(k.trim());
+            const k = (process.env.RAILRADAR_API_KEY || '').trim();
+            if (k.length > 0)
+                keys.push(k);
         }
         if (keys.length === 0) {
             logger_1.winstonLogger.warn(`[PROVIDER_MISSING_KEY] No API key found for provider: ${providerName}`);
