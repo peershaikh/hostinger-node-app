@@ -2655,8 +2655,7 @@ export class SplitJourneyEngine {
       winstonLogger.info(`[HUB_CAP] filtered: ${filteredRegular.length}→capped: ${hubCappedRegular.length}`);
 
       const topRegular = hubCappedRegular.slice(0, 6);
-      const top2SameTrain = filteredSameTrain.slice(0, 2);
-      const combinedSplits = [...topRegular, ...top2SameTrain];
+      const combinedSplits = topRegular;
 
       // ── PHASE_4C970: Apply premium gate (output transform only, no algo changes)
       const isPremiumUser = !!(options as any)?.isPremiumUser;
@@ -2709,7 +2708,7 @@ export class SplitJourneyEngine {
       result.split = fullySanitizedSplits;
       result.splits = fullySanitizedSplits;
       result.smart_routes = fullySanitizedSplits;
-      (result as any).hasMoreSplits = regularSplits.length > 6 || sameTrainSplits.length > 2;
+      (result as any).hasMoreSplits = regularSplits.length > 6;
       (result as any).totalFound = totalFound;
 
       // PHASE_084K — Diagnostic structure for split monitoring and missing route telemetry.
@@ -3003,23 +3002,6 @@ export class SplitJourneyEngine {
     const engineStart = Date.now();
     winstonLogger.info(`[SPLIT_ENGINE] Running hub search (direct=${directTrains.length}, recommended=${shouldRecommendSplit})`);
 
-    const segmentClass = options?.classType || '3A';
-    const segmentQuota = options?.quota || 'GN';
-    const { segmentAvailabilityEngine } = await import('./segmentAvailabilityEngine');
-    const segmentSplitsPromise = segmentAvailabilityEngine
-      .findSegmentSplits(
-        source.toUpperCase(),
-        destination.toUpperCase(),
-        date,
-        directTrains,
-        segmentClass,
-        segmentQuota
-      )
-      .catch((e: any) => {
-        winstonLogger.warn(`[SPLIT_ENGINE] Failed to resolve same-train segment splits: ${e.message}`);
-        return [] as SplitJourney[];
-      });
-
     splitJourneys = await this.findSplitJourneys(sName, dName, sCodes, dCodes, date, directTrains);
     // PHASE_084K — harvest the per-stage rejection stats attached by findSplitJourneys
     const innerRejectionStats: Record<string, number> = (splitJourneys as any)._rejectionStats || {};
@@ -3232,12 +3214,8 @@ export class SplitJourneyEngine {
       }
     }
 
-    // —— SAME-TRAIN SEGMENT RESCUES (started in parallel with hub search — PHASE_4C880) ——
-    const sameTrainSplits = await segmentSplitsPromise;
-    winstonLogger.info(`[SPLIT_ENGINE] Same-train segment splits found: ${sameTrainSplits.length}`);
-
-    // Merge same-train splits with regular splits
-    const mergedSplits = [...sameTrainSplits, ...safeSplits];
+    // Split engine evaluates exclusively multi-train connection candidates
+    const mergedSplits = safeSplits;
 
     // —— PHASE_5B109 COMMON PHYSICAL TRUST GATE ————————————————————————————
     // Single choke point for EVERY producer (hub search + same-train segment
