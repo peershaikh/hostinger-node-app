@@ -373,6 +373,17 @@ export class NewsAdminService {
         return { success: false, error: 'Cannot approve/publish: source attribution is missing.' };
       }
 
+      // Content publication gate: reject publish when content is missing, whitespace-only, or shorter than 200 characters
+      if (newStatus === 'PUBLISHED') {
+        const bodyContent = typeof existing.content === 'string' ? existing.content.trim() : '';
+        if (bodyContent.length < 200) {
+          return {
+            success: false,
+            error: `Cannot publish: article body content is empty or below minimum publication threshold (minimum 200 characters, found ${bodyContent.length}).`,
+          };
+        }
+      }
+
       const now = new Date().toISOString();
       const updatePayload: Record<string, any> = {
         status: newStatus,

@@ -137,7 +137,7 @@ function transformToDatabasePayload(articles: CanonicalNewsArticle[]): any[] {
   }));
 }
 
-function transformFromDatabaseRow(row: any): NewsArticle {
+export function transformFromDatabaseRow(row: any): NewsArticle {
   const publishedAt = row.published_at || new Date().toISOString();
   const slug = row.slug || newsIngestionEngine.generateSlug(row.title, publishedAt);
   return {
@@ -326,10 +326,16 @@ export const railwayNewsService = {
           .select('*')
           .eq('status', 'PUBLISHED')
           .or(`slug.eq.${cleanSlug},id.eq.${cleanSlug}`)
-          .maybeSingle();
+          .order('published_at', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(5);
 
-        if (!error && data) {
-          article = transformFromDatabaseRow(data);
+        if (!error && data && data.length > 0) {
+          // If multiple rows exist with the same slug/id, deterministically prefer a row with non-empty content
+          const populated = data.find(
+            (r: any) => typeof r.content === 'string' && r.content.trim().length > 0
+          );
+          article = transformFromDatabaseRow(populated || data[0]);
         }
       } catch (err: any) {
         winstonLogger.warn('[NEWS_SLUG_FETCH_FAIL]', { error: err.message, slug: cleanSlug });

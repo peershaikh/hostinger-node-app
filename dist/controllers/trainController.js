@@ -1218,11 +1218,13 @@ class TrainController {
                 const canonicalSlug = `special-festival-trains-${queryDate}`;
                 let articleData = null;
                 if (isSupabaseConfigured()) {
-                    const { data: article } = await supabase
+                    const { data: articles, error } = await supabase
                         .from('railway_news')
                         .select('title, slug, summary, affected_trains, published_at')
                         .eq('slug', canonicalSlug)
-                        .maybeSingle();
+                        .order('published_at', { ascending: false })
+                        .limit(1);
+                    const article = (!error && articles && articles.length > 0) ? articles[0] : null;
                     if (article && !forceFresh) {
                         articleData = article;
                     }

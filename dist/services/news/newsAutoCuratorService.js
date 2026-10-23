@@ -572,10 +572,15 @@ ${trainsBlock}
         const faqItems = Array.isArray(draft.faq) && draft.faq.length > 0
             ? draft.faq
             : (Array.isArray(draft.faqs) && draft.faqs.length > 0 ? draft.faqs : this.generateStructuredFaqs(draft, cleanTitle));
-        const richContent = typeof draft.content === 'string' && draft.content.trim().length >= 150
+        const richContent = typeof draft.content === 'string'
             ? draft.content
             : this.synthesizeRichArticleContent(draft, cleanTitle);
         const linkedContent = this.injectDeterministicInternalLinks(richContent, draft.affected_trains);
+        const sanitizedContent = (0, newsSanitizer_1.cleanPromptLeaks)(linkedContent);
+        // Publication Gate: require non-empty, sanitized content of at least 200 characters
+        if (!sanitizedContent || sanitizedContent.trim().length < 200) {
+            throw new Error(`PUBLICATION_GATE_VIOLATION: Cannot publish article "${cleanTitle}". Content must be at least 200 characters (received ${sanitizedContent ? sanitizedContent.trim().length : 0} characters).`);
+        }
         const passengerAdvice = typeof draft.passenger_advice === 'string' && draft.passenger_advice.trim().length > 0
             ? draft.passenger_advice.trim()
             : takeaways[takeaways.length - 1] || 'Passengers traveling along this route are advised to check live running status before departure.';
@@ -598,7 +603,7 @@ ${trainsBlock}
             summary: cleanSummary,
             key_takeaways: takeaways.map(t => (0, newsSanitizer_1.cleanPromptLeaks)(t)),
             category: normalizedCategory,
-            content: (0, newsSanitizer_1.cleanPromptLeaks)(linkedContent),
+            content: sanitizedContent,
             passenger_advice: (0, newsSanitizer_1.cleanPromptLeaks)(passengerAdvice),
             faq: faqItems,
             source_tier: sourceTier,
@@ -733,24 +738,30 @@ ${trainsBlock}
             // 5. Enrich and Publish Selected Candidates
             const now = new Date().toISOString();
             for (const { draft, cleanTitle } of selectedForPublish) {
-                const canonicalSlug = this.generateCanonicalSlug(cleanTitle, draft.published_at || now);
-                const updatePayload = this.preparePublishPayload(draft, cleanTitle, canonicalSlug, now);
-                const { error: updateErr } = await supabase_1.supabase
-                    .from('railway_news')
-                    .update(updatePayload)
-                    .eq('id', draft.id);
-                if (updateErr) {
-                    result.errors.push(`Failed to publish ${draft.id}: ${updateErr.message}`);
-                    logger_1.winstonLogger.error(`[NEWS_AUTOCURATOR_UPDATE_FAIL] ${draft.id}: ${updateErr.message}`);
+                try {
+                    const canonicalSlug = this.generateCanonicalSlug(cleanTitle, draft.published_at || now);
+                    const updatePayload = this.preparePublishPayload(draft, cleanTitle, canonicalSlug, now);
+                    const { error: updateErr } = await supabase_1.supabase
+                        .from('railway_news')
+                        .update(updatePayload)
+                        .eq('id', draft.id);
+                    if (updateErr) {
+                        result.errors.push(`Failed to publish ${draft.id}: ${updateErr.message}`);
+                        logger_1.winstonLogger.error(`[NEWS_AUTOCURATOR_UPDATE_FAIL] ${draft.id}: ${updateErr.message}`);
+                    }
+                    else {
+                        result.publishedCount++;
+                        result.publishedArticles.push({
+                            id: draft.id,
+                            title: cleanTitle,
+                            slug: canonicalSlug,
+                        });
+                        logger_1.winstonLogger.info(`[NEWS_AUTOCURATOR_PUBLISHED] ✓ Published: "${cleanTitle}" (/news/${canonicalSlug})`);
+                    }
                 }
-                else {
-                    result.publishedCount++;
-                    result.publishedArticles.push({
-                        id: draft.id,
-                        title: cleanTitle,
-                        slug: canonicalSlug,
-                    });
-                    logger_1.winstonLogger.info(`[NEWS_AUTOCURATOR_PUBLISHED] ✓ Published: "${cleanTitle}" (/news/${canonicalSlug})`);
+                catch (gateErr) {
+                    result.errors.push(`Publication gate rejected ${draft.id}: ${gateErr.message}`);
+                    logger_1.winstonLogger.warn(`[NEWS_AUTOCURATOR_GATE_REJECT] ${draft.id}: ${gateErr.message}`);
                 }
             }
             // 6. Invalidate memory cache so public /api/news immediately returns fresh articles
@@ -932,12 +943,14 @@ ${trainsBlock}
             const canonicalSlug = `special-festival-trains-${todayIst}`;
             const [year, month, day] = todayIst.split('-');
             const formattedDateDisplay = `${day}-${month}-${year}`;
-            // Check if already published today
-            const { data: existing } = await supabase_1.supabase
+            // Check if already published today (deterministic single lookup to prevent duplicate insertion)
+            const { data: existingRows, error: existingErr } = await supabase_1.supabase
                 .from('railway_news')
                 .select('id, slug, title, summary, affected_trains, published_at')
                 .eq('slug', canonicalSlug)
-                .maybeSingle();
+                .order('published_at', { ascending: false })
+                .limit(1);
+            const existing = (!existingErr && existingRows && existingRows.length > 0) ? existingRows[0] : null;
             const { irctcService } = await Promise.resolve().then(() => __importStar(require('../irctcService')));
             const cancelRaw = await irctcService.getCancelList();
             const fullyCancelled = Array.isArray(cancelRaw?.fullyCancelledTrains) ? cancelRaw.fullyCancelledTrains : [];

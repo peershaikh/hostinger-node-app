@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.railwayNewsService = exports.NEWS_LISTING_PROJECTION = exports.NEWS_CACHE_TTL = exports.NEWS_DETAIL_CACHE_PREFIX = exports.NEWS_CACHE_KEY = void 0;
 exports.invalidateNewsCache = invalidateNewsCache;
+exports.transformFromDatabaseRow = transformFromDatabaseRow;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const logger_1 = require("../middleware/logger");
@@ -281,9 +282,13 @@ exports.railwayNewsService = {
                     .select('*')
                     .eq('status', 'PUBLISHED')
                     .or(`slug.eq.${cleanSlug},id.eq.${cleanSlug}`)
-                    .maybeSingle();
-                if (!error && data) {
-                    article = transformFromDatabaseRow(data);
+                    .order('published_at', { ascending: false })
+                    .order('created_at', { ascending: false })
+                    .limit(5);
+                if (!error && data && data.length > 0) {
+                    // If multiple rows exist with the same slug/id, deterministically prefer a row with non-empty content
+                    const populated = data.find((r) => typeof r.content === 'string' && r.content.trim().length > 0);
+                    article = transformFromDatabaseRow(populated || data[0]);
                 }
             }
             catch (err) {

@@ -635,11 +635,19 @@ ${trainsBlock}
       ? draft.faq
       : (Array.isArray(draft.faqs) && draft.faqs.length > 0 ? draft.faqs : this.generateStructuredFaqs(draft, cleanTitle));
 
-    const richContent = typeof draft.content === 'string' && draft.content.trim().length >= 150
+    const richContent = typeof draft.content === 'string'
       ? draft.content
       : this.synthesizeRichArticleContent(draft, cleanTitle);
 
     const linkedContent = this.injectDeterministicInternalLinks(richContent, draft.affected_trains);
+    const sanitizedContent = cleanPromptLeaks(linkedContent);
+
+    // Publication Gate: require non-empty, sanitized content of at least 200 characters
+    if (!sanitizedContent || sanitizedContent.trim().length < 200) {
+      throw new Error(
+        `PUBLICATION_GATE_VIOLATION: Cannot publish article "${cleanTitle}". Content must be at least 200 characters (received ${sanitizedContent ? sanitizedContent.trim().length : 0} characters).`
+      );
+    }
 
     const passengerAdvice = typeof draft.passenger_advice === 'string' && draft.passenger_advice.trim().length > 0
       ? draft.passenger_advice.trim()
@@ -665,7 +673,7 @@ ${trainsBlock}
       summary: cleanSummary,
       key_takeaways: takeaways.map(t => cleanPromptLeaks(t)),
       category: normalizedCategory,
-      content: cleanPromptLeaks(linkedContent),
+      content: sanitizedContent,
       passenger_advice: cleanPromptLeaks(passengerAdvice),
       faq: faqItems,
       source_tier: sourceTier,
@@ -830,25 +838,30 @@ ${trainsBlock}
       const now = new Date().toISOString();
 
       for (const { draft, cleanTitle } of selectedForPublish) {
-        const canonicalSlug = this.generateCanonicalSlug(cleanTitle, draft.published_at || now);
-        const updatePayload = this.preparePublishPayload(draft, cleanTitle, canonicalSlug, now);
+        try {
+          const canonicalSlug = this.generateCanonicalSlug(cleanTitle, draft.published_at || now);
+          const updatePayload = this.preparePublishPayload(draft, cleanTitle, canonicalSlug, now);
 
-        const { error: updateErr } = await supabase
-          .from('railway_news')
-          .update(updatePayload)
-          .eq('id', draft.id);
+          const { error: updateErr } = await supabase
+            .from('railway_news')
+            .update(updatePayload)
+            .eq('id', draft.id);
 
-        if (updateErr) {
-          result.errors.push(`Failed to publish ${draft.id}: ${updateErr.message}`);
-          winstonLogger.error(`[NEWS_AUTOCURATOR_UPDATE_FAIL] ${draft.id}: ${updateErr.message}`);
-        } else {
-          result.publishedCount++;
-          result.publishedArticles.push({
-            id: draft.id,
-            title: cleanTitle,
-            slug: canonicalSlug,
-          });
-          winstonLogger.info(`[NEWS_AUTOCURATOR_PUBLISHED] ✓ Published: "${cleanTitle}" (/news/${canonicalSlug})`);
+          if (updateErr) {
+            result.errors.push(`Failed to publish ${draft.id}: ${updateErr.message}`);
+            winstonLogger.error(`[NEWS_AUTOCURATOR_UPDATE_FAIL] ${draft.id}: ${updateErr.message}`);
+          } else {
+            result.publishedCount++;
+            result.publishedArticles.push({
+              id: draft.id,
+              title: cleanTitle,
+              slug: canonicalSlug,
+            });
+            winstonLogger.info(`[NEWS_AUTOCURATOR_PUBLISHED] ✓ Published: "${cleanTitle}" (/news/${canonicalSlug})`);
+          }
+        } catch (gateErr: any) {
+          result.errors.push(`Publication gate rejected ${draft.id}: ${gateErr.message}`);
+          winstonLogger.warn(`[NEWS_AUTOCURATOR_GATE_REJECT] ${draft.id}: ${gateErr.message}`);
         }
       }
 
@@ -1075,12 +1088,15 @@ ${trainsBlock}
       const [year, month, day] = todayIst.split('-');
       const formattedDateDisplay = `${day}-${month}-${year}`;
 
-      // Check if already published today
-      const { data: existing } = await supabase
+      // Check if already published today (deterministic single lookup to prevent duplicate insertion)
+      const { data: existingRows, error: existingErr } = await supabase
         .from('railway_news')
         .select('id, slug, title, summary, affected_trains, published_at')
         .eq('slug', canonicalSlug)
-        .maybeSingle();
+        .order('published_at', { ascending: false })
+        .limit(1);
+
+      const existing = (!existingErr && existingRows && existingRows.length > 0) ? existingRows[0] : null;
 
       const { irctcService } = await import('../irctcService');
       const cancelRaw = await irctcService.getCancelList();
