@@ -19,6 +19,12 @@ import { cacheService } from '../cacheService';
 import { IngestionStatus } from './newsTypes';
 import { NewsFactValidator } from './newsDistillationService';
 import { invalidateNewsCache } from '../railwayNewsService';
+import {
+  truncateToWordBoundary,
+  cleanPromptLeaks,
+  resolveSafeRailwayImage,
+  SAFE_RAILWAY_COVER_FALLBACK,
+} from './newsSanitizer';
 
 // Noise patterns that must NEVER be published to passenger travel news
 const NOISE_TITLE_PATTERNS = [
@@ -424,7 +430,7 @@ ${trainsBlock}
         summary: draft.source_summary || draft.summary,
         sourceName: draft.source_name || 'Railway Source',
         sourceUrl: draft.source_url || 'https://www.indianrailways.gov.in',
-        sourceTier: draft.source_tier || 'TIER_1_OFFICIAL',
+        sourceTier: draft.source_tier || 'TIER_3_RECOGNIZED_MEDIA',
         publishedAt: draft.published_at || new Date().toISOString(),
         category: draft.category || 'Railway Updates',
         candidateTrains,
@@ -436,7 +442,7 @@ ${trainsBlock}
         content: draft.content || null,
         passenger_advice: draft.passenger_advice || null,
         key_takeaways: {
-          what_happened: draft.summary?.slice(0, 150) || draft.title,
+          what_happened: truncateToWordBoundary(cleanPromptLeaks(draft.summary || draft.title), 150),
           who_is_affected: 'Passengers and commuters',
           what_passengers_should_do: 'Verify official updates',
         },
@@ -600,11 +606,17 @@ ${trainsBlock}
     canonicalSlug: string,
     now: string = new Date().toISOString()
   ): Record<string, any> {
-    const seoTitle = `${cleanTitle.slice(0, 48)} | Travel Update`;
-    const cleanSummary = (draft.summary || cleanTitle).replace(/[\r\n]+/g, ' ').trim();
-    const metaDesc = cleanSummary.length > 95
-      ? `${cleanSummary.slice(0, 95).trim()}... Check live train running status & passenger advisory on Trayago.`
-      : `${cleanSummary} Check live train running status, schedule updates & passenger advisory on Trayago.`;
+    const seoTitle = truncateToWordBoundary(`${cleanTitle} | Travel Update`, 60);
+    const rawSummary = (draft.summary || cleanTitle).replace(/[\r\n]+/g, ' ').trim();
+    const cleanSummary = cleanPromptLeaks(rawSummary);
+    const suffix = ' Check live train running status & passenger advisory on Trayago.';
+    const maxSummaryLen = 155 - suffix.length; // 70 chars
+    let metaDesc = `${cleanSummary} Check live train running status, schedule updates & passenger advisory on Trayago.`;
+    if (cleanSummary.length > maxSummaryLen) {
+      const trimmedSummary = truncateToWordBoundary(cleanSummary, 85);
+      metaDesc = `${trimmedSummary}... Check live train running status & passenger advisory on Trayago.`;
+    }
+    const finalMetaDesc = truncateToWordBoundary(metaDesc, 155);
 
     const takeaways = this.synthesizePassengerTakeaways({
       title: cleanTitle,
@@ -633,16 +645,31 @@ ${trainsBlock}
       ? draft.passenger_advice.trim()
       : takeaways[takeaways.length - 1] || 'Passengers traveling along this route are advised to check live running status before departure.';
 
+    // Source Tier Guard: default to TIER_3_RECOGNIZED_MEDIA unless verified official domain/name
+    let sourceTier = 'TIER_3_RECOGNIZED_MEDIA';
+    if (draft.source_tier === 'TIER_1_OFFICIAL' || draft.source_tier === 'TIER_2_GOVERNMENT') {
+      const sUrl = String(draft.source_url || '').toLowerCase();
+      const sName = String(draft.source_name || '').toLowerCase();
+      const isOfficialDomain = sUrl.includes('.gov.in') || sUrl.includes('indianrailways.gov.in') || sUrl.includes('pib.gov.in') || sUrl.includes('irctc.co.in');
+      const isOfficialName = sName.includes('pib') || sName.includes('railway board') || sName.includes('ministry of railways');
+      if (isOfficialDomain || isOfficialName) {
+        sourceTier = draft.source_tier;
+      }
+    }
+
     return {
       title: cleanTitle,
       slug: canonicalSlug,
       seo_title: seoTitle,
-      meta_description: metaDesc.slice(0, 155),
-      key_takeaways: takeaways,
+      meta_description: finalMetaDesc,
+      summary: cleanSummary,
+      key_takeaways: takeaways.map(t => cleanPromptLeaks(t)),
       category: normalizedCategory,
-      content: linkedContent,
-      passenger_advice: passengerAdvice,
+      content: cleanPromptLeaks(linkedContent),
+      passenger_advice: cleanPromptLeaks(passengerAdvice),
       faq: faqItems,
+      source_tier: sourceTier,
+      image_url: resolveSafeRailwayImage(draft.image_url),
       status: 'PUBLISHED',
       updated_at: now,
     };
@@ -962,14 +989,15 @@ ${trainsBlock}
 
       const affectedTrainNos = [...fully, ...partially].map(t => String(t.trainNo || '')).filter(Boolean).slice(0, 100);
 
+      const cleanedSummary = cleanPromptLeaks(summary);
       const payload = {
         id: crypto.randomUUID(),
         title,
         slug: canonicalSlug,
-        seo_title: `${title} | Full Route List & Refund Rules`,
-        meta_description: summary.slice(0, 155),
-        summary,
-        key_takeaways: keyTakeaways,
+        seo_title: truncateToWordBoundary(`${title} | Full Route List & Refund Rules`, 60),
+        meta_description: truncateToWordBoundary(cleanedSummary, 155),
+        summary: cleanedSummary,
+        key_takeaways: keyTakeaways.map(t => cleanPromptLeaks(t)),
         category: 'Cancellation',
         content: null,
         passenger_advice: 'Passengers with confirmed IRCTC e-tickets on fully cancelled trains are eligible for automatic 100% full refund to the original source account without filing TDR. Commuters requiring immediate travel are advised to use Trayago Split Journey Intelligence to discover alternative connected trains or partner bus options.',
@@ -988,6 +1016,8 @@ ${trainsBlock}
         updated_at: new Date().toISOString(),
         source_name: 'Indian Railways / Trayago Rail Ops',
         source_url: 'https://www.trayago.in/news',
+        source_tier: 'TIER_3_RECOGNIZED_MEDIA' as const,
+        image_url: SAFE_RAILWAY_COVER_FALLBACK,
         affected_trains: affectedTrainNos,
         affected_stations: ['JP', 'NDLS', 'DLI', 'NZM', 'AII', 'JU', 'BKN', 'KOTA'],
       };
@@ -1272,15 +1302,16 @@ If seats on direct special trains are waitlisted, commuters can use **Trayago Sp
 
       const affectedTrainNos = verifiedTrains.map(t => t.trainNo);
 
+      const cleanedSummary = cleanPromptLeaks(summary);
       const payload = {
         title,
         slug: canonicalSlug,
-        seo_title: `${title} | Full Timetable & Booking Details`,
-        meta_description: summary.slice(0, 155),
-        summary,
-        key_takeaways: keyTakeaways,
+        seo_title: truncateToWordBoundary(`${title} | Full Timetable & Booking Details`, 60),
+        meta_description: truncateToWordBoundary(cleanedSummary, 155),
+        summary: cleanedSummary,
+        key_takeaways: keyTakeaways.map(t => cleanPromptLeaks(t)),
         category: 'Special Trains',
-        content: markdownContent,
+        content: cleanPromptLeaks(markdownContent),
         passenger_advice: 'Passengers planning festival or holiday travel are advised to book special train berths early. If direct berths are full, use Trayago Split Journey to find confirmed seats via midpoint hubs.',
         faq: faqs,
         status: 'PUBLISHED',
@@ -1288,6 +1319,8 @@ If seats on direct special trains are waitlisted, commuters can use **Trayago Sp
         updated_at: new Date().toISOString(),
         source_name: 'Indian Railways / Trayago Rail Ops',
         source_url: 'https://www.trayago.in/news',
+        source_tier: 'TIER_3_RECOGNIZED_MEDIA' as const,
+        image_url: SAFE_RAILWAY_COVER_FALLBACK,
         affected_trains: affectedTrainNos,
         affected_stations: ['NDLS', 'BCT', 'MMCT', 'PNBE', 'GKP', 'HWH', 'MAS'],
       };

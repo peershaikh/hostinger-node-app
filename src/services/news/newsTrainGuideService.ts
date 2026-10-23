@@ -235,43 +235,25 @@ export const STATION_KNOWLEDGE: Record<string, {
   }
 };
 
-export const SAFE_RAILWAY_COVER_FALLBACK = 'https://www.trayago.in/branding/og-image.png';
+export {
+  SAFE_RAILWAY_COVER_FALLBACK,
+  BANNED_IMAGE_PATTERNS,
+  isBannedImageUrl,
+  resolveSafeRailwayImage,
+  truncateToWordBoundary,
+  cleanPromptLeaks,
+} from './newsSanitizer';
 
-export const BANNED_IMAGE_PATTERNS = [
-  /photo-1544620347/i, // Bus image incorrectly mapped to Vande Bharat
-  /photo-1509749837/i, // Unverified generic dark passenger car interior
-];
+import {
+  SAFE_RAILWAY_COVER_FALLBACK,
+  BANNED_IMAGE_PATTERNS,
+  isBannedImageUrl,
+  resolveSafeRailwayImage,
+  truncateToWordBoundary,
+  cleanPromptLeaks,
+} from './newsSanitizer';
 
-export function truncateToWordBoundary(text: string, maxLength: number = 155): string {
-  if (!text || typeof text !== 'string') return '';
-  const clean = text.replace(/\s+/g, ' ').trim();
-  if (clean.length <= maxLength) {
-    return clean.replace(/[,;&:\-\s(]+$/, '');
-  }
-
-  const candidate = clean.slice(0, maxLength);
-  if (clean[maxLength] === ' ' || candidate.endsWith(' ')) {
-    return candidate.trim().replace(/[,;&:\-\s(]+$/, '');
-  }
-
-  const lastSpace = candidate.lastIndexOf(' ');
-  if (lastSpace > 0) {
-    return candidate.slice(0, lastSpace).trim().replace(/[,;&:\-\s(]+$/, '');
-  }
-
-  return candidate.trim().replace(/[,;&:\-\s(]+$/, '');
-}
-
-export function cleanPromptLeaks(content: string): string {
-  if (!content || typeof content !== 'string') return '';
-  return content
-    .replace(/^>\s*\*\*Target Keywords Analyzed:\*\*.*$/gim, '')
-    .replace(/^>\s*\*\*विशेष विश्लेषण विषय:\*\*.*$/gim, '')
-    .replace(/Target Keywords Analyzed:?[^\n]*\n?/gi, '')
-    .trim();
-}
-
-export function isSpecialService(trainNo: string, trainName: string, metaType: string): boolean {
+export function isSpecialService(trainNo: string, trainName: string, metaType?: string): boolean {
   const num = String(trainNo || '').trim();
   const name = (trainName || '').toLowerCase();
   const type = (metaType || '').toLowerCase();
@@ -295,23 +277,14 @@ export class NewsTrainGuideService {
    * Strips known unverified/banned images and uses the safe branding fallback.
    */
   public resolveTrainCoverImage(trainName: string, customUrl?: string): string {
-    if (customUrl && typeof customUrl === 'string' && customUrl.trim().startsWith('http')) {
-      const cleanCustom = customUrl.trim();
-      const isBanned = BANNED_IMAGE_PATTERNS.some(pat => pat.test(cleanCustom));
-      if (!isBanned) {
-        return cleanCustom;
-      }
-    }
-
-    // Default verified safe neutral route illustration / branding fallback
-    return SAFE_RAILWAY_COVER_FALLBACK;
+    return resolveSafeRailwayImage(customUrl);
   }
 
   /**
    * Classifies a train as a possible special service based on supported metadata
    * or explicit business rules (0-prefixed train with special/spl in name or type).
    */
-  public isSpecialService(trainNo: string, trainName: string, metaType: string): boolean {
+  public isSpecialService(trainNo: string, trainName: string, metaType?: string): boolean {
     return isSpecialService(trainNo, trainName, metaType);
   }
 
@@ -494,8 +467,8 @@ export class NewsTrainGuideService {
   public analyzeTrainProfile(
     trainNo: string,
     trainName: string,
-    metaType: string,
-    stops: any[]
+    metaType?: string,
+    stops: any[] = []
   ): TrainTypeProfile {
     const name = (trainName || '').toLowerCase();
     const type = (metaType || '').toLowerCase();
@@ -826,10 +799,10 @@ export class NewsTrainGuideService {
     trainNo: string,
     meta: {
       trainName: string;
-      trainType: string;
+      trainType?: string;
       source: string;
       destination: string;
-      daysOfWeek: string[];
+      daysOfWeek?: string[];
       scheduleStations?: any[];
     },
     language: 'en' | 'hi',
@@ -1289,7 +1262,16 @@ ${foodsContent}
       const guideDescriptor = hasDetailedTimetable ? 'Timetable, Coaches & Tips' : 'Route Overview, Coaches & Tips';
       title = `${trainNo} ${meta.trainName}: 360° Travel Guide — Route, ${guideDescriptor}`;
       seo_title = truncateToWordBoundary(`${trainNo} ${meta.trainName} Route & Travel Guide`, 60);
-      meta_description = truncateToWordBoundary(`Running schedule, accurate coach composition, ticket fares, Tatkal timing, onboard pantry, and pro tips for ${trainNo} ${meta.trainName} (${sourceDisplay} to ${destDisplay}).`, 155);
+
+      // Verify pantry car availability before asserting "onboard pantry"
+      const hasVerifiedPantry = profile.category === 'RAJDHANI' || (
+        profile.cateringEn &&
+        profile.cateringEn.toLowerCase().includes('onboard pantry') &&
+        !isSpecialService(trainNo, meta.trainName, meta.trainType)
+      );
+      const diningFeature = hasVerifiedPantry ? 'onboard pantry' : 'catering options';
+
+      meta_description = truncateToWordBoundary(`Running schedule, accurate coach composition, ticket fares, Tatkal timing, ${diningFeature}, and pro tips for ${trainNo} ${meta.trainName} (${sourceDisplay} to ${destDisplay}).`, 155);
       summary = `Operating between ${sourceDisplay} and ${destDisplay}, **${trainNo} ${meta.trainName}** provides scheduled rail connectivity on this route.\n\nThis comprehensive guide details the train's operating schedule, station halts, coach classes (${profile.categoryLabelEn}), ticket fare structures, dynamic pricing rules, onboard dining, and travel planning guidance.`;
     }
 
@@ -1737,7 +1719,9 @@ STRUCTURE AND CONTENT REQUIREMENTS:
 CRITICAL FACTUAL AND SAFETY RESTRAINTS:
 - Do NOT output prompt meta-commentary, prompt debugging notes, or headings/phrases like "Target Keywords Analyzed" or "विशेष विश्लेषण विषय" anywhere in the content or summary.
 - Do NOT fabricate or speculate on specific locomotive classes (such as WAP-7 or EMD) or inaugural dates unless officially verified.
+- Do NOT use unverified superlative claims or promotional puffery such as "most prestigious passenger corridors", "crowning achievement", "legendary pride of the fleet", or "world-renowned luxury" for ordinary express, superfast, passenger, or seasonal special trains. Maintain an objective, informative travel journalism tone.
 - If intermediate stop data has fewer than 3 stops, describe the timetable as a Route Overview with terminal stations, NOT a verified timetable.
+- Do NOT claim onboard pantry car service unless explicitly verified for this train service.
 
 Return ONLY a valid JSON object matching this exact schema:
 {
@@ -1795,6 +1779,7 @@ Return ONLY a valid JSON object matching this exact schema:
         generated.content,
         [rawTrainNo]
       );
+      const sanitizedSummary = cleanPromptLeaks(generated.summary.trim());
       const sanitizedContent = cleanPromptLeaks(linkedContent);
 
       // 6. Format Final Payload
@@ -1806,8 +1791,8 @@ Return ONLY a valid JSON object matching this exact schema:
         title: generated.title.trim(),
         slug: canonicalSlug,
         seo_title: truncateToWordBoundary(generated.seo_title || generated.title, 60),
-        meta_description: truncateToWordBoundary(generated.meta_description || generated.summary, 155),
-        summary: generated.summary.trim(),
+        meta_description: truncateToWordBoundary(cleanPromptLeaks(generated.meta_description || generated.summary), 155),
+        summary: sanitizedSummary,
         content: sanitizedContent,
         passenger_advice: generated.passenger_advice?.trim() || null,
         key_takeaways: Array.isArray(generated.key_takeaways) ? generated.key_takeaways : [],
@@ -1818,6 +1803,7 @@ Return ONLY a valid JSON object matching this exact schema:
         updated_at: now,
         source_name: 'Indian Railways Timetable & Public Schedules',
         source_url: `https://www.trayago.in/live/${rawTrainNo}`,
+        source_tier: 'TIER_3_RECOGNIZED_MEDIA' as const,
         image_url: coverImage,
         affected_trains: [rawTrainNo],
         affected_stations: Array.isArray(generated.affected_stations) && generated.affected_stations.length > 0
@@ -1853,6 +1839,7 @@ Return ONLY a valid JSON object matching this exact schema:
               status: payload.status,
               published_at: now,
               updated_at: now,
+              source_tier: payload.source_tier,
               image_url: payload.image_url,
               affected_trains: payload.affected_trains,
               affected_stations: payload.affected_stations,

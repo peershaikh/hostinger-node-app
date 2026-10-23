@@ -4,6 +4,7 @@ import { winstonLogger } from '../../middleware/logger';
 import { CanonicalNewsArticle, IngestionResult, NewsSource, RelevanceScoreResult } from './newsTypes';
 import { newsSourceRegistry } from './newsSourceRegistry';
 import { SimHash } from './simHash';
+import { isBannedImageUrl, SAFE_RAILWAY_COVER_FALLBACK } from './newsSanitizer';
 
 export class NewsIngestionEngine {
   private parser: Parser;
@@ -269,16 +270,29 @@ export class NewsIngestionEngine {
 
   /**
    * Extracts media image from feed item.
+   * Rejects known misleading or banned stock images (such as bus photos), falling back to safe railway branding.
    */
   private extractImage(item: any): string | null {
+    let rawUrl: string | null = null;
     const media = item['media:content'] || item['media:thumbnail'];
-    if (media && typeof media === 'object' && media.$ && media.$.url) return media.$.url;
-    if (item.enclosure && item.enclosure.url && item.enclosure.type?.startsWith('image')) return item.enclosure.url;
-    if (item.content || item['content:encoded']) {
+    if (media && typeof media === 'object' && media.$ && media.$.url) {
+      rawUrl = media.$.url;
+    } else if (item.enclosure && item.enclosure.url && item.enclosure.type?.startsWith('image')) {
+      rawUrl = item.enclosure.url;
+    } else if (item.content || item['content:encoded']) {
       const html = item.content || item['content:encoded'] || '';
       const match = html.match(/<img[^>]+src=["']([^"']+)["']/i);
-      if (match) return match[1];
+      if (match) rawUrl = match[1];
     }
+
+    if (rawUrl && typeof rawUrl === 'string' && rawUrl.startsWith('http')) {
+      const clean = rawUrl.trim();
+      if (isBannedImageUrl(clean)) {
+        return SAFE_RAILWAY_COVER_FALLBACK;
+      }
+      return clean;
+    }
+
     return null;
   }
 

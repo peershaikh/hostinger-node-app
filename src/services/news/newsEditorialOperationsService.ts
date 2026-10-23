@@ -85,7 +85,16 @@ export class NewsEditorialOperationsService {
       let sourceStatus: 'SOURCE_VERIFIED' | 'SOURCE_REQUIRED' | 'SOURCE_NOT_AVAILABLE' = 'SOURCE_NOT_AVAILABLE';
       let sourceName = payload.source_name ? payload.source_name.trim() : 'Official Railway Bulletin';
       let sourceUrl = payload.source_url ? payload.source_url.trim() : 'https://indianrailways.gov.in';
-      let sourceTier: SourceTier = payload.source_tier || 'TIER_1_OFFICIAL';
+      let sourceTier: SourceTier = 'TIER_3_RECOGNIZED_MEDIA';
+      if (payload.source_tier) {
+        sourceTier = payload.source_tier;
+      } else {
+        const sUrl = sourceUrl.toLowerCase();
+        const sName = sourceName.toLowerCase();
+        if (sUrl.includes('indianrailways.gov.in') || sUrl.includes('pib.gov.in') || sName.includes('pib') || sName.includes('railway board')) {
+          sourceTier = 'TIER_1_OFFICIAL';
+        }
+      }
 
       if (payload.source_url && payload.source_url.startsWith('http') && payload.source_name) {
         sourceStatus = 'SOURCE_VERIFIED';
