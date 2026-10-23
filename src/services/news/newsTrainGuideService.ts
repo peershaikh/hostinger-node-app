@@ -235,31 +235,84 @@ export const STATION_KNOWLEDGE: Record<string, {
   }
 };
 
+export const SAFE_RAILWAY_COVER_FALLBACK = 'https://www.trayago.in/branding/og-image.png';
+
+export const BANNED_IMAGE_PATTERNS = [
+  /photo-1544620347/i, // Bus image incorrectly mapped to Vande Bharat
+  /photo-1509749837/i, // Unverified generic dark passenger car interior
+];
+
+export function truncateToWordBoundary(text: string, maxLength: number = 155): string {
+  if (!text || typeof text !== 'string') return '';
+  const clean = text.replace(/\s+/g, ' ').trim();
+  if (clean.length <= maxLength) {
+    return clean.replace(/[,;&:\-\s(]+$/, '');
+  }
+
+  const candidate = clean.slice(0, maxLength);
+  if (clean[maxLength] === ' ' || candidate.endsWith(' ')) {
+    return candidate.trim().replace(/[,;&:\-\s(]+$/, '');
+  }
+
+  const lastSpace = candidate.lastIndexOf(' ');
+  if (lastSpace > 0) {
+    return candidate.slice(0, lastSpace).trim().replace(/[,;&:\-\s(]+$/, '');
+  }
+
+  return candidate.trim().replace(/[,;&:\-\s(]+$/, '');
+}
+
+export function cleanPromptLeaks(content: string): string {
+  if (!content || typeof content !== 'string') return '';
+  return content
+    .replace(/^>\s*\*\*Target Keywords Analyzed:\*\*.*$/gim, '')
+    .replace(/^>\s*\*\*विशेष विश्लेषण विषय:\*\*.*$/gim, '')
+    .replace(/Target Keywords Analyzed:?[^\n]*\n?/gi, '')
+    .trim();
+}
+
+export function isSpecialService(trainNo: string, trainName: string, metaType: string): boolean {
+  const num = String(trainNo || '').trim();
+  const name = (trainName || '').toLowerCase();
+  const type = (metaType || '').toLowerCase();
+
+  if (num.startsWith('0')) {
+    return (
+      name.includes('spl') ||
+      name.includes('special') ||
+      type.includes('special') ||
+      type.includes('spl') ||
+      name.includes('festival') ||
+      name.includes('holiday')
+    );
+  }
+  return false;
+}
+
 export class NewsTrainGuideService {
   /**
    * Resolves relevant contextual train imagery based on train name / category.
+   * Strips known unverified/banned images and uses the safe branding fallback.
    */
   public resolveTrainCoverImage(trainName: string, customUrl?: string): string {
     if (customUrl && typeof customUrl === 'string' && customUrl.trim().startsWith('http')) {
-      return customUrl.trim();
+      const cleanCustom = customUrl.trim();
+      const isBanned = BANNED_IMAGE_PATTERNS.some(pat => pat.test(cleanCustom));
+      if (!isBanned) {
+        return cleanCustom;
+      }
     }
 
-    const name = trainName.toLowerCase();
-    if (name.includes('vande bharat')) {
-      return 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?auto=format&fit=crop&w=1200&q=80';
-    }
-    if (name.includes('garib rath')) {
-      return 'https://images.unsplash.com/photo-1532105956626-9569c03602f6?auto=format&fit=crop&w=1200&q=80';
-    }
-    if (name.includes('rajdhani') || name.includes('tejas')) {
-      return 'https://images.unsplash.com/photo-1474487548417-781cb71495f3?auto=format&fit=crop&w=1200&q=80';
-    }
-    if (name.includes('shatabdi') || name.includes('duronto')) {
-      return 'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?auto=format&fit=crop&w=1200&q=80';
-    }
+    // Default verified safe neutral route illustration / branding fallback
+    return SAFE_RAILWAY_COVER_FALLBACK;
+  }
 
-    // Default premium Indian Railways aesthetic cover
-    return 'https://images.unsplash.com/photo-1509749837427-ac94a2553d0e?auto=format&fit=crop&w=1200&q=80';
+  /**
+   * Classifies a train as a possible special service based on supported metadata
+   * or explicit business rules (0-prefixed train with special/spl in name or type).
+   */
+  public isSpecialService(trainNo: string, trainName: string, metaType: string): boolean {
+    return isSpecialService(trainNo, trainName, metaType);
   }
 
   /**
@@ -547,8 +600,8 @@ export class NewsTrainGuideService {
         isAllAc: true,
         hasSleeper: false,
         hasGeneral: false,
-        locoEn: 'High-power 6,350 HP WAP-7 3-phase electric locomotive capable of 130–140 km/h continuous high-speed cruising with regenerative braking.',
-        locoHi: 'उच्च क्षमता का 6,350 हॉर्सपावर WAP-7 3-फेज इलेक्ट्रिक लोकोमोटिव, जो 130-140 किमी/घंटा की तीव्र गति पर सुगम परिचालन प्रदान करता है।',
+        locoEn: 'High-speed electric passenger locomotive operating across electrified corridors (or twin WAP-7 push-pull configuration on select high-gradient routes).',
+        locoHi: 'उच्च गति इलेक्ट्रिक पैसेंजर लोकोमोटिव (अथवा विशेष घाट सेक्शनों पर पुश-पुल WAP-7 इंजन)।',
         coachesEn: [
           'AC First Class (1A): Lockable private coupés and cabins with reading lights, attendant bells, and personalized kits.',
           'AC 2-Tier (2A): Curtained 2-tier berths with charging points, wide berths, and reading lamps.',
@@ -565,8 +618,8 @@ export class NewsTrainGuideService {
         cateringHi: 'आईआरसीटीसी की ऑन-बोर्ड पेंट्री कैटरिंग, जिसमें समय अनुसार चाय, नाश्ता, लंच और गरमा-गरम डिनर शामिल रहता है।',
         fareEn: 'Dynamic flexi-fare pricing applies. Fares increase up to 1.5x based on booking demand.',
         fareHi: 'डायनामिक फ्लेक्सी-फेयर किराया प्रणाली लागू है, जो सीटों की मांग के साथ बढ़ती है।',
-        historyEn: `Train ${trainNo} ${trainName} is one of Indian Railways' elite Rajdhani services connecting state capitals and commercial centers to the national capital with top track priority and disciplined punctuality.`,
-        historyHi: `ट्रेन ${trainNo} ${trainName} भारतीय रेल की सर्वोच्च प्राथमिकता वाली राजधानी सेवा है, जो प्रमुख महानगरों को राष्ट्रीय राजधानी से तेज गति और समयबद्धता से जोड़ती है।`,
+        historyEn: `Train ${trainNo} ${trainName} is one of Indian Railways' dedicated Rajdhani services connecting state capitals and commercial centers to the national capital.`,
+        historyHi: `ट्रेन ${trainNo} ${trainName} भारतीय रेल की राजधानी सेवा है, जो प्रमुख महानगरों को राष्ट्रीय राजधानी से जोड़ती है।`,
         factsEn: [
           'Enjoys top operational track priority across all railway zones and divisions.',
           'Operating speed up to 130 km/h across fully electrified corridors.',
@@ -591,8 +644,8 @@ export class NewsTrainGuideService {
         isAllAc: true,
         hasSleeper: false,
         hasGeneral: false,
-        locoEn: 'High-speed WAP-7 or WAP-5 electric locomotive designed for rapid intercity cruising up to 130–150 km/h.',
-        locoHi: 'हाई-स्पीड WAP-7 या WAP-5 इलेक्ट्रिक लोकोमोटिव, जो 130-150 किमी/घंटा की गति से अंतर-शहरी यात्रा पूरी कराता है।',
+        locoEn: 'High-speed electric passenger locomotive engineered for rapid daytime intercity transit.',
+        locoHi: 'दिन की तेज इंटरसिटी यात्रा के लिए संचालित हाई-स्पीड इलेक्ट्रिक लोकोमोटिव।',
         coachesEn: [
           'Executive Chair Car (EC): Spacious 2x2 air-conditioned chair car seating with priority service and enhanced legroom.',
           'AC Chair Car (CC): Comfortable 3x2 seating with foldout snack tables and reading lights.',
@@ -631,8 +684,8 @@ export class NewsTrainGuideService {
         isAllAc: true,
         hasSleeper: false,
         hasGeneral: false,
-        locoEn: 'WAP-7 / WAP-4 Electric locomotive running at high speed across long-distance routes.',
-        locoHi: 'WAP-7 / WAP-4 इलेक्ट्रिक लोकोमोटिव।',
+        locoEn: 'Standard passenger electric locomotive operating across designated long-distance routes.',
+        locoHi: 'लंबी दूरी के मार्गों पर संचालित मानक पैसेंजर इलेक्ट्रिक लोकोमोटिव।',
         coachesEn: [
           'AC 3-Tier (3A): High-density 3-tier air-conditioned berths with unique side-middle berth configuration for maximum affordability.',
           'AC Chair Car (CC): Ergonomic seating on select daytime Garib Rath legs.',
@@ -647,7 +700,7 @@ export class NewsTrainGuideService {
         cateringHi: 'पेंट्री स्टाफ द्वारा चाय व स्नैक्स; प्रमुख स्टेशनों पर आईआरसीटीसी ई-कैटरिंग उपलब्ध।',
         fareEn: 'Deeply subsidized air-conditioned fares — nearly 40-50% lower than standard 3A fares on regular superfast trains.',
         fareHi: 'सामान्य ट्रेनों के 3A किराए से 40-50% तक कम और अत्यधिक किफायती किराया।',
-        historyEn: `Train ${trainNo} ${trainName} was introduced under Indian Railways' revolutionary Garib Rath scheme to make air-conditioned travel accessible to common citizens.`,
+        historyEn: `Train ${trainNo} ${trainName} was introduced under Indian Railways' Garib Rath scheme to make air-conditioned travel accessible to common citizens.`,
         historyHi: `ट्रेन ${trainNo} ${trainName} आम नागरिकों को किफायती एसी यात्रा का लाभ देने के लिए शुरू की गई थी।`,
         factsEn: [
           'Pioneered subsidized air-conditioned travel for middle-class and budget travelers.',
@@ -662,43 +715,84 @@ export class NewsTrainGuideService {
       };
     }
 
-    // 6. Default Standard Superfast / Mail / Express Profile
+    // 6. Special Service Profile (Corroborated 0-prefixed special trains)
+    const isSpecial = this.isSpecialService(trainNo, trainName, metaType);
+    if (isSpecial) {
+      return {
+        category: 'EXPRESS',
+        categoryLabelEn: 'Special Fare / Festival Passenger Service (Subject to seasonal schedule notification)',
+        categoryLabelHi: 'विशेष किराया / स्पेशल ट्रेन सेवा (मौसमी व अधिसूचित परिचालन)',
+        isAllAc: false,
+        hasSleeper: true,
+        hasGeneral: true,
+        locoEn: 'Operating traction allocated by the operating railway zone according to route electrification (Electric or Diesel traction).',
+        locoHi: 'संबंधित रेलवे जोन द्वारा मार्ग के विद्युतीकरण के अनुसार निर्धारित लोकोमोटिव ट्रैक्शन (इलेक्ट्रिक अथवा डीजल)।',
+        coachesEn: [
+          'Reserved Accommodation: AC and Sleeper accommodation as notified by the operating railway zone in official circulars.',
+          'Special Fare Slabs: Special service fares or dynamic festive pricing may apply as per railway notifications.',
+          'Unreserved General: General coach availability is subject to the specific rake notification for this special service.'
+        ],
+        coachesHi: [
+          'आरक्षित डिब्बे: संबंधित रेलवे जोन द्वारा अधिसूचना के अनुसार वातानुकूलित (एसी) व स्लीपर कोच।',
+          'विशेष किराया: विशेष ट्रेन परिचालन के तहत विशेष किराया अथवा सीजनल किराया संरचना लागू।',
+          'सामान्य अनारक्षित डिब्बे: सामान्य कोचों की व्यवस्था इस स्पेशल सेवा की विशिष्ट रैक अधिसूचना के अधीन।'
+        ],
+        cateringEn: 'Catering availability varies by route; IRCTC e-catering is available at designated station halts.',
+        cateringHi: 'खान-पान व्यवस्था मार्ग पर निर्भर करती है; प्रमुख स्टेशनों पर आईआरसीटीसी ई-कैटरिंग डिलीवरी उपलब्ध।',
+        fareEn: 'Special train fare structure as notified by Indian Railways for seasonal or festival services.',
+        fareHi: 'त्योहारों व छुट्टियों के लिए रेलवे अधिसूचना द्वारा निर्धारित विशेष ट्रेन किराया संरचना।',
+        historyEn: `Train ${trainNo} ${trainName} operates as a notified special service introduced to meet seasonal passenger rush and holiday travel demand along this corridor.`,
+        historyHi: `ट्रेन ${trainNo} ${trainName} त्योहारों व छुट्टियों के दौरान अतिरिक्त यात्री मांग को पूरा करने हेतु रेलवे अधिसूचना द्वारा संचालित एक स्पेशल सेवा है।`,
+        factsEn: [
+          'Introduced as an operational special service to manage passenger peak travel demand.',
+          'Operating schedule, halts, and frequency are regulated by railway divisional circulars.',
+          'Passengers are advised to verify operational running dates prior to booking.'
+        ],
+        factsHi: [
+          'व्यस्त यात्रा सीजन में यात्रियों की सुविधा और अतिरिक्त क्षमता प्रदान करने हेतु संचालित।',
+          'समय सारणी, ठहराव और फेरे संबंधित क्षेत्रीय रेलवे द्वारा समय-समय पर अधिसूचित किए जाते हैं।',
+          'बुकिंग से पूर्व परिचालन तिथियों की पुष्टि अवश्य करें।'
+        ]
+      };
+    }
+
+    // 7. Default Standard Mail / Express Profile
     return {
       category: 'EXPRESS',
-      categoryLabelEn: 'Indian Railways Long-Distance Express / Superfast Service',
-      categoryLabelHi: 'भारतीय रेल लंबी दूरी की एक्सप्रेस / सुपरफास्ट सेवा',
+      categoryLabelEn: 'Indian Railways Mail / Express Passenger Service',
+      categoryLabelHi: 'भारतीय रेल मेल / एक्सप्रेस यात्री सेवा',
       isAllAc: false,
       hasSleeper: true,
       hasGeneral: true,
-      locoEn: 'Standard WAP-7 or WAP-4 high-acceleration electric locomotive (or EMD WDP-4D / WDG-4D diesel locomotive on non-electrified routes).',
-      locoHi: 'WAP-7 या WAP-4 इलेक्ट्रिक लोकोमोटिव (अविद्युतीकृत मार्गों पर EMD डीजल इंजन)।',
+      locoEn: 'Operating traction allocated by the operating railway zone according to route electrification (Electric or Diesel traction).',
+      locoHi: 'संबंधित रेलवे जोन द्वारा मार्ग के विद्युतीकरण के अनुसार निर्धारित लोकोमोटिव ट्रैक्शन (इलेक्ट्रिक अथवा डीजल)।',
       coachesEn: [
-        'AC 2-Tier (2A): Spacious air-conditioned berths with clean curtains, charging sockets, and fresh linen kits.',
-        'AC 3-Tier (3A / 3E): Affordable air-conditioned sleeper accommodation for family travelers.',
-        'Sleeper Class (SL): Standard non-AC reserved sleeping berths designed for budget-conscious passengers.',
-        'General Unreserved (GS): Unreserved coaches at both ends of the train, bookable via the UTS mobile app or station counters.'
+        'AC 2-Tier (2A): Spacious air-conditioned berths with clean curtains, charging sockets, and fresh linen kits (where configured).',
+        'AC 3-Tier (3A / 3E): Standard air-conditioned sleeper accommodation for family travelers.',
+        'Sleeper Class (SL): Non-AC reserved sleeping berths designed for budget-conscious passengers.',
+        'General Unreserved (GS): Unreserved coaches for daily and short-distance commuters, bookable via the UTS mobile app or station counters.'
       ],
       coachesHi: [
-        'एसी 2-टियर (2A): चौड़ी वातानुकूलित बर्थ, प्राइवेसी पर्दे, चार्जिंग सॉकेट्स और लिनेन किट।',
-        'एसी 3-टियर (3A / 3E): परिवारों और लंबी दूरी के यात्रियों के लिए किफायती वातानुकूलित स्लीपर कोच।',
+        'एसी 2-टियर (2A): वातानुकूलित 2-टियर शयनयान (कोच संयोजन के अनुसार)।',
+        'एसी 3-टियर (3A / 3E): लंबी दूरी और परिवारों के लिए किफायती वातानुकूलित स्लीपर कोच।',
         'स्लीपर क्लास (SL): किफायती गैर-वातानुकूलित आरक्षित शयनयान व्यवस्था।',
-        'अनारक्षित सामान्य कोच (GS): ट्रेन के दोनों छोर पर अनारक्षित डिब्बे, जिनके टिकट यूटीएस ऐप या स्टेशन काउंटर से लिए जा सकते हैं।'
+        'सामान्य अनारक्षित (GS): अनारक्षित डिब्बे, जिनके टिकट यूटीएस ऐप या स्टेशन काउंटर से लिए जा सकते हैं।'
       ],
-      cateringEn: 'Onboard pantry car service with refreshments and tea; IRCTC e-catering delivery available at designated junction halts along the route.',
-      cateringHi: 'ऑन-बोर्ड पेंट्री कार से चाय-नाश्ता और प्रमुख जंक्शनों पर आईआरसीटीसी ई-कैटरिंग डिलीवरी।',
-      fareEn: 'Standard Indian Railways telescopic distance-based fare chart with Tatkal and Premium Tatkal options.',
-      fareHi: 'भारतीय रेल की मानक दूरी-आधारित किराया तालिका।',
-      historyEn: `Train ${trainNo} ${trainName} provides vital connectivity connecting cities, towns, and commercial centers across multiple railway divisions.`,
-      historyHi: `ट्रेन ${trainNo} ${trainName} शहरों और व्यापारिक केंद्रों को जोड़ने वाली एक अत्यंत महत्वपूर्ण यात्री रेल सेवा है।`,
+      cateringEn: 'Onboard pantry car service or IRCTC station e-catering delivery available at designated junction halts along the route.',
+      cateringHi: 'ऑन-बोर्ड पेंट्री कार अथवा प्रमुख जंक्शनों पर आईआरसीटीसी ई-कैटरिंग डिलीवरी सुविधा।',
+      fareEn: 'Standard Indian Railways telescopic distance-based fare chart with Tatkal quota booking.',
+      fareHi: 'भारतीय रेल की मानक दूरी-आधारित किराया तालिका व तत्काल आरक्षण सुविधा।',
+      historyEn: `Train ${trainNo} ${trainName} provides scheduled passenger transit connecting cities, towns, and commercial centers along its designated route.`,
+      historyHi: `ट्रेन ${trainNo} ${trainName} अपने निर्धारित मार्ग पर शहरों और व्यापारिक केंद्रों को जोड़ने वाली एक नियमित यात्री सेवा है।`,
       factsEn: [
-        'Provides essential intercity and long-distance passenger transit.',
+        'Provides essential intercity and regional passenger connectivity.',
         'Accommodates diverse passenger budgets with AC, Sleeper, and General compartments.',
-        'Operates with standard modern LHB / ICF coach infrastructure.'
+        'Operated according to standard Indian Railways zonal operating schedules.'
       ],
       factsHi: [
-        'विभिन्न शहरों के मध्य सुगम और किफायती आवागमन का मुख्य साधन।',
+        'विभिन्न शहरों के मध्य सुगम और किफायती आवागमन का साधन।',
         'एसी, स्लीपर और सामान्य श्रेणियों के साथ सभी बजट के यात्रियों के लिए अनुकूल।',
-        'आधुनिक कोच संरचना और नियमित समयबद्धता।'
+        'भारतीय रेल के मानक परिचालन नियमों के अधीन संचालित।'
       ]
     };
   }
@@ -764,6 +858,7 @@ export class NewsTrainGuideService {
     const activeTopics = this.resolveFocusTopics(focusAngle, focusTopics);
     const profile = this.analyzeTrainProfile(trainNo, meta.trainName, meta.trainType, stops);
     const { sights, foods } = this.resolveStationEnrichments(stops, language);
+    const hasDetailedTimetable = stops.length >= 3;
 
     // Build verified schedule table
     let tableRows = '';
@@ -795,36 +890,57 @@ export class NewsTrainGuideService {
       let summary = '';
 
       if (isHistoryFocus) {
-        title = `${trainNo} ${meta.trainName}: सम्पूर्ण इतिहास, शुरुआत, लोकोमोटिव और रोचक तथ्य`;
-        seo_title = `${trainNo} ${meta.trainName} इतिहास व रोचक तथ्य`.slice(0, 60);
-        meta_description = `${trainNo} ${meta.trainName} (${sourceDisplay} से ${destDisplay}) का संपूर्ण इतिहास, उद्घाटन तिथि, पुश-पुल इंजन तकनीक, तेजस रैक और रोचक तथ्य पढ़ें।`.slice(0, 155);
-        summary = `भारतीय रेल की प्रतिष्ठित **${trainNo} ${meta.trainName}** (${sourceDisplay} से ${destDisplay}) न केवल लाखों यात्रियों के लिए एक भरोसेमंद जीवनरेखा है, बल्कि अपने परिचालन इतिहास, लोकोमोटिव इंजीनियरिंग और यात्रा विरासत में भी एक मील का पत्थर है।\n\nइस विशेष रिपोर्ट में ट्रेन ${trainNo} की शुरुआत, उद्घाटन वर्ष, पश्चिमी घाट के थुल घाट जैसे कठिन मार्गों पर पुश-पुल WAP-7 तकनीक, आधुनिक तेजस स्मार्ट एलएचबी रैक में बदलाव और रेल प्रशंसकों के बीच लोकप्रिय रोचक तथ्यों का प्रामाणिक विश्लेषण प्रस्तुत किया गया है।`;
+        if (trainNo === '22221' || trainNo === '22222') {
+          title = `${trainNo} ${meta.trainName}: सम्पूर्ण इतिहास, शुरुआत, लोकोमोटिव और रोचक तथ्य`;
+          seo_title = truncateToWordBoundary(`${trainNo} ${meta.trainName} इतिहास व रोचक तथ्य`, 60);
+          meta_description = truncateToWordBoundary(`${trainNo} ${meta.trainName} (${sourceDisplay} से ${destDisplay}) का संपूर्ण इतिहास, उद्घाटन तिथि, पुश-पुल इंजन तकनीक, तेजस रैक और रोचक तथ्य पढ़ें।`, 155);
+          summary = `मध्य रेल की राजधानी **${trainNo} ${meta.trainName}** (${sourceDisplay} से ${destDisplay}) अपने परिचालन इतिहास और लोकोमोटिव इंजीनियरिंग में एक मील का पत्थर है।\n\nइस विशेष रिपोर्ट में ट्रेन ${trainNo} की शुरुआत, उद्घाटन वर्ष, पश्चिमी घाट के थुल घाट जैसे कठिन मार्गों पर पुश-पुल WAP-7 तकनीक, आधुनिक तेजस स्मार्ट एलएचबी रैक में बदलाव और रेल प्रशंसकों के बीच लोकप्रिय रोचक तथ्यों का प्रामाणिक विश्लेषण प्रस्तुत किया गया है।`;
+        } else {
+          title = `${trainNo} ${meta.trainName}: रूट पृष्ठभूमि, कोच संरचना व यात्रा गाइड`;
+          seo_title = truncateToWordBoundary(`${trainNo} ${meta.trainName} रूट विवरण व गाइड`, 60);
+          meta_description = truncateToWordBoundary(`${trainNo} ${meta.trainName} (${sourceDisplay} से ${destDisplay}) की रूट पृष्ठभूमि, कोच संरचना, लोकोमोटिव ट्रैक्शन और जरूरी यात्रा जानकारी पढ़ें।`, 155);
+          summary = `ट्रेन **${trainNo} ${meta.trainName}** (${sourceDisplay} से ${destDisplay}) इस रेलमार्ग पर यात्रियों के लिए एक नियमित यात्री सेवा है।\n\nइस रिपोर्ट में ट्रेन ${trainNo} का परिचालन विवरण, लोकोमोटिव ट्रैक्शन (${profile.locoHi}), उपलब्ध कोच श्रेणियां और यात्रियों के लिए जरूरी यात्रा जानकारी प्रस्तुत की गई है।`;
+        }
       } else if (isTimetableFocus) {
-        title = `${trainNo} ${meta.trainName}: सत्यापित समय सारणी, ठहराव, रूट मैप और रनिंग शेड्यूल`;
-        seo_title = `${trainNo} ${meta.trainName} समय सारणी व ठहराव`.slice(0, 60);
-        meta_description = `${trainNo} ${meta.trainName} (${sourceDisplay} से ${destDisplay}) का आधिकारिक रनिंग शेड्यूल, प्रमुख स्टेशनों के आगमन-प्रस्थान समय और प्लेटफार्म विवरण।`.slice(0, 155);
-        summary = `ट्रेन **${trainNo} ${meta.trainName}** ${sourceDisplay} और ${destDisplay} के मध्य दैनिक यात्रियों, पर्यटकों और व्यापारियों के लिए एक अत्यंत समयबद्ध सुपरफास्ट ट्रेन सेवा है।\n\nयह गाइड ट्रेन ${trainNo} के सभी महत्वपूर्ण ठहरावों, स्टेशन पर आगमन व प्रस्थान के समय, दूरी और प्लेटफार्म नंबरों की अद्यतन सूची प्रस्तुत करती है।`;
+        if (hasDetailedTimetable) {
+          title = `${trainNo} ${meta.trainName}: सत्यापित समय सारणी, ठहराव, रूट मैप और रनिंग शेड्यूल`;
+          seo_title = truncateToWordBoundary(`${trainNo} ${meta.trainName} समय सारणी व ठहराव`, 60);
+          meta_description = truncateToWordBoundary(`${trainNo} ${meta.trainName} (${sourceDisplay} से ${destDisplay}) का आधिकारिक रनिंग शेड्यूल, प्रमुख स्टेशनों के आगमन-प्रस्थान समय और प्लेटफार्म विवरण।`, 155);
+          summary = `ट्रेन **${trainNo} ${meta.trainName}** ${sourceDisplay} और ${destDisplay} के मध्य दैनिक यात्रियों, पर्यटकों और व्यापारियों के लिए एक महत्वपूर्ण ट्रेन सेवा है।\n\nयह गाइड ट्रेन ${trainNo} के सभी महत्वपूर्ण ठहरावों, स्टेशन पर आगमन व प्रस्थान के समय, दूरी और प्लेटफार्म नंबरों की अद्यतन सूची प्रस्तुत करती है।`;
+        } else {
+          title = `${trainNo} ${meta.trainName}: रूट विवरण, टर्मिनल एवं यात्रा एडवाइजरी`;
+          seo_title = truncateToWordBoundary(`${trainNo} ${meta.trainName} रूट विवरण व एडवाइजरी`, 60);
+          meta_description = truncateToWordBoundary(`${trainNo} ${meta.trainName} (${sourceDisplay} से ${destDisplay}) का रूट विवरण, टर्मिनल स्टेशन और जरूरी यात्रा एडवाइजरी।`, 155);
+          summary = `ट्रेन **${trainNo} ${meta.trainName}** ${sourceDisplay} और ${destDisplay} के मध्य संचालित होती है। मध्यवर्ती ठहरावों की विस्तृत समय सारणी का सत्यापन आधिकारिक रेलवे परिपत्रों से किया जा रहा है।\n\nयह रूट अवलोकन प्रमुख टर्मिनलों और यात्रियों के लिए आवश्यक यात्रा दिशा-निर्देश प्रस्तुत करता है।`;
+        }
       } else if (isFoodFocus) {
         title = `${trainNo} ${meta.trainName}: खान-पान, पेंट्री मेनू, कैटरिंग व स्टेशन के प्रसिद्ध व्यंजन`;
-        seo_title = `${trainNo} ${meta.trainName} पेंट्री मेनू व कैटरिंग`.slice(0, 60);
-        meta_description = `${trainNo} ${meta.trainName} में ऑन-बोर्ड पेंट्री भोजन, आईआरसीटीसी कैटरिंग मेनू, ई-कैटरिंग डिलीवरी और रास्ते के मशहूर स्टेशन व्यंजनों की पूरी जानकारी।`.slice(0, 155);
+        seo_title = truncateToWordBoundary(`${trainNo} ${meta.trainName} पेंट्री मेनू व कैटरिंग`, 60);
+        meta_description = truncateToWordBoundary(`${trainNo} ${meta.trainName} में ऑन-बोर्ड पेंट्री भोजन, आईआरसीटीसी कैटरिंग मेनू, ई-कैटरिंग डिलीवरी और रास्ते के मशहूर स्टेशन व्यंजनों की पूरी जानकारी।`, 155);
         summary = `ट्रेन **${trainNo} ${meta.trainName}** में सफर के दौरान खान-पान का अनुभव कैसा रहता है? जानिए ऑन-बोर्ड पेंट्री कार की सुविधाएं, आईआरसीटीसी मील ऑप्शंस और रास्ते में पड़ने वाले जंक्शन स्टेशनों के प्रसिद्ध पारंपरिक व्यंजनों की पूरी लिस्ट।\n\nयात्री अपनी सीट पर गर्म और स्वच्छ भोजन ऑनलाइन ई-कैटरिंग के जरिए कैसे मंगवा सकते हैं, इसकी पूरी प्रक्रिया भी इस गाइड में समझाई गई है।`;
       } else if (isCancellationFocus) {
         title = `${trainNo} ${meta.trainName}: टिकट कैंसिलेशन नियम, क्लर्केज चार्ज व रिफंड कैलकुलेटर`;
-        seo_title = `${trainNo} ${meta.trainName} कैंसिलेशन व रिफंड गाइड`.slice(0, 60);
-        meta_description = `${trainNo} ${meta.trainName} टिकट कैंसिलेशन चार्ज, 48h/12h/4h स्लैब, RAC/WL रिफंड, 100% स्वतः रिफंड और टीडीआर ऑनलाइन नियम।`.slice(0, 155);
+        seo_title = truncateToWordBoundary(`${trainNo} ${meta.trainName} कैंसिलेशन व रिफंड गाइड`, 60);
+        meta_description = truncateToWordBoundary(`${trainNo} ${meta.trainName} टिकट कैंसिलेशन चार्ज, 48h/12h/4h स्लैब, RAC/WL रिफंड, 100% स्वतः रिफंड और टीडीआर ऑनलाइन नियम।`, 155);
         summary = `यदि आप **${trainNo} ${meta.trainName}** (${sourceDisplay} से ${destDisplay}) में अपनी यात्रा रद्द करने का विचार कर रहे हैं, तो आईआरसीटीसी (IRCTC) और भारतीय रेल के आधिकारिक कैंसिलेशन नियमों को जानना अनिवार्य है।\n\nयह गाइड प्रस्थान से पूर्व विभिन्न समय सीमाओं (48 घंटे, 12 घंटे, 4 घंटे) में कटने वाले क्लर्केज शुल्क, आरएसी व वेटलिस्ट टिकटों पर मिलने वाले रिफंड, ट्रेन रद्द होने पर 100% स्वतः रिफंड और टीडीआर फाइलिंग की पूरी प्रक्रिया समझाती है।`;
       } else if (isFlightVsTrainFocus) {
         title = `${trainNo} ${meta.trainName} बनाम फ्लाइट: समय, किराया, सामान व सुविधा तुलना`;
-        seo_title = `${trainNo} ${meta.trainName} बनाम फ्लाइट तुलना`.slice(0, 60);
-        meta_description = `${trainNo} ${meta.trainName} और हवाई जहाज (Flight) में कौन सा बेहतर है? कुल समय, 15 किलो बैगेज सीमा बनाम 40 किलो, स्लीपर आराम और किराये की तुलना।`.slice(0, 155);
-        summary = `${sourceDisplay} से ${destDisplay} कॉरिडोर पर सफर करने वाले यात्रियों के सामने अक्सर सवाल होता है कि फ्लाइट चुनें या प्रतिष्ठित ट्रेन **${trainNo} ${meta.trainName}**?\n\nयह तुलनात्मक रिपोर्ट एयरपोर्ट आने-जाने का कुल डोर-टू-डोर समय, 15 किलो बैगेज सीमा बनाम ट्रेन में 40-50 किलो मुफ्त सामान, संकरी इकोनॉमी सीट बनाम 6-फुट फ्लैट स्लीपर बर्थ और किराये की स्थिरता का वस्तुनिष्ठ विश्लेषण करती है।`;
+        seo_title = truncateToWordBoundary(`${trainNo} ${meta.trainName} बनाम फ्लाइट तुलना`, 60);
+        meta_description = truncateToWordBoundary(`${trainNo} ${meta.trainName} और हवाई जहाज (Flight) में कौन सा बेहतर है? कुल समय, 15 किलो बैगेज सीमा बनाम 40 किलो, स्लीपर आराम और किराये की तुलना।`, 155);
+        summary = `${sourceDisplay} से ${destDisplay} कॉरिडोर पर सफर करने वाले यात्रियों के सामने अक्सर सवाल होता है कि फ्लाइट चुनें या ट्रेन **${trainNo} ${meta.trainName}**?\n\nयह तुलनात्मक रिपोर्ट एयरपोर्ट आने-जाने का कुल डोर-टू-डोर समय, 15 किलो बैगेज सीमा बनाम ट्रेन में 40-50 किलो मुफ्त सामान, संकरी इकोनॉमी सीट बनाम 6-फुट फ्लैट स्लीपर बर्थ और किराये की स्थिरता का वस्तुनिष्ठ विश्लेषण करती है।`;
       } else {
         // Complete 360° Comprehensive Mega-Guide (Multi-topic / All topics)
-        title = `${trainNo} ${meta.trainName}: 360° सम्पूर्ण यात्रा गाइड — इतिहास, रूट, समय सारणी, कोच और जरूरी टिप्स`;
-        seo_title = `${trainNo} ${meta.trainName} सम्पूर्ण गाइड व समय सारणी`.slice(0, 60);
-        meta_description = `${trainNo} ${meta.trainName} (${sourceDisplay} से ${destDisplay}) की अद्यतन समय सारणी, सटीक कोच श्रेणियां, किराया, खान-पान, इतिहास और कन्फर्म टिकट टिप्स।`.slice(0, 155);
-        summary = `भारतीय रेलवे नेटवर्क की अत्यंत प्रतिष्ठित और लोकप्रिय ट्रेन **${trainNo} ${meta.trainName}** (${sourceDisplay} से ${destDisplay}) दो प्रमुख महानगरों को आपस में सुरक्षित, समयबद्ध और आरामदायक तरीके से जोड़ती है।\n\nयह विस्तृत 360° मास्टर गाइड ट्रेन ${trainNo} का संपूर्ण इतिहास, आधिकारिक समय सारणी, सटीक कोच संरचना (${profile.categoryLabelHi}), टिकट किराया, डायनामिक प्राइसिंग, पेंट्री मेनू, प्रमुख दर्शनीय स्थल और वेटलिस्ट होने पर Trayago Split Journey से कन्फर्म सीट पाने की पूरी जानकारी प्रदान करती है।`;
+        if (hasDetailedTimetable) {
+          title = `${trainNo} ${meta.trainName}: 360° सम्पूर्ण यात्रा गाइड — रूट, समय सारणी, कोच और जरूरी टिप्स`;
+          seo_title = truncateToWordBoundary(`${trainNo} ${meta.trainName} सम्पूर्ण गाइड व समय सारणी`, 60);
+          meta_description = truncateToWordBoundary(`${trainNo} ${meta.trainName} (${sourceDisplay} से ${destDisplay}) की अद्यतन समय सारणी, कोच श्रेणियां, किराया, खान-पान और कन्फर्म टिकट टिप्स।`, 155);
+          summary = `${sourceDisplay} और ${destDisplay} के मध्य संचालित **${trainNo} ${meta.trainName}** इस रेलमार्ग पर यात्रियों के लिए एक नियमित सेवा है।\n\nयह विस्तृत 360° मास्टर गाइड ट्रेन ${trainNo} का रूट विवरण, आधिकारिक समय सारणी, कोच संरचना (${profile.categoryLabelHi}), टिकट किराया, सामान्य नियम और वेटलिस्ट होने पर Trayago Split Journey से कन्फर्म सीट पाने की पूरी जानकारी प्रदान करती है।`;
+        } else {
+          title = `${trainNo} ${meta.trainName}: 360° सम्पूर्ण यात्रा गाइड — रूट विवरण, कोच व यात्री एडवाइजरी`;
+          seo_title = truncateToWordBoundary(`${trainNo} ${meta.trainName} सम्पूर्ण गाइड व रूट विवरण`, 60);
+          meta_description = truncateToWordBoundary(`${trainNo} ${meta.trainName} (${sourceDisplay} से ${destDisplay}) का रूट विवरण, कोच श्रेणियां, किराया और जरूरी यात्री एडवाइजरी।`, 155);
+          summary = `${sourceDisplay} और ${destDisplay} के मध्य संचालित **${trainNo} ${meta.trainName}** इस रेलमार्ग पर यात्रियों के लिए एक नियमित सेवा है।\n\nयह विस्तृत 360° मास्टर गाइड ट्रेन ${trainNo} का रूट विवरण, टर्मिनल समय, कोच संरचना (${profile.categoryLabelHi}), टिकट किराया, सामान्य नियम और वेटलिस्ट होने पर Trayago Split Journey से कन्फर्म सीट पाने की पूरी जानकारी प्रदान करती है।`;
+        }
       }
 
       // Assemble Content Sections based on selected topics
@@ -834,7 +950,7 @@ export class NewsTrainGuideService {
       sections.push(`
 ## 🚆 ${trainNo} ${meta.trainName} का परिचय एवं मुख्य विशेषताएं
 
-भारतीय रेलवे द्वारा संचालित **${trainNo} ${meta.trainName}** (${sourceDisplay} से ${destDisplay}) इस महत्वपूर्ण रेल कॉरिडोर पर यात्रा करने वाले यात्रियों के लिए एक भरोसेमंद और प्रतिष्ठित सेवा है।
+भारतीय रेलवे द्वारा संचालित **${trainNo} ${meta.trainName}** (${sourceDisplay} से ${destDisplay}) इस रेलमार्ग पर यात्रियों के लिए एक नियमित सेवा प्रदान करती है।
 
 - **ट्रेन श्रेणी:** ${profile.categoryLabelHi}
 - **प्रारंभिक स्टेशन:** ${sourceDisplay} (\`${sourceCode}\`)
@@ -860,12 +976,6 @@ ${headlinesMarkdown ? `### 📡 हालिया प्रमुख समा�
         `.trim());
       }
 
-      if (customKeywords && customKeywords.trim()) {
-        sections.push(`
-> **विशेष विश्लेषण विषय:** यह लेख विशेष रूप से आपके चयनित कीवर्ड्स (**${customKeywords.trim()}**) को केंद्र में रखकर तैयार किया गया है।
-        `.trim());
-      }
-
       // Section 2: History (if selected)
       if (activeTopics.includes('history')) {
         sections.push(`
@@ -880,7 +990,8 @@ ${profile.factsHi.map(f => `   - ${f}`).join('\n')}
 
       // Section 3: Timetable & Schedule (if selected)
       if (activeTopics.includes('timetable')) {
-        sections.push(`
+        if (hasDetailedTimetable) {
+          sections.push(`
 ## 🕒 आधिकारिक रूट, समय सारणी और प्रमुख स्टेशन ठहराव
 
 ट्रेन ${trainNo} के प्रमुख स्टेशनों का समय, आगमन, प्रस्थान और वाणिज्यिक ठहराव विवरण निम्नलिखित है:
@@ -890,7 +1001,20 @@ ${profile.factsHi.map(f => `   - ${f}`).join('\n')}
 ${tableRows}
 
 > **यात्री सूचना:** स्टेशन रवाना होने से पहले ट्रेन का वास्तविक लाइव रनिंग स्टेटस और प्लेटफार्म नंबर की पुष्टि [Train ${trainNo} Live Status](/live/${trainNo}) पर अवश्य कर लें।
-        `.trim());
+          `.trim());
+        } else {
+          sections.push(`
+## 🕒 रूट अवलोकन एवं टर्मिनल स्टेशन विवरण
+
+ट्रेन ${trainNo} के टर्मिनल स्टेशनों का विवरण नीचे दिया गया है। मध्यवर्ती ठहराव और समय रेलवे परिचालनिक परिपत्रों के अनुसार अद्यतन किए जा रहे हैं:
+
+| # | स्टेशन का नाम | कोड | आगमन | प्रस्थान | ठहराव | दिन | दूरी | प्लेटफार्म |
+|:---|:---|:---|:---|:---|:---|:---|:---|:---|
+${tableRows}
+
+> **सूचना:** मध्यवर्ती स्टेशनों की संपूर्ण समय सारणी का सत्यापन आधिकारिक रेलवे स्रोतों से किया जा रहा है। स्टेशन रवाना होने से पहले [Train ${trainNo} Live Status](/live/${trainNo}) पर वास्तविक लाइव स्थिति अवश्य जांच लें।
+          `.trim());
+        }
       }
 
       // Section 4: Tourism & Sights Along Route (if selected)
@@ -1122,36 +1246,51 @@ ${foodsContent}
     let summary = '';
 
     if (isHistoryFocus) {
-      title = `${trainNo} ${meta.trainName}: Complete History, Inauguration, Rake & Fascinating Facts`;
-      seo_title = `${trainNo} ${meta.trainName} History, Rake & Facts Guide`.slice(0, 60);
-      meta_description = `Discover the complete history, inaugural run, push-pull locomotive engineering, and fascinating facts of Train ${trainNo} ${meta.trainName} (${sourceDisplay} to ${destDisplay}).`.slice(0, 155);
-      summary = `Train ${trainNo} ${meta.trainName} (${sourceDisplay} to ${destDisplay}) is not merely a high-speed passenger conduit; it stands as one of Indian Railways' crowning achievements in operational engineering and modern intercity connectivity.\n\nThis definitive historical chronicle explores the train's inaugural genesis, its groundbreaking push-pull WAP-7 locomotive deployment through the steep gradients of Thull Ghat, its upgrade to Tejas Smart Sleeper LHB coaches, and little-known railfan trivia that defines its prestigious legacy.`;
+      if (trainNo === '22221' || trainNo === '22222') {
+        title = `${trainNo} ${meta.trainName}: Complete History, Inauguration, Rake & Push-Pull Engineering`;
+        seo_title = truncateToWordBoundary(`${trainNo} ${meta.trainName} History, Rake & Facts Guide`, 60);
+        meta_description = truncateToWordBoundary(`Discover the history, inaugural run, push-pull locomotive engineering, and facts of Train ${trainNo} ${meta.trainName} (${sourceDisplay} to ${destDisplay}).`, 155);
+        summary = `Train ${trainNo} ${meta.trainName} (${sourceDisplay} to ${destDisplay}) is Central Railway's premier Rajdhani Express connecting Mumbai and Delhi.\n\nThis historical guide outlines the train's inaugural run in January 2019, its twin push-pull WAP-7 locomotive deployment through Thull Ghat, its upgrade to Tejas Smart Sleeper LHB coaches, and key operational milestones.`;
+      } else {
+        title = `${trainNo} ${meta.trainName}: Operational Background, Rake Details & Route Facts`;
+        seo_title = truncateToWordBoundary(`${trainNo} ${meta.trainName} Rake, Route & Facts Guide`, 60);
+        meta_description = truncateToWordBoundary(`Operational background, rake details, locomotive traction, and route milestones for Train ${trainNo} ${meta.trainName} (${sourceDisplay} to ${destDisplay}).`, 155);
+        summary = `Train ${trainNo} ${meta.trainName} operates on the ${sourceDisplay} to ${destDisplay} route under Indian Railways.\n\nThis guide covers the train's operational characteristics, coach composition (${profile.categoryLabelEn}), standard motive power, and key transit milestones.`;
+      }
     } else if (isTimetableFocus) {
-      title = `${trainNo} ${meta.trainName}: Verified Timetable, Station Halts, Route Map & Schedule`;
-      seo_title = `${trainNo} ${meta.trainName} Timetable & Station Halts`.slice(0, 60);
-      meta_description = `Official running timetable, arrival and departure timings, station halts, platforms, and route schedule for ${trainNo} ${meta.trainName} (${sourceDisplay} to ${destDisplay}).`.slice(0, 155);
-      summary = `Train ${trainNo} ${meta.trainName} connects ${sourceDisplay} and ${destDisplay}, providing essential, disciplined, and punctual rail transit for business commuters and long-distance travelers.\n\nThis verified station guide outlines exact scheduled arrival and departure timings, stoppage durations, distance markers, and platform numbers across all commercial halts.`;
+      if (hasDetailedTimetable) {
+        title = `${trainNo} ${meta.trainName}: Verified Timetable, Station Halts, Route Map & Schedule`;
+        seo_title = truncateToWordBoundary(`${trainNo} ${meta.trainName} Timetable & Station Halts`, 60);
+        meta_description = truncateToWordBoundary(`Official running timetable, arrival and departure timings, station halts, platforms, and route schedule for ${trainNo} ${meta.trainName} (${sourceDisplay} to ${destDisplay}).`, 155);
+        summary = `Train ${trainNo} ${meta.trainName} connects ${sourceDisplay} and ${destDisplay}, providing essential rail transit across intermediate stations.\n\nThis station guide outlines scheduled arrival and departure timings, stoppage durations, distance markers, and platform numbers across commercial halts.`;
+      } else {
+        title = `${trainNo} ${meta.trainName}: Route Overview, Terminals & Travel Advisory`;
+        seo_title = truncateToWordBoundary(`${trainNo} ${meta.trainName} Route Overview & Advisory`, 60);
+        meta_description = truncateToWordBoundary(`Route overview, terminal stations, operational schedule, and travel advisory for ${trainNo} ${meta.trainName} (${sourceDisplay} to ${destDisplay}).`, 155);
+        summary = `Train ${trainNo} ${meta.trainName} connects ${sourceDisplay} and ${destDisplay}.\n\nThis route overview provides terminal departure and destination details along with travel planning guidance while detailed intermediate stop times are being updated.`;
+      }
     } else if (isFoodFocus) {
       title = `${trainNo} ${meta.trainName}: Onboard Pantry Menu, Catering & Famous Station Delicacies`;
-      seo_title = `${trainNo} ${meta.trainName} Pantry Menu & Catering`.slice(0, 60);
-      meta_description = `Complete onboard pantry meal menu, catering charges, IRCTC e-catering options, and authentic regional station delicacies along ${trainNo} ${meta.trainName}.`.slice(0, 155);
+      seo_title = truncateToWordBoundary(`${trainNo} ${meta.trainName} Pantry Menu & Catering`, 60);
+      meta_description = truncateToWordBoundary(`Complete onboard pantry meal menu, catering charges, IRCTC e-catering options, and authentic regional station delicacies along ${trainNo} ${meta.trainName}.`, 155);
       summary = `Wondering what food is served aboard Train ${trainNo} ${meta.trainName}? This dedicated culinary guide covers onboard pantry service, multi-course dining options, IRCTC e-catering delivery right to your berth, and iconic station delicacies.\n\nFrom traditional local specialties at intermediate stops to hygienic boxed meals, discover how to enjoy the best food during your journey.`;
     } else if (isCancellationFocus) {
       title = `${trainNo} ${meta.trainName}: Ticket Cancellation Charges, Refund Rules & Slabs`;
-      seo_title = `${trainNo} ${meta.trainName} Cancellation & Refund Guide`.slice(0, 60);
-      meta_description = `Official IRCTC cancellation charges, refund deduction slabs (48h, 12h, 4h), RAC/WL clerkage, 100% automatic refund, and TDR filing for ${trainNo} ${meta.trainName}.`.slice(0, 155);
+      seo_title = truncateToWordBoundary(`${trainNo} ${meta.trainName} Cancellation & Refund Guide`, 60);
+      meta_description = truncateToWordBoundary(`Official IRCTC cancellation charges, refund deduction slabs (48h, 12h, 4h), RAC/WL clerkage, 100% automatic refund, and TDR filing for ${trainNo} ${meta.trainName}.`, 155);
       summary = `Planning to cancel your reservation on Train **${trainNo} ${meta.trainName}** (${sourceDisplay} to ${destDisplay})? Understanding Indian Railways and IRCTC cancellation policies can save you from unnecessary financial deductions.\n\nThis definitive guide outlines exact time-based deduction slabs (before 48h, 48-12h, 12-4h, post-charting), RAC/WL clerkage fees, automatic 100% refunds when railways cancel trains, and online TDR filing criteria.`;
     } else if (isFlightVsTrainFocus) {
       title = `${trainNo} ${meta.trainName} vs Flight: Travel Time, Baggage, Comfort & Fare Comparison`;
-      seo_title = `${trainNo} ${meta.trainName} vs Flight Comparison`.slice(0, 60);
-      meta_description = `Comparing Train ${trainNo} ${meta.trainName} vs domestic flights: door-to-door transit time, 15kg baggage limits vs 40kg, sleeping comfort & last-minute fares.`.slice(0, 155);
+      seo_title = truncateToWordBoundary(`${trainNo} ${meta.trainName} vs Flight Comparison`, 60);
+      meta_description = truncateToWordBoundary(`Comparing Train ${trainNo} ${meta.trainName} vs domestic flights: door-to-door transit time, 15kg baggage limits vs 40kg, sleeping comfort & last-minute fares.`, 155);
       summary = `Traveling between ${sourceDisplay} and ${destDisplay}? Commuters frequently weigh the choice between booking a flight or reserving a berth aboard **${trainNo} ${meta.trainName}**.\n\nThis objective comparison analyzes door-to-door transit hours, strict airline 15kg baggage limits versus 40-50kg train allowances, sleeping berth comfort against cramped economy airline seats, and fare predictability.`;
     } else {
       // 360° Comprehensive Mega-Guide (Multi-topic / All topics)
-      title = `${trainNo} ${meta.trainName}: 360° Travel Guide — History, Route, Timetable, Coaches & Tips`;
-      seo_title = `${trainNo} ${meta.trainName} Route, Timetable & Travel Guide`.slice(0, 60);
-      meta_description = `Verified timetable, accurate coach composition, ticket fares, Tatkal timing, onboard pantry, history, and pro tips for ${trainNo} ${meta.trainName} (${sourceDisplay} to ${destDisplay}).`.slice(0, 155);
-      summary = `Connecting the commercial hub of ${sourceDisplay} with ${destDisplay}, **${trainNo} ${meta.trainName}** is one of Indian Railways' most prestigious passenger corridors, celebrated for speed, comfort, and disciplined punctuality.\n\nThis authoritative 360° master guide details the train's verified timetable, station halts, accurate coach classes (${profile.categoryLabelEn}), ticket fare structures, dynamic pricing rules, onboard dining, scenic route sights, and smart alternatives via Trayago Split Journey.`;
+      const guideDescriptor = hasDetailedTimetable ? 'Timetable, Coaches & Tips' : 'Route Overview, Coaches & Tips';
+      title = `${trainNo} ${meta.trainName}: 360° Travel Guide — Route, ${guideDescriptor}`;
+      seo_title = truncateToWordBoundary(`${trainNo} ${meta.trainName} Route & Travel Guide`, 60);
+      meta_description = truncateToWordBoundary(`Running schedule, accurate coach composition, ticket fares, Tatkal timing, onboard pantry, and pro tips for ${trainNo} ${meta.trainName} (${sourceDisplay} to ${destDisplay}).`, 155);
+      summary = `Operating between ${sourceDisplay} and ${destDisplay}, **${trainNo} ${meta.trainName}** provides scheduled rail connectivity on this route.\n\nThis comprehensive guide details the train's operating schedule, station halts, coach classes (${profile.categoryLabelEn}), ticket fare structures, dynamic pricing rules, onboard dining, and travel planning guidance.`;
     }
 
     // Assemble Content Sections based on selected topics
@@ -1161,7 +1300,7 @@ ${foodsContent}
     sections.push(`
 ## 🚆 Overview & Operational Profile of Train ${trainNo} ${meta.trainName}
 
-Operated under the supervision of Indian Railways, **${trainNo} ${meta.trainName}** connects ${sourceDisplay} and ${destDisplay}. It serves as a vital transit corridor for thousands of commuters seeking reliable, high-speed rail connectivity.
+Operated under the supervision of Indian Railways, **${trainNo} ${meta.trainName}** connects ${sourceDisplay} and ${destDisplay}. It serves as a vital transit corridor for commuters seeking reliable rail connectivity.
 
 - **Train Category:** ${profile.categoryLabelEn}
 - **Source Terminal:** ${sourceDisplay} (\`${sourceCode}\`)
@@ -1187,27 +1326,22 @@ ${headlinesMarkdown ? `### 📡 Recent News Headlines & Travel Advisories:\n${he
       `.trim());
     }
 
-    if (customKeywords && customKeywords.trim()) {
-      sections.push(`
-> **Target Keywords Analyzed:** This comprehensive dossier specifically explores and contextualizes your queried topics (**${customKeywords.trim()}**) for maximum search-intent relevance.
-      `.trim());
-    }
-
     // Section 2: History (if selected)
     if (activeTopics.includes('history')) {
       sections.push(`
-## 📜 Genesis, Inauguration & Locomotive Engineering Feat
+## 📜 Operational Background & Motive Power Profile
 
-1. **Inaugural Genesis & Operational Milestone:** ${profile.historyEn}
-2. **High-Power Locomotive Engineering:** ${profile.locoEn}
-3. **Fascinating Railfan Trivia & Records:**
+1. **Route Background & Milestone:** ${profile.historyEn}
+2. **Traction & Motive Power:** ${profile.locoEn}
+3. **Operational Characteristics:**
 ${profile.factsEn.map(f => `   - ${f}`).join('\n')}
       `.trim());
     }
 
     // Section 3: Timetable & Schedule (if selected)
     if (activeTopics.includes('timetable')) {
-      sections.push(`
+      if (hasDetailedTimetable) {
+        sections.push(`
 ## 🕒 Route, Verified Timetable & Station Halts Directory
 
 The official schedule, arrival, departure, stoppage durations, and platform allocations for Train ${trainNo} are detailed below:
@@ -1217,7 +1351,20 @@ The official schedule, arrival, departure, stoppage durations, and platform allo
 ${tableRows}
 
 > **Travel Advisory:** Check real-time live train running status and platform updates on [Train ${trainNo} Live Status](/live/${trainNo}) before arriving at the station.
-      `.trim());
+        `.trim());
+      } else {
+        sections.push(`
+## 🕒 Route Overview & Scheduled Terminals
+
+The terminal departure and destination details for Train ${trainNo} are listed below. Detailed intermediate stops are undergoing official railway verification:
+
+| # | Station Name | Code | Arr | Dep | Halt | Day | Distance | Platform |
+|:---|:---|:---|:---|:---|:---|:---|:---|:---|
+${tableRows}
+
+> **Travel Advisory:** Intermediate halt timings are subject to railway operational circulars. Verify real-time status on [Train ${trainNo} Live Status](/live/${trainNo}) before embarking on your journey.
+        `.trim());
+      }
     }
 
     // Section 4: Tourism & Sights Along Route (if selected)
@@ -1293,9 +1440,9 @@ Deciding whether to take a domestic flight or board Train **${trainNo} ${meta.tr
 | Evaluation Factor | 🚆 Train (${trainNo} ${meta.trainName}) | ✈️ Domestic Airplane / Flight |
 |:---|:---|:---|
 | **Door-to-Door Travel Time** | Downtown station to downtown station overnight; zero daytime productivity lost | Commute to airport (1.5h) + Security/Boarding (2h) + Flight (2h) + Baggage claim (45m) = **~6.5 to 7 Hours** |
-| **Free Baggage Allowance** | **40 kg to 50 kg free** (up to 70 kg in First AC) with zero weighing scale anxiety | Strict **15 kg check-in** limit; exorbitant excess baggage penalty of ₹500 to ₹600 per kg |
+| **Free Baggage Allowance** | **40 kg to 50 kg free** (up to 70 kg in First AC) with zero weighing scale anxiety | Strict **15 kg check-in** limit; excess baggage penalty of ₹500 to ₹600 per kg |
 | **Sleeping Comfort & Space** | Full 6-foot horizontal sleeping berth, fresh linen, blankets, and freedom to walk | Cramped 29-30 inch economy pitch; sleeping upright in a narrow seat causes physical strain |
-| **Fare Predictability** | Reasonable, transparent pricing (3A: ₹2,000–₹2,500; 2A: ₹3,000–₹3,500) | Astronomical last-minute surge pricing often skyrocketing between ₹8,000 and ₹16,000+ |
+| **Fare Predictability** | Reasonable, transparent pricing (3A: ₹2,000–₹2,500; 2A: ₹3,000–₹3,500) | Last-minute surge pricing often skyrocketing between ₹8,000 and ₹16,000+ |
 | **Weather & Fog Resilience** | Electric locomotives with FOG PASS navigation operate steadily through zero visibility | Heavy winter ground fogs frequently ground flights or cause multi-hour runway holds |
 
 > **Bottom Line:** For travelers with family, business gear, or leisure baggage who value uninterrupted horizontal sleep and budget certainty, Train ${trainNo} remains the superior, hassle-free option.
@@ -1321,11 +1468,11 @@ ${foodsContent}
     // Section 8: Travel Tips & Experience (if selected)
     if (activeTopics.includes('travel_tips')) {
       sections.push(`
-## ⚡ Travel Experience, Speed, Cleanliness & Passenger Pro-Tips
+## ⚡ Travel Experience & Passenger Guidance
 
-1. **Speed & Punctuality:** Cruising at operational speeds up to 130 km/h, this service enjoys high punctuality with priority clearance.
-2. **Onboard Cleanliness:** Maintained via On-Board Housekeeping Services (OBHS), with regular sanitization of bio-toilets and common vestibules.
-3. **Device Charging & Assistance:** Every bay features electrical charging sockets. For immediate onboard grievances or security concerns, dial the 24x7 RailMadad passenger helpline at 139.
+1. **Travel Comfort & Priority:** Running times and priority clearance vary by train category; passengers are advised to track running patterns.
+2. **Onboard Cleanliness:** Maintained via On-Board Housekeeping Services (OBHS) on scheduled express services, with regular sanitization of bio-toilets.
+3. **Device Charging & Assistance:** Standard charging sockets are available across berths. For immediate onboard grievances or security concerns, dial the 24x7 RailMadad passenger helpline at 139.
       `.trim());
     }
 
@@ -1350,17 +1497,26 @@ When berths on Train ${trainNo} are completely booked and waitlists are high, pa
     `.trim());
 
     const passenger_advice = isHistoryFocus
-      ? `To fully experience the heritage of Train ${trainNo}, look out for scenic mountain viaducts through the Western Ghats (Thull Ghat) and observe the Push-Pull locomotive setup at origin and terminus.`
+      ? (trainNo === '22221' || trainNo === '22222'
+        ? `To fully experience the heritage of Train ${trainNo}, look out for scenic mountain viaducts through the Western Ghats (Thull Ghat) and observe the Push-Pull locomotive setup at origin and terminus.`
+        : `Check scheduled departure times and verify platform assignments on live railway tracking tools prior to arrival.`)
       : isCancellationFocus
       ? `Pay close attention to the 4-hour chart preparation cutoff; once the chart is finalized, zero refund is granted on confirmed tickets.`
       : `Reserve berths early during holiday rush periods. If direct tickets are waitlisted, check Trayago Split Journey for guaranteed connecting seats.`;
 
-    const key_takeaways = isHistoryFocus ? [
-      `Train ${trainNo} ${meta.trainName} is Central Railway's premier Rajdhani Express, inaugurated on 19 January 2019.`,
-      `Powered by twin Push-Pull WAP-7 electric locomotives to conquer the steep 1:37 Thull Ghat without banker engines.`,
-      `Upgraded to modern Tejas Smart Sleeper LHB coaches in October 2021 with automatic doors.`,
-      `100% all-air-conditioned passenger accommodation with zero Sleeper or General coaches.`
-    ] : isCancellationFocus ? [
+    const key_takeaways = isHistoryFocus ? (
+      (trainNo === '22221' || trainNo === '22222') ? [
+        `Train ${trainNo} ${meta.trainName} is Central Railway's premier Rajdhani Express, inaugurated on 19 January 2019.`,
+        `Powered by twin Push-Pull WAP-7 electric locomotives to conquer the steep 1:37 Thull Ghat without banker engines.`,
+        `Upgraded to modern Tejas Smart Sleeper LHB coaches in October 2021 with automatic doors.`,
+        `100% all-air-conditioned passenger accommodation with zero Sleeper or General coaches.`
+      ] : [
+        `Train ${trainNo} ${meta.trainName} operates between ${sourceDisplay} and ${destDisplay}.`,
+        `Motive power and traction: ${profile.locoEn}.`,
+        `Passenger accommodation: ${profile.isAllAc ? '100% All-AC' : 'AC, Sleeper, and General coaches'}.`,
+        `Operated in accordance with Indian Railways scheduled timetables.`
+      ]
+    ) : isCancellationFocus ? [
       `Cancellations >48 hours prior incur only a flat clerkage fee (₹60 to ₹240 depending on class).`,
       `Cancellations between 48h and 12h incur a 25% penalty; 12h to 4h incur a 50% penalty.`,
       `Post-charting cancellations (<4h) on confirmed tickets receive zero (0%) refund.`,
@@ -1372,24 +1528,45 @@ When berths on Train ${trainNo} are completely booked and waitlists are high, pa
       `Passengers facing high waitlists can use Trayago Split Journey to find confirmed connecting options.`
     ];
 
-    const faqs = isHistoryFocus ? [
-      {
-        question: `When was Train ${trainNo} ${meta.trainName} inaugurated?`,
-        answer: `Train 22221 CSMT - Hazrat Nizamuddin Rajdhani Express was officially flagged off on 19 January 2019 by Central Railway.`
-      },
-      {
-        question: `Does Train ${trainNo} have Sleeper or General coaches?`,
-        answer: `No. Train 22221 is an all-AC premier Rajdhani service with First AC (1A), 2-Tier AC (2A), and 3-Tier AC (3A) coaches only. It does not carry Sleeper or General coaches.`
-      },
-      {
-        question: `Why does Train ${trainNo} use Push-Pull locomotives?`,
-        answer: `Push-Pull twin WAP-7 locomotives (front and rear) allow the train to climb the steep 1:37 gradient of Thull Ghat (Kasara to Igatpuri) without attaching banker locomotives, saving 40 minutes of operational time.`
-      },
-      {
-        question: `When was Train ${trainNo} upgraded to Tejas Smart coaches?`,
-        answer: `In October 2021, the train was upgraded to Tejas Smart Sleeper LHB coaches featuring automatic plug doors and sensor-activated bio-vacuum toilets.`
-      }
-    ] : [
+    const faqs = isHistoryFocus ? (
+      (trainNo === '22221' || trainNo === '22222') ? [
+        {
+          question: `When was Train ${trainNo} ${meta.trainName} inaugurated?`,
+          answer: `Train 22221 CSMT - Hazrat Nizamuddin Rajdhani Express was officially flagged off on 19 January 2019 by Central Railway.`
+        },
+        {
+          question: `Does Train ${trainNo} have Sleeper or General coaches?`,
+          answer: `No. Train 22221 is an all-AC premier Rajdhani service with First AC (1A), 2-Tier AC (2A), and 3-Tier AC (3A) coaches only. It does not carry Sleeper or General coaches.`
+        },
+        {
+          question: `Why does Train ${trainNo} use Push-Pull locomotives?`,
+          answer: `Push-Pull twin WAP-7 locomotives (front and rear) allow the train to climb the steep 1:37 gradient of Thull Ghat (Kasara to Igatpuri) without attaching banker locomotives, saving 40 minutes of operational time.`
+        },
+        {
+          question: `When was Train ${trainNo} upgraded to Tejas Smart coaches?`,
+          answer: `In October 2021, the train was upgraded to Tejas Smart Sleeper LHB coaches featuring automatic plug doors and sensor-activated bio-vacuum toilets.`
+        }
+      ] : [
+        {
+          question: `What is the operational route of Train ${trainNo}?`,
+          answer: `Train ${trainNo} ${meta.trainName} operates between ${sourceDisplay} and ${destDisplay}.`
+        },
+        {
+          question: `What locomotive powers Train ${trainNo}?`,
+          answer: profile.locoEn
+        },
+        {
+          question: `Does Train ${trainNo} carry Sleeper or General coaches?`,
+          answer: profile.hasSleeper
+            ? `Yes, this train includes reserved non-AC Sleeper Class (SL) coaches.`
+            : `No. Train ${trainNo} is an all-air-conditioned service without Sleeper (SL) coaches.`
+        },
+        {
+          question: `How can I track the real-time status of Train ${trainNo}?`,
+          answer: `Passengers can check live running status, delays, and platform numbers on Trayago Live Train Status.`
+        }
+      ]
+    ) : [
       {
         question: `What are the source and destination terminals for Train ${trainNo}?`,
         answer: `Train ${trainNo} ${meta.trainName} departs from ${sourceDisplay} and completes its journey at ${destDisplay}.`
@@ -1557,6 +1734,11 @@ STRUCTURE AND CONTENT REQUIREMENTS:
 7. SEO Title: Max 60 characters, keyword rich.
 8. Meta Description: Max 155 characters.
 
+CRITICAL FACTUAL AND SAFETY RESTRAINTS:
+- Do NOT output prompt meta-commentary, prompt debugging notes, or headings/phrases like "Target Keywords Analyzed" or "विशेष विश्लेषण विषय" anywhere in the content or summary.
+- Do NOT fabricate or speculate on specific locomotive classes (such as WAP-7 or EMD) or inaugural dates unless officially verified.
+- If intermediate stop data has fewer than 3 stops, describe the timetable as a Route Overview with terminal stations, NOT a verified timetable.
+
 Return ONLY a valid JSON object matching this exact schema:
 {
   "title": "Headline string",
@@ -1613,6 +1795,7 @@ Return ONLY a valid JSON object matching this exact schema:
         generated.content,
         [rawTrainNo]
       );
+      const sanitizedContent = cleanPromptLeaks(linkedContent);
 
       // 6. Format Final Payload
       const now = new Date().toISOString();
@@ -1622,10 +1805,10 @@ Return ONLY a valid JSON object matching this exact schema:
         id: crypto.randomUUID(),
         title: generated.title.trim(),
         slug: canonicalSlug,
-        seo_title: (generated.seo_title || generated.title).slice(0, 60).trim(),
-        meta_description: (generated.meta_description || generated.summary).slice(0, 155).trim(),
+        seo_title: truncateToWordBoundary(generated.seo_title || generated.title, 60),
+        meta_description: truncateToWordBoundary(generated.meta_description || generated.summary, 155),
         summary: generated.summary.trim(),
-        content: linkedContent,
+        content: sanitizedContent,
         passenger_advice: generated.passenger_advice?.trim() || null,
         key_takeaways: Array.isArray(generated.key_takeaways) ? generated.key_takeaways : [],
         faq: Array.isArray(generated.faqs) ? generated.faqs : [],
@@ -1633,7 +1816,7 @@ Return ONLY a valid JSON object matching this exact schema:
         status,
         published_at: now,
         updated_at: now,
-        source_name: 'Indian Railways / Trayago Rail Ops',
+        source_name: 'Indian Railways Timetable & Public Schedules',
         source_url: `https://www.trayago.in/live/${rawTrainNo}`,
         image_url: coverImage,
         affected_trains: [rawTrainNo],
