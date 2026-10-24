@@ -5,7 +5,7 @@
  * and banned transit image prevention across Trayago news ingestion, generation, curation, and rendering.
  */
 
-export const SAFE_RAILWAY_COVER_FALLBACK = 'https://www.trayago.in/branding/og-image.png';
+export const SAFE_RAILWAY_COVER_FALLBACK = 'https://www.trayago.in/og-image.png';
 
 export const BANNED_IMAGE_PATTERNS: RegExp[] = [
   /photo-1544620347/i, // Unsplash bus image incorrectly mapped to train articles
@@ -22,14 +22,44 @@ export function isBannedImageUrl(url?: string | null): boolean {
 }
 
 /**
- * Resolves a safe image URL, substituting the branded railway fallback if the URL is missing or banned.
+ * Checks whether an image URL is a valid, secure HTTP/HTTPS URL.
+ */
+export function isValidImageUrl(url?: string | null): boolean {
+  if (!url || typeof url !== 'string') return false;
+  const clean = url.trim();
+  if (!clean.startsWith('http://') && !clean.startsWith('https://')) return false;
+  if (isBannedImageUrl(clean)) return false;
+  try {
+    const parsed = new URL(clean);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Checks whether an image URL is a generic branding fallback or app icon.
+ */
+export function isFallbackImageUrl(url?: string | null): boolean {
+  if (!url || typeof url !== 'string') return true;
+  const clean = url.trim().toLowerCase();
+  return (
+    clean.includes('branding/og-image.png') ||
+    clean.includes('og-image.png') ||
+    clean.includes('og-image.jpg')
+  );
+}
+
+/**
+ * Resolves a safe image URL, substituting the verified 1200x630 branded railway fallback
+ * if the URL is missing, banned, or an unsuitable square app icon.
  */
 export function resolveSafeRailwayImage(url?: string | null): string {
   if (!url || typeof url !== 'string' || !url.trim().startsWith('http')) {
     return SAFE_RAILWAY_COVER_FALLBACK;
   }
   const clean = url.trim();
-  if (isBannedImageUrl(clean)) {
+  if (isBannedImageUrl(clean) || clean.includes('branding/og-image.png')) {
     return SAFE_RAILWAY_COVER_FALLBACK;
   }
   return clean;

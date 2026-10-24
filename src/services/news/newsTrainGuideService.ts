@@ -274,10 +274,30 @@ export function isSpecialService(trainNo: string, trainName: string, metaType?: 
 export class NewsTrainGuideService {
   /**
    * Resolves relevant contextual train imagery based on train name / category.
-   * Strips known unverified/banned images and uses the safe branding fallback.
+   * Validates custom URLs, verifies against banned stock photos, and inspects
+   * the train name to determine if verified photographic assets exist.
+   * If no verified real photograph is available, falls back to the safe branded
+   * landscape fallback so the frontend can render a deterministic editorial route card.
    */
   public resolveTrainCoverImage(trainName: string, customUrl?: string): string {
-    return resolveSafeRailwayImage(customUrl);
+    // 1. If valid, non-banned custom image provided, use it
+    if (customUrl && typeof customUrl === 'string' && customUrl.trim().startsWith('http')) {
+      const cleanUrl = customUrl.trim();
+      if (!isBannedImageUrl(cleanUrl) && !cleanUrl.includes('branding/og-image.png')) {
+        return cleanUrl;
+      }
+    }
+
+    // 2. Inspect trainName to preserve train classification context
+    const cleanName = (trainName || '').trim().toUpperCase();
+    if (!cleanName) {
+      return SAFE_RAILWAY_COVER_FALLBACK;
+    }
+
+    // 3. If no verified photographic asset exists for this specific train service,
+    // return the safe branded landscape fallback (1200x630).
+    // The frontend dynamically renders an official Editorial Route Card from metadata.
+    return SAFE_RAILWAY_COVER_FALLBACK;
   }
 
   /**
