@@ -18,6 +18,7 @@ import { learningObservabilityService } from '../services/learningObservabilityS
 import { ledgerAggregationService } from '../services/ledger/ledgerAggregationService';
 import { renewalNotificationJob } from '../jobs/renewalNotificationJob';
 import { renewalNotificationService } from '../services/renewalNotificationService';
+import { mobileVerificationAnalyticsService } from '../services/mobileVerificationAnalyticsService';
 
 export function normalizeRouteStation(stn: string): string {
   if (!stn) return '';
@@ -676,6 +677,16 @@ export class AdminController {
     } catch (err: any) {
       winstonLogger.error(`[ADMIN_LEARNING_INTELLIGENCE] Error: ${err.message}`);
       res.status(500).json({ success: false, error: 'Failed to compute learning intelligence observatory report' });
+    }
+  }
+
+  async getMobileVerificationAnalytics(req: Request, res: Response) {
+    try {
+      const data = await mobileVerificationAnalyticsService.getAnalytics();
+      res.json({ success: true, data });
+    } catch (err: any) {
+      winstonLogger.error(`[ADMIN_MOBILE_VERIFICATION_ANALYTICS] Error: ${err.message}`);
+      res.status(500).json({ success: false, error: 'Failed to compute mobile verification analytics' });
     }
   }
 

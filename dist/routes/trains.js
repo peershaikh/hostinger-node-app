@@ -4,17 +4,18 @@ const express_1 = require("express");
 const trainController_1 = require("../controllers/trainController");
 const rateLimiter_1 = require("../middleware/rateLimiter");
 const usageMiddleware_1 = require("../middleware/usageMiddleware");
+const searchVerificationGate_1 = require("../middleware/searchVerificationGate");
 const router = (0, express_1.Router)();
 // @route   GET/POST /api/trains/search
 // @desc    Search for direct trains using the database
-router.get('/search', rateLimiter_1.searchLimiter, (0, usageMiddleware_1.usageMiddleware)('search'), trainController_1.trainController.search);
-router.post('/search', rateLimiter_1.searchLimiter, (0, usageMiddleware_1.usageMiddleware)('search'), trainController_1.trainController.search);
+router.get('/search', rateLimiter_1.searchLimiter, searchVerificationGate_1.searchVerificationGateMiddleware, (0, usageMiddleware_1.usageMiddleware)('search'), trainController_1.trainController.search);
+router.post('/search', rateLimiter_1.searchLimiter, searchVerificationGate_1.searchVerificationGateMiddleware, (0, usageMiddleware_1.usageMiddleware)('search'), trainController_1.trainController.search);
 // @route   GET/POST /api/trains/searchAdvanced or /api/trains/search-advanced
 // @desc    Advanced search for direct and split journeys using Supabase
-router.get('/searchAdvanced', rateLimiter_1.advancedSearchLimiter, (0, usageMiddleware_1.usageMiddleware)('search'), trainController_1.trainController.searchAdvanced);
-router.post('/searchAdvanced', rateLimiter_1.advancedSearchLimiter, (0, usageMiddleware_1.usageMiddleware)('search'), trainController_1.trainController.searchAdvanced);
-router.get('/search-advanced', rateLimiter_1.advancedSearchLimiter, (0, usageMiddleware_1.usageMiddleware)('search'), trainController_1.trainController.searchAdvanced);
-router.post('/search-advanced', rateLimiter_1.advancedSearchLimiter, (0, usageMiddleware_1.usageMiddleware)('search'), trainController_1.trainController.searchAdvanced);
+router.get('/searchAdvanced', rateLimiter_1.advancedSearchLimiter, searchVerificationGate_1.searchVerificationGateMiddleware, (0, usageMiddleware_1.usageMiddleware)('search'), trainController_1.trainController.searchAdvanced);
+router.post('/searchAdvanced', rateLimiter_1.advancedSearchLimiter, searchVerificationGate_1.searchVerificationGateMiddleware, (0, usageMiddleware_1.usageMiddleware)('search'), trainController_1.trainController.searchAdvanced);
+router.get('/search-advanced', rateLimiter_1.advancedSearchLimiter, searchVerificationGate_1.searchVerificationGateMiddleware, (0, usageMiddleware_1.usageMiddleware)('search'), trainController_1.trainController.searchAdvanced);
+router.post('/search-advanced', rateLimiter_1.advancedSearchLimiter, searchVerificationGate_1.searchVerificationGateMiddleware, (0, usageMiddleware_1.usageMiddleware)('search'), trainController_1.trainController.searchAdvanced);
 // @route   GET /api/trains/live/:trainNo
 // @desc    Get live status for a train using RapidAPI
 router.get('/live/:trainNo', rateLimiter_1.liveLimiter, (0, usageMiddleware_1.usageMiddleware)('live'), trainController_1.trainController.getLiveStatus);

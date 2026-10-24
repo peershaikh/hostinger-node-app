@@ -67,6 +67,8 @@ class UserRepository {
             payload.mobile_number = user.mobileNumber;
         if (user.dob !== undefined)
             payload.dob = user.dob;
+        if (user.gender !== undefined)
+            payload.gender = user.gender;
         if (user.avatarUrl !== undefined)
             payload.avatar_url = user.avatarUrl;
         if (user.notifyEmail !== undefined)
@@ -159,6 +161,7 @@ class UserRepository {
             fullName: dbUser.full_name || dbUser.fullName || '',
             mobileNumber: dbUser.mobile_number || dbUser.mobileNumber || '',
             dob: dbUser.dob || dbUser.dob || '',
+            gender: dbUser.gender || undefined,
             avatarUrl: dbUser.avatar_url || dbUser.avatarUrl || '',
             notifyEmail: dbUser.notify_email ?? dbUser.notifyEmail ?? true,
             notifyBirthday: dbUser.notify_birthday ?? dbUser.notifyBirthday ?? true,
@@ -229,7 +232,8 @@ class UserRepository {
                     error.message?.includes('signup_ip') ||
                     error.message?.includes('signup_state') ||
                     error.message?.includes('avatar_url') ||
-                    error.message?.includes('mobile_number'));
+                    error.message?.includes('mobile_number') ||
+                    error.message?.includes('gender'));
                 if (isMissingColumn) {
                     logger_1.winstonLogger.warn(`[AUTH_SUPABASE] Resilient Column Warning on insert: ${error.message}. Retrying core payload.`);
                     delete payload.device_type;
@@ -238,6 +242,7 @@ class UserRepository {
                     delete payload.client_type;
                     delete payload.signup_ip;
                     delete payload.signup_state;
+                    delete payload.gender;
                     const { data: retryData, error: retryError } = await supabase_1.supabase.from('users').insert(payload).select().single();
                     if (retryError)
                         throw new DatabaseError(retryError.code, retryError.message);
@@ -274,7 +279,8 @@ class UserRepository {
                     error.message?.includes('browser') ||
                     error.message?.includes('client_type') ||
                     error.message?.includes('signup_ip') ||
-                    error.message?.includes('signup_state'));
+                    error.message?.includes('signup_state') ||
+                    error.message?.includes('gender'));
                 if (isMissingColumn) {
                     logger_1.winstonLogger.warn(`[AUTH_SUPABASE] Resilient Column Warning: Column does not exist on remote database: ${error.message}. Proceeding with local file persistence fallback.`);
                     return { id, ...updates };

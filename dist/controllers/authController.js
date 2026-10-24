@@ -51,6 +51,7 @@ const deviceDetector_1 = require("../utils/deviceDetector");
 const analyticsService_1 = require("../services/analyticsService");
 const states_1 = require("../constants/states");
 const phoneNormalizer_1 = require("../utils/phoneNormalizer");
+const verificationRolloutService_1 = require("../services/verificationRolloutService");
 // PHASE_5B142 Fix: on localhost (http) browsers require secure:false for cookies.
 // secure:true + sameSite:none is correct for production cross-domain (www → app),
 // but httpOnly cookies with secure:true are silently dropped on http:// in Safari
@@ -128,7 +129,7 @@ class AuthController {
         };
         this.signup = async (req, res) => {
             try {
-                const { email, password, referralCode, deviceId, otp, fullName, mobileNumber, dob, state } = req.body;
+                const { email, password, referralCode, deviceId, otp, fullName, mobileNumber, dob, state, gender } = req.body;
                 if (!email || !password || !otp) {
                     return res.status(400).json({ success: false, error: 'Email, password, and OTP required' });
                 }
@@ -162,6 +163,13 @@ class AuthController {
                     }
                     validatedState = (0, states_1.normalizeRegion)(state);
                 }
+                let validatedGender = undefined;
+                if (gender !== undefined && gender !== '') {
+                    if (typeof gender !== 'string' || !['M', 'F', 'T', 'm', 'f', 't'].includes(gender.trim())) {
+                        return res.status(400).json({ success: false, error: 'Gender must be M, F, or T' });
+                    }
+                    validatedGender = gender.trim().toUpperCase();
+                }
                 // Check device lock for abuse prevention
                 if (deviceId) {
                     const isLocked = authService_1.authService.checkDeviceLock(deviceId, null);
@@ -173,7 +181,7 @@ class AuthController {
                     }
                 }
                 const deviceMeta = (0, deviceDetector_1.detectDeviceAndGeo)(req);
-                const result = await authService_1.authService.signup(email, password, referralCode, deviceId, otp, fullName, validatedMobile, dob, deviceMeta, validatedState);
+                const result = await authService_1.authService.signup(email, password, referralCode, deviceId, otp, fullName, validatedMobile, dob, deviceMeta, validatedState, validatedGender);
                 // Track signup event asynchronously
                 analyticsService_1.analyticsService.trackEvent('USER_SIGNUP', null, {
                     userId: result.user.id,
@@ -567,6 +575,7 @@ class AuthController {
                         fullName: user.fullName || '',
                         mobileNumber: user.mobileNumber || '',
                         dob: user.dob || '',
+                        gender: user.gender || '',
                         state: user.signupState || '',
                         avatarUrl: user.avatarUrl || '',
                         profileCompletionPercentage: score,
@@ -588,8 +597,25 @@ class AuthController {
                             notifyEmail: user.notifyEmail !== false,
                             notifyBirthday: user.notifyBirthday !== false,
                             notifyMarketing: !!user.notifyMarketing
-                        }
+                        },
+                        verificationGate: await verificationRolloutService_1.verificationRolloutService.evaluateUserSearchAccess(userId)
                     }
+                });
+            }
+            catch (err) {
+                return res.status(400).json({ success: false, error: err.message });
+            }
+        };
+        this.getVerificationStatus = async (req, res) => {
+            try {
+                const userId = req.headers['x-user-id'];
+                if (!userId) {
+                    return res.status(401).json({ success: false, error: 'Unauthorized' });
+                }
+                const status = await verificationRolloutService_1.verificationRolloutService.evaluateUserSearchAccess(userId);
+                return res.json({
+                    success: true,
+                    data: status
                 });
             }
             catch (err) {
@@ -602,7 +628,7 @@ class AuthController {
                 if (!userId) {
                     return res.status(401).json({ success: false, error: 'Unauthorized' });
                 }
-                const { fullName, dob, preferences, mobileNumber, state } = req.body;
+                const { fullName, dob, preferences, mobileNumber, state, gender } = req.body;
                 // Validate inputs
                 if (fullName !== undefined) {
                     if (typeof fullName !== 'string' || fullName.trim().length < 2 || !/^[a-zA-Z\s]+$/.test(fullName)) {
@@ -636,7 +662,17 @@ class AuthController {
                     }
                     validatedState = (0, states_1.normalizeRegion)(state);
                 }
-                const updatedUser = await authService_1.authService.updateUserProfile(userId, { fullName, dob, preferences, mobileNumber: validatedMobile, state: validatedState });
+                let validatedGender = undefined;
+                if (gender !== undefined && gender !== '') {
+                    if (typeof gender !== 'string' || !['M', 'F', 'T', 'm', 'f', 't'].includes(gender.trim())) {
+                        return res.status(400).json({ success: false, error: 'Gender must be M, F, or T' });
+                    }
+                    validatedGender = gender.trim().toUpperCase();
+                }
+                else if (gender === '') {
+                    validatedGender = '';
+                }
+                const updatedUser = await authService_1.authService.updateUserProfile(userId, { fullName, dob, preferences, mobileNumber: validatedMobile, state: validatedState, gender: validatedGender });
                 // Calculate new completion score
                 let score = 40;
                 if (updatedUser.fullName && updatedUser.fullName.trim().length >= 2 && /^[a-zA-Z\s]+$/.test(updatedUser.fullName)) {

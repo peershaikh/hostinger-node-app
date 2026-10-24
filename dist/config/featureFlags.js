@@ -88,4 +88,12 @@ exports.featureFlags = {
     whatsappCanaryMode: process.env.WHATSAPP_CANARY_MODE === 'true',
     /** Gates dry-run mode: intercepts Meta Graph API calls and database writes */
     whatsappDryRun: process.env.WHATSAPP_DRY_RUN === 'true',
+    // ── PHASE 1.6.201 — Mobile Verification Search Access Gate ──────────────────
+    /**
+     * Master kill-switch: gates train search access for unverified users post-deadline.
+     * Default: true. Set ENABLE_SEARCH_VERIFICATION_GATE=false to immediately disable.
+     */
+    get searchVerificationGate() {
+        return process.env.ENABLE_SEARCH_VERIFICATION_GATE !== 'false';
+    },
 };

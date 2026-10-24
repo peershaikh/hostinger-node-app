@@ -26,6 +26,7 @@ router.post('/app-open', authController.appOpen);
 router.get('/profile', authController.getProfile);
 router.put('/profile', authController.updateProfile);
 router.delete('/profile', requireAuth, authController.deleteAccount);
+router.get('/verification-status', authController.getVerificationStatus);
 
 router.post('/mobile/send-otp', authLimiter as any, authController.sendMobileOtp);
 router.post('/mobile/verify-otp', authLimiter as any, authController.verifyMobileOtp);

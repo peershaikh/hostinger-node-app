@@ -18,6 +18,7 @@ import { detectDeviceAndGeo } from '../utils/deviceDetector';
 import { analyticsService } from '../services/analyticsService';
 import { isValidRegion, normalizeRegion } from '../constants/states';
 import { normalizeIndianPhoneNumber } from '../utils/phoneNormalizer';
+import { verificationRolloutService } from '../services/verificationRolloutService';
 
 // PHASE_5B142 Fix: on localhost (http) browsers require secure:false for cookies.
 // secure:true + sameSite:none is correct for production cross-domain (www → app),
@@ -111,7 +112,7 @@ export class AuthController {
 
   signup = async (req: Request, res: Response) => {
     try {
-      const { email, password, referralCode, deviceId, otp, fullName, mobileNumber, dob, state } = req.body;
+      const { email, password, referralCode, deviceId, otp, fullName, mobileNumber, dob, state, gender } = req.body;
       if (!email || !password || !otp) {
         return res.status(400).json({ success: false, error: 'Email, password, and OTP required' });
       }
@@ -150,6 +151,14 @@ export class AuthController {
         validatedState = normalizeRegion(state);
       }
 
+      let validatedGender: string | undefined = undefined;
+      if (gender !== undefined && gender !== '') {
+        if (typeof gender !== 'string' || !['M', 'F', 'T', 'm', 'f', 't'].includes(gender.trim())) {
+          return res.status(400).json({ success: false, error: 'Gender must be M, F, or T' });
+        }
+        validatedGender = gender.trim().toUpperCase();
+      }
+
       // Check device lock for abuse prevention
       if (deviceId) {
         const isLocked = authService.checkDeviceLock(deviceId, null);
@@ -163,7 +172,7 @@ export class AuthController {
 
       const deviceMeta = detectDeviceAndGeo(req);
 
-      const result = await authService.signup(email, password, referralCode, deviceId, otp, fullName, validatedMobile, dob, deviceMeta, validatedState);
+      const result = await authService.signup(email, password, referralCode, deviceId, otp, fullName, validatedMobile, dob, deviceMeta, validatedState, validatedGender);
 
       // Track signup event asynchronously
       analyticsService.trackEvent('USER_SIGNUP', null, {
@@ -591,6 +600,7 @@ export class AuthController {
           fullName: user.fullName || '',
           mobileNumber: user.mobileNumber || '',
           dob: user.dob || '',
+          gender: user.gender || '',
           state: user.signupState || '',
           avatarUrl: user.avatarUrl || '',
           profileCompletionPercentage: score,
@@ -612,8 +622,26 @@ export class AuthController {
             notifyEmail: user.notifyEmail !== false,
             notifyBirthday: user.notifyBirthday !== false,
             notifyMarketing: !!user.notifyMarketing
-          }
+          },
+          verificationGate: await verificationRolloutService.evaluateUserSearchAccess(userId)
         }
+      });
+    } catch (err: any) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+  };
+
+  getVerificationStatus = async (req: Request, res: Response) => {
+    try {
+      const userId = req.headers['x-user-id'] as string;
+      if (!userId) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      }
+
+      const status = await verificationRolloutService.evaluateUserSearchAccess(userId);
+      return res.json({
+        success: true,
+        data: status
       });
     } catch (err: any) {
       return res.status(400).json({ success: false, error: err.message });
@@ -627,7 +655,7 @@ export class AuthController {
         return res.status(401).json({ success: false, error: 'Unauthorized' });
       }
 
-      const { fullName, dob, preferences, mobileNumber, state } = req.body;
+      const { fullName, dob, preferences, mobileNumber, state, gender } = req.body;
 
       // Validate inputs
       if (fullName !== undefined) {
@@ -665,7 +693,17 @@ export class AuthController {
         validatedState = normalizeRegion(state);
       }
 
-      const updatedUser = await authService.updateUserProfile(userId, { fullName, dob, preferences, mobileNumber: validatedMobile, state: validatedState });
+      let validatedGender: string | undefined = undefined;
+      if (gender !== undefined && gender !== '') {
+        if (typeof gender !== 'string' || !['M', 'F', 'T', 'm', 'f', 't'].includes(gender.trim())) {
+          return res.status(400).json({ success: false, error: 'Gender must be M, F, or T' });
+        }
+        validatedGender = gender.trim().toUpperCase();
+      } else if (gender === '') {
+        validatedGender = '';
+      }
+
+      const updatedUser = await authService.updateUserProfile(userId, { fullName, dob, preferences, mobileNumber: validatedMobile, state: validatedState, gender: validatedGender });
 
       // Calculate new completion score
       let score = 40;

@@ -26,6 +26,7 @@ router.post('/app-open', authController_1.authController.appOpen);
 router.get('/profile', authController_1.authController.getProfile);
 router.put('/profile', authController_1.authController.updateProfile);
 router.delete('/profile', authMiddleware_1.requireAuth, authController_1.authController.deleteAccount);
+router.get('/verification-status', authController_1.authController.getVerificationStatus);
 router.post('/mobile/send-otp', rateLimiter_1.authLimiter, authController_1.authController.sendMobileOtp);
 router.post('/mobile/verify-otp', rateLimiter_1.authLimiter, authController_1.authController.verifyMobileOtp);
 router.post('/profile/avatar', rateLimiter_1.authLimiter, authController_1.authController.uploadAvatar);

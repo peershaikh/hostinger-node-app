@@ -123,6 +123,7 @@ router.post('/users/:id/terminate-sessions', adminLimiter as any, requireAdmin a
 router.post('/users/:id/adjust-credits', adminLimiter as any, requireAdmin as any, adminController.adjustUserCredits.bind(adminController));
 router.get('/signup-intelligence', adminLimiter as any, requireAdmin as any, adminController.getSignupIntelligence.bind(adminController));
 router.get('/learning-intelligence', adminLimiter as any, requireAdmin as any, adminController.getLearningIntelligence.bind(adminController));
+router.get('/mobile-verification/analytics', adminLimiter as any, requireAdmin as any, adminController.getMobileVerificationAnalytics.bind(adminController));
 
 // ─── Safe Bulk Operations Engine (Phase 053) ────────────────────────────────
 router.use('/bulk', bulkAdminRouter);

@@ -118,6 +118,7 @@ router.post('/users/:id/terminate-sessions', rateLimiter_1.adminLimiter, adminAu
 router.post('/users/:id/adjust-credits', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.adjustUserCredits.bind(adminController_1.adminController));
 router.get('/signup-intelligence', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getSignupIntelligence.bind(adminController_1.adminController));
 router.get('/learning-intelligence', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getLearningIntelligence.bind(adminController_1.adminController));
+router.get('/mobile-verification/analytics', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getMobileVerificationAnalytics.bind(adminController_1.adminController));
 // ─── Safe Bulk Operations Engine (Phase 053) ────────────────────────────────
 router.use('/bulk', bulkAdmin_1.default);
 // ─── Safe Feature Flag & Kill Switch Control Center (Phase 054) ─────────────

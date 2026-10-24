@@ -24,6 +24,7 @@ const learningObservabilityService_1 = require("../services/learningObservabilit
 const ledgerAggregationService_1 = require("../services/ledger/ledgerAggregationService");
 const renewalNotificationJob_1 = require("../jobs/renewalNotificationJob");
 const renewalNotificationService_1 = require("../services/renewalNotificationService");
+const mobileVerificationAnalyticsService_1 = require("../services/mobileVerificationAnalyticsService");
 function normalizeRouteStation(stn) {
     if (!stn)
         return '';
@@ -658,6 +659,16 @@ class AdminController {
         catch (err) {
             logger_1.winstonLogger.error(`[ADMIN_LEARNING_INTELLIGENCE] Error: ${err.message}`);
             res.status(500).json({ success: false, error: 'Failed to compute learning intelligence observatory report' });
+        }
+    }
+    async getMobileVerificationAnalytics(req, res) {
+        try {
+            const data = await mobileVerificationAnalyticsService_1.mobileVerificationAnalyticsService.getAnalytics();
+            res.json({ success: true, data });
+        }
+        catch (err) {
+            logger_1.winstonLogger.error(`[ADMIN_MOBILE_VERIFICATION_ANALYTICS] Error: ${err.message}`);
+            res.status(500).json({ success: false, error: 'Failed to compute mobile verification analytics' });
         }
     }
     async testPushNotification(req, res) {

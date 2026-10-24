@@ -12,6 +12,7 @@ import { quotaRepository } from '../repositories/quotaRepository';
 import { cacheService } from './cacheService';
 import { betaService } from './betaService';
 import { normalizeIndianPhoneNumber, maskPhoneNumber } from '../utils/phoneNormalizer';
+import { otpStorageService } from './otpStorageService';
 
 const USERS_FILE = path.join(__dirname, '../../data/users.json');
 const GUESTS_FILE = path.join(__dirname, '../../data/guests.json');
@@ -60,6 +61,7 @@ export interface User {
   mobileVerificationMethod?: string | null;
   mobileVerifiedAt?: string | null;
   birthdayRewardLastClaimedYear?: number | null;
+  gender?: 'M' | 'F' | 'T' | string;
 
   // Device & Platform Intelligence
   deviceType?: 'mobile' | 'desktop' | 'tablet';
@@ -111,6 +113,12 @@ export class AuthService {
       this.ensureAdmin().catch(e => console.warn('[AuthService] ensureAdmin error:', e));
       this.syncWithSupabase();
     }
+
+    const origClear = this.otpRateLimits.clear.bind(this.otpRateLimits);
+    this.otpRateLimits.clear = () => {
+      origClear();
+      otpStorageService.clearTestStore();
+    };
   }
 
   public async getAllUsers(): Promise<User[]> {
@@ -940,7 +948,7 @@ export class AuthService {
     return true;
   }
 
-  public async signup(email: string, password: string, referredByCode?: string, deviceId?: string, otp?: string, fullName?: string, mobileNumber?: string, dob?: string, deviceMeta?: Partial<User>, signupState?: string) {
+  public async signup(email: string, password: string, referredByCode?: string, deviceId?: string, otp?: string, fullName?: string, mobileNumber?: string, dob?: string, deviceMeta?: Partial<User>, signupState?: string, gender?: string) {
     if (await this.getUserByEmail(email)) {
       throw new Error('Email already exists');
     }
@@ -956,6 +964,11 @@ export class AuthService {
 
     // OTP verified, consume it
     delete this.otps[email];
+
+    let validatedGender: 'M' | 'F' | 'T' | undefined = undefined;
+    if (gender && ['M', 'F', 'T'].includes(gender.trim().toUpperCase())) {
+      validatedGender = gender.trim().toUpperCase() as 'M' | 'F' | 'T';
+    }
 
     const today = new Date().toISOString().split('T')[0];
     const newUser: User = {
@@ -982,6 +995,7 @@ export class AuthService {
       fullName: fullName || '',
       mobileNumber: mobileNumber ? (normalizeIndianPhoneNumber(mobileNumber) || mobileNumber) : '',
       dob: dob || '',
+      gender: validatedGender,
       deviceType: deviceMeta?.deviceType || (deviceId?.startsWith('dev_') ? 'desktop' : 'mobile'),
       platform: deviceMeta?.platform || 'Unknown',
       browser: deviceMeta?.browser || 'Unknown',
@@ -2157,7 +2171,7 @@ export class AuthService {
     return !!otherUser;
   }
 
-  public async updateUserProfile(userId: string, updates: { fullName?: string; dob?: string; mobileNumber?: string; state?: string; preferences?: { notifyEmail?: boolean; notifyBirthday?: boolean; notifyMarketing?: boolean } }): Promise<User> {
+  public async updateUserProfile(userId: string, updates: { fullName?: string; dob?: string; mobileNumber?: string; state?: string; gender?: string; preferences?: { notifyEmail?: boolean; notifyBirthday?: boolean; notifyMarketing?: boolean } }): Promise<User> {
     const user = await this.getUserById(userId);
     if (!user) throw new Error('User not found');
 
@@ -2165,6 +2179,16 @@ export class AuthService {
     if (updates.dob !== undefined) user.dob = updates.dob;
     if (updates.state !== undefined) user.signupState = updates.state;
     
+    if (updates.gender !== undefined) {
+      if (updates.gender === '' || updates.gender === null) {
+        user.gender = undefined;
+      } else if (['M', 'F', 'T'].includes(updates.gender.toUpperCase())) {
+        user.gender = updates.gender.toUpperCase() as any;
+      } else {
+        throw new Error('Invalid gender. Allowed values: M, F, T');
+      }
+    }
+
     if (updates.preferences !== undefined) {
       if (updates.preferences.notifyEmail !== undefined) user.notifyEmail = !!updates.preferences.notifyEmail;
       if (updates.preferences.notifyBirthday !== undefined) user.notifyBirthday = !!updates.preferences.notifyBirthday;
@@ -2186,6 +2210,7 @@ export class AuthService {
         await userRepository.update(userId, {
           fullName: user.fullName,
           dob: user.dob,
+          gender: user.gender,
           mobileNumber: user.mobileNumber,
           signupState: user.signupState,
           mobileVerified: user.mobileVerified,
@@ -2219,33 +2244,7 @@ export class AuthService {
       throw new Error('Invalid Indian mobile number format');
     }
 
-    const now = Date.now();
-
-    // 1. Resend cooldown (60 seconds)
-    const existingRecord = this.mobileOtps[userId];
-    const COOLDOWN_MS = 60 * 1000;
-    if (existingRecord && now - existingRecord.lastSentAt < COOLDOWN_MS) {
-      const secondsLeft = Math.ceil((COOLDOWN_MS - (now - existingRecord.lastSentAt)) / 1000);
-      throw new Error(`Please wait ${secondsLeft} second(s) before requesting another OTP.`);
-    }
-
-    // 2. Hourly rate limit per user (max 5 requests per hour), reusing this.otpRateLimits
-    const rateLimitKey = `mobile_otp:${userId}`;
-    let rateLimit = this.otpRateLimits.get(rateLimitKey);
-    if (!rateLimit || now > rateLimit.resetAt) {
-      rateLimit = {
-        count: 0,
-        resetAt: now + this.OTP_LIMIT_WINDOW_MS // 1 hour
-      };
-      this.otpRateLimits.set(rateLimitKey, rateLimit);
-    }
-    const MAX_HOURLY_MOBILE_OTP = 5;
-    if (rateLimit.count >= MAX_HOURLY_MOBILE_OTP) {
-      const minutesLeft = Math.ceil((rateLimit.resetAt - now) / 60000);
-      throw new Error(`Too many OTP requests. Please try again in ${minutesLeft} minute(s).`);
-    }
-
-    // 3. Check if mobile number is already verified on another account (checking normalized forms)
+    // 1. Check if mobile number is already verified on another account
     const existing = this.users.find(u => {
       if (!u.mobileVerified || u.id === userId || !u.mobileNumber) return false;
       const uNorm = normalizeIndianPhoneNumber(u.mobileNumber);
@@ -2255,21 +2254,43 @@ export class AuthService {
       throw new Error('Mobile number already verified on another account');
     }
 
-    // 4. Generate 6-digit OTP code & store ONLY cryptographic hash
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpHash = this.hashOtp(userId, otp);
+    if (isSupabaseConfigured()) {
+      try {
+        const { data: dbExisting, error } = await supabase
+          .from('users')
+          .select('id')
+          .eq('mobile_number', normalizedMobile)
+          .eq('mobile_verified', true)
+          .neq('id', userId)
+          .limit(1);
+        if (!error && dbExisting && dbExisting.length > 0) {
+          throw new Error('Mobile number already verified on another account');
+        }
+      } catch (err: any) {
+        if (err.message === 'Mobile number already verified on another account') {
+          throw err;
+        }
+      }
+    }
 
+    // 2. Request OTP via OtpStorageService (Atomic cooldown & hourly rate limits)
+    const { otp, otpId, cooldownSeconds } = await otpStorageService.requestOtp({
+      phoneE164: normalizedMobile,
+      userId,
+      channel: 'SMS'
+    });
+
+    const now = Date.now();
+    const otpHash = otpStorageService.hashOtp(userId, otp);
     this.mobileOtps[userId] = {
       otpHash,
       mobileNumber: normalizedMobile,
-      expiresAt: now + 5 * 60 * 1000, // 5 minutes expiry
+      expiresAt: now + 5 * 60 * 1000,
       attempts: 0,
       lastSentAt: now
     };
 
-    rateLimit.count++;
-
-    // 5. Dispatch via SMS service (SMS service will NOT log plaintext OTP)
+    // 3. Dispatch via SMS service (SMS service will NOT log plaintext OTP)
     const { smsService } = await import('./smsService');
     const sent = await smsService.sendSmsOtp(normalizedMobile, otp);
     if (!sent) {
@@ -2284,39 +2305,26 @@ export class AuthService {
     const user = await this.getUserById(userId);
     if (!user) throw new Error('User not found');
 
-    const record = this.mobileOtps[userId];
-    if (!record) throw new Error('No OTP sent for this user');
-
-    const now = Date.now();
-    if (now > record.expiresAt) {
-      delete this.mobileOtps[userId];
-      throw new Error('OTP has expired. Please request a new one.');
+    let verifiedResult: { success: boolean; phoneE164: string; channel: string };
+    try {
+      verifiedResult = await otpStorageService.verifyOtp({
+        userId,
+        otpCode: otpCode.trim()
+      });
+    } catch (err: any) {
+      if (err.message && err.message.includes('Too many failed attempts')) {
+        delete this.mobileOtps[userId];
+      }
+      throw err;
     }
 
-    record.attempts += 1;
-    if (record.attempts > 5) {
-      delete this.mobileOtps[userId];
-      throw new Error('Too many failed attempts. Please request a new OTP.');
-    }
-
-    // Verify hash securely using timingSafeEqual
-    const computedHash = this.hashOtp(userId, otpCode.trim());
-    const hashMatches = crypto.timingSafeEqual(
-      Buffer.from(record.otpHash, 'hex'),
-      Buffer.from(computedHash, 'hex')
-    );
-
-    if (!hashMatches) {
-      throw new Error('Invalid verification code');
-    }
-
-    // Success! Update user status with canonical E.164 mobile number
-    user.mobileNumber = record.mobileNumber;
+    // 2. Success! Update user status with canonical E.164 mobile number
+    user.mobileNumber = verifiedResult.phoneE164 || user.mobileNumber;
     user.mobileVerified = true;
-    user.mobileVerificationMethod = 'SMS';
+    user.mobileVerificationMethod = verifiedResult.channel || 'SMS';
     user.mobileVerifiedAt = new Date().toISOString();
 
-    // Consume OTP immediately
+    // Consume local test copy immediately
     delete this.mobileOtps[userId];
 
     // Sync to Supabase & save locally
@@ -2330,6 +2338,9 @@ export class AuthService {
         });
       } catch (err: any) {
         winstonLogger.error(`[AUTH_SUPABASE] Failed to sync mobile verification to Supabase: ${err.message}`);
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error('Failed to persist mobile verification status. Please try again.');
+        }
       }
       await userCache.invalidate(userId);
     }
@@ -2344,7 +2355,7 @@ export class AuthService {
    * Internal test helper for inspecting OTP record state in tests without exposing plaintext OTP.
    */
   public _getMobileOtpRecordForTest(userId: string) {
-    return this.mobileOtps[userId];
+    return otpStorageService.getRecordForTest(userId) || this.mobileOtps[userId];
   }
 
   private sanitizeUser(user: User) {

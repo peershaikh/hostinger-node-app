@@ -2,20 +2,21 @@ import { Router } from 'express';
 import { trainController } from '../controllers/trainController';
 import { complaintLimiter, liveLimiter, searchLimiter, advancedSearchLimiter, availabilityLimiter, sameTrainRescueLimiter } from '../middleware/rateLimiter';
 import { usageMiddleware } from '../middleware/usageMiddleware';
+import { searchVerificationGateMiddleware } from '../middleware/searchVerificationGate';
 
 const router = Router();
 
 // @route   GET/POST /api/trains/search
 // @desc    Search for direct trains using the database
-router.get('/search', searchLimiter, usageMiddleware('search'), trainController.search);
-router.post('/search', searchLimiter, usageMiddleware('search'), trainController.search);
+router.get('/search', searchLimiter, searchVerificationGateMiddleware, usageMiddleware('search'), trainController.search);
+router.post('/search', searchLimiter, searchVerificationGateMiddleware, usageMiddleware('search'), trainController.search);
 
 // @route   GET/POST /api/trains/searchAdvanced or /api/trains/search-advanced
 // @desc    Advanced search for direct and split journeys using Supabase
-router.get('/searchAdvanced', advancedSearchLimiter, usageMiddleware('search'), trainController.searchAdvanced);
-router.post('/searchAdvanced', advancedSearchLimiter, usageMiddleware('search'), trainController.searchAdvanced);
-router.get('/search-advanced', advancedSearchLimiter, usageMiddleware('search'), trainController.searchAdvanced);
-router.post('/search-advanced', advancedSearchLimiter, usageMiddleware('search'), trainController.searchAdvanced);
+router.get('/searchAdvanced', advancedSearchLimiter, searchVerificationGateMiddleware, usageMiddleware('search'), trainController.searchAdvanced);
+router.post('/searchAdvanced', advancedSearchLimiter, searchVerificationGateMiddleware, usageMiddleware('search'), trainController.searchAdvanced);
+router.get('/search-advanced', advancedSearchLimiter, searchVerificationGateMiddleware, usageMiddleware('search'), trainController.searchAdvanced);
+router.post('/search-advanced', advancedSearchLimiter, searchVerificationGateMiddleware, usageMiddleware('search'), trainController.searchAdvanced);
 
 // @route   GET /api/trains/live/:trainNo
 // @desc    Get live status for a train using RapidAPI
