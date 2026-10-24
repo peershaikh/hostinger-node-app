@@ -30,17 +30,17 @@ export const HUB_REGIONS = {
     'QLN', 'ERS', 'SRR', 'CLT', 'PGT', 'CAN',
   ],
   WEST: [
-    'SURAT', 'VADODARA', 'AHMEDABAD', 'RAJKOT', 'RATLAM', 'KOTA', 'JAIPUR', 'JALGAON',
+    'SURAT', 'VADODARA', 'AHMEDABAD', 'RAJKOT', 'RATLAM', 'KOTA', 'JAIPUR', 'JALGAON', 'BHILWARA',
     // IRCTC codes
     'ST', 'BRC', 'ADI', 'RJT', 'RTM', 'KOTA', 'JP', 'JL', 'BDTS', 'BCT', 'GNC', 'PNU',
-    'AII', 'BKN', 'JU', 'BVC', 'OKHA', 'VRL', 'UDZ',
+    'AII', 'BKN', 'JU', 'BVC', 'OKHA', 'VRL', 'UDZ', 'BHL',
   ],
   EAST: [
     'HOWRAH', 'SEALDAH', 'PATNA', 'KHARAGPUR', 'KOLKATA', 'MUGHALSARAI', 'ASANSOL',
-    'DHANBAD', 'GAYA', 'MUZAFFARPUR', 'BHAGALPUR', 'DARBHANGA',
+    'DHANBAD', 'GAYA', 'MUZAFFARPUR', 'BHAGALPUR', 'DARBHANGA', 'TATANAGAR', 'BHUBANESWAR',
     // IRCTC codes
     'HWH', 'SDAH', 'KOAA', 'PNBE', 'KGP', 'MGS', 'DDU', 'ASN', 'DHN', 'GAYA', 'MFP',
-    'BGP', 'DBG', 'SPJ', 'MLDT', 'NJP', 'SGUJ', 'RPH', 'BWN',
+    'BGP', 'DBG', 'SPJ', 'MLDT', 'NJP', 'SGUJ', 'RPH', 'BWN', 'TATA', 'BBS',
   ],
   CENTRAL: [
     'BHOPAL', 'ITARSI', 'JABALPUR', 'NAGPUR', 'BHUSAVAL', 'WARDHA',

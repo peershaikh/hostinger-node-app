@@ -1823,15 +1823,53 @@ class AdminController {
                                 .slice(0, 20);
                         }
                     }
-                    const { data: recData } = await supabase_1.supabase
-                        .from('search_history')
-                        .select('source, destination, date, results_shown, searched_at')
-                        .order('searched_at', { ascending: false })
-                        .limit(30);
-                    recentSearches = recData || [];
-                    highDemandUnserved = (recData || [])
-                        .filter(r => r.results_shown === 0)
-                        .slice(0, 10);
+                    const [recRes, unservedRes] = await Promise.all([
+                        supabase_1.supabase
+                            .from('search_history')
+                            .select('source, destination, date, results_shown, searched_at')
+                            .order('searched_at', { ascending: false })
+                            .limit(30),
+                        supabase_1.supabase
+                            .from('search_history')
+                            .select('source, destination, date, results_shown, searched_at')
+                            .eq('results_shown', 0)
+                            .order('searched_at', { ascending: false })
+                            .limit(200)
+                    ]);
+                    recentSearches = recRes.data || [];
+                    // Deduplicate unserved searches by corridor (source -> destination)
+                    if (unservedRes.data && unservedRes.data.length > 0) {
+                        const unservedMap = new Map();
+                        for (const r of unservedRes.data) {
+                            if (!r.source || !r.destination)
+                                continue;
+                            const src = normalizeRouteStation(r.source);
+                            const dst = normalizeRouteStation(r.destination);
+                            if (!src || !dst || src === dst)
+                                continue;
+                            const key = `${src}->${dst}`;
+                            const existing = unservedMap.get(key);
+                            if (existing) {
+                                existing.count++;
+                            }
+                            else {
+                                unservedMap.set(key, {
+                                    source: src,
+                                    destination: dst,
+                                    date: r.date,
+                                    results_shown: 0,
+                                    searched_at: r.searched_at,
+                                    count: 1
+                                });
+                            }
+                        }
+                        highDemandUnserved = Array.from(unservedMap.values())
+                            .sort((a, b) => b.count - a.count)
+                            .slice(0, 10);
+                    }
+                    else {
+                        highDemandUnserved = [];
+                    }
                     const { count: tCount } = await supabase_1.supabase
                         .from('search_history')
                         .select('*', { count: 'exact', head: true });

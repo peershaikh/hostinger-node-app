@@ -94,11 +94,31 @@ export class HubService {
   detectRegion(stationName: string): string | null {
     if (!stationName) return null;
 
+    const raw = stationName.toUpperCase().trim();
+    // 1. Extract bracketed station code if formatted as 'Station Name (CODE)'
+    const bracketMatch = raw.match(/\(([A-Za-z0-9]{2,5})\)/);
+    const stationCode = bracketMatch ? bracketMatch[1] : (raw.length <= 5 ? raw : null);
+
+    // 2. Strict exact canonical station code match (avoids substring collisions like HWH->HW, SURAT->SUR, GDG->GD)
+    if (stationCode) {
+      for (const [region, patterns] of Object.entries(HUB_REGIONS)) {
+        if (patterns.some((pattern) => pattern.toUpperCase().trim() === stationCode)) {
+          return region;
+        }
+      }
+    }
+
+    // 3. Exact city or multi-word station name token match (length > 4 to prevent short-code collisions)
     for (const [region, patterns] of Object.entries(HUB_REGIONS)) {
-      if (patterns.some((pattern) => stationName.includes(pattern))) {
+      if (patterns.some((pattern) => {
+        const p = pattern.toUpperCase().trim();
+        if (p.length <= 4) return false; // Skip short codes in full-text scan
+        return raw === p || raw.startsWith(p + ' ') || raw.endsWith(' ' + p) || raw.includes(' ' + p + ' ');
+      })) {
         return region;
       }
     }
+
     return null;
   }
 

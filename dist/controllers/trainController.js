@@ -399,7 +399,8 @@ class TrainController {
                 setImmediate(() => {
                     try {
                         const { learningService } = require('../services/learningService');
-                        learningService.logSearch(source.toUpperCase(), destination.toUpperCase(), date, deviceId || 'anonymous', userId || null, allTrains.length, Date.now() - searchStart).catch((saveError) => {
+                        const totalResultsShown = allTrains.length + (includeSplit ? finalSplits.length : 0);
+                        learningService.logSearch(source.toUpperCase(), destination.toUpperCase(), date, deviceId || 'anonymous', userId || null, totalResultsShown, Date.now() - searchStart).catch((saveError) => {
                             logger_1.winstonLogger.error(`[SEARCH_LEARNING] Failed to log search for route: ${source} → ${destination}: ${saveError.message}`);
                         });
                         learningService.trackApiUsage('search').catch(() => { });

@@ -425,13 +425,14 @@ export class TrainController {
       setImmediate(() => {
         try {
           const { learningService } = require('../services/learningService');
+          const totalResultsShown = allTrains.length + (includeSplit ? finalSplits.length : 0);
           learningService.logSearch(
             source.toUpperCase(),
             destination.toUpperCase(),
             date,
             deviceId || 'anonymous',
             userId || null,
-            allTrains.length,
+            totalResultsShown,
             Date.now() - searchStart
           ).catch((saveError: any) => {
             winstonLogger.error(`[SEARCH_LEARNING] Failed to log search for route: ${source} → ${destination}: ${saveError.message}`);
