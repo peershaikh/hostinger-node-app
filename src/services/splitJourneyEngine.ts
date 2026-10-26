@@ -17,7 +17,7 @@ import { providerConfigService } from './providerConfigService';
 import transferDistancesData from '../data/transferDistances.json';
 import { normalizeTrainNumber } from '../utils/availabilityCacheKeys';
 import type { RunningDaysEntry } from './trainStationResolver';
-import { PAN_INDIA_CLUSTERS, TERMINAL_ALIASES } from './stationAliases';
+import { PAN_INDIA_CLUSTERS, TERMINAL_ALIASES, IRCTC_CANONICAL } from './stationAliases';
 
 // ——— Extended Leg with source/destination codes ——————————————————————————————
 interface RichLeg extends Leg {
@@ -961,7 +961,7 @@ const DETERMINISTIC_CORRIDORS: Record<string, string[]> = {
   "mumbai-lucknow": ["CNB", "VGLJ", "BPL", "ET", "BSL", "JHS", "BINA", "ORAI", "ST", "KOTA"],
   "mumbai-delhi": ["ST", "BRC", "RTM", "KOTA", "MTJ", "BSL", "ET", "BPL", "VGLJ", "GWL", "AGC", "ADI", "AII", "JP", "RE"],
   "mumbai-jaipur": ["SWM", "KOTA", "BRC", "RTM", "ST", "AII", "ABR", "ADI"],
-  "mumbai-kolkata": ["NGP", "ET", "BSP", "JBP", "ROU", "DDU", "TATA", "GAYA", "BSL", "ASN", "KGP", "PCOI"],
+  "mumbai-kolkata": ["NGP", "ET", "BSP", "R", "JBP", "ROU", "DDU", "TATA", "GAYA", "BSL", "ASN", "KGP", "PCOI"],
   "mumbai-secunderabad": ["PUNE", "DD", "KWV", "SUR", "KLBG", "WADI", "VKB"],
   "secunderabad-mumbai": ["VKB", "WADI", "KLBG", "SUR", "KWV", "DD", "PUNE"],
   "mumbai-hyderabad":    ["PUNE", "DD", "KWV", "SUR", "KLBG", "WADI", "VKB"],
@@ -6553,6 +6553,9 @@ export class SplitJourneyEngine {
     * Here we only reject clearly invalid train numbers and explicitly cancelled trains.
     */
   private async searchLeg(from: string, to: string, date: string, forceDbFallback = false) {
+    const cleanFrom = IRCTC_CANONICAL[(from || '').toUpperCase().trim()] || (from || '').toUpperCase().trim();
+    const cleanTo = IRCTC_CANONICAL[(to || '').toUpperCase().trim()] || (to || '').toUpperCase().trim();
+    if (!cleanFrom || !cleanTo || cleanFrom === cleanTo) return [];
     // Lightweight pre-filter: only dummy numbers and cancelled status
     const isBasicallyValid = (t: any) => {
       const num = String(t.train_number || t.trainNo || t.train_no || t.trainNumber || t.number || '').trim();
@@ -6576,7 +6579,7 @@ export class SplitJourneyEngine {
       return true;
     };
 
-    const cacheKey = `${from}-${to}-${date}`;
+    const cacheKey = `${cleanFrom}-${cleanTo}-${date}`;
     const cached = this.legSearchCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < 180000) { // 3 min cache
       winstonLogger.debug(`[SPLIT_SEARCH_CACHE_HIT] ${cacheKey}`);
@@ -6598,7 +6601,7 @@ export class SplitJourneyEngine {
       try {
         const apiResult = await Promise.race([
           fetchWithPriority<any[]>({
-            irctc: () => irctcService.search(from, to, date),
+            irctc: () => irctcService.search(cleanFrom, cleanTo, date),
             // rapidAPI disabled
 
           }),

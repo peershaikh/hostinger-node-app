@@ -824,17 +824,17 @@ const DETERMINISTIC_CORRIDORS = {
     "mumbai-lucknow": ["CNB", "VGLJ", "BPL", "ET", "BSL", "JHS", "BINA", "ORAI", "ST", "KOTA"],
     "mumbai-delhi": ["ST", "BRC", "RTM", "KOTA", "MTJ", "BSL", "ET", "BPL", "VGLJ", "GWL", "AGC", "ADI", "AII", "JP", "RE"],
     "mumbai-jaipur": ["SWM", "KOTA", "BRC", "RTM", "ST", "AII", "ABR", "ADI"],
-    "mumbai-kolkata": ["NGP", "ET", "BSP", "JBP", "ROU", "DDU", "TATA", "GAYA", "BSL", "ASN", "KGP", "PCOI"],
-    "mumbai-secunderabad": ["WADI", "SUR", "PUNE", "KLBG", "VKB", "DD", "GR", "KWV", "LNL", "RC"],
-    "secunderabad-mumbai": ["WADI", "SUR", "PUNE", "KLBG", "VKB", "DD", "GR", "KWV", "LNL", "RC"],
-    "mumbai-hyderabad": ["WADI", "SUR", "PUNE", "KLBG", "VKB", "DD", "GR", "KWV", "LNL", "RC"],
-    "hyderabad-mumbai": ["WADI", "SUR", "PUNE", "KLBG", "VKB", "DD", "GR", "KWV", "LNL", "RC"],
-    "mumbai-sc": ["WADI", "SUR", "PUNE", "KLBG", "VKB", "DD", "GR", "KWV", "LNL", "RC"],
-    "sc-mumbai": ["WADI", "SUR", "PUNE", "KLBG", "VKB", "DD", "GR", "KWV", "LNL", "RC"],
-    "mumbai-hyb": ["WADI", "SUR", "PUNE", "KLBG", "VKB", "DD", "GR", "KWV", "LNL", "RC"],
-    "hyb-mumbai": ["WADI", "SUR", "PUNE", "KLBG", "VKB", "DD", "GR", "KWV", "LNL", "RC"],
-    "mumbai-kcg": ["WADI", "SUR", "PUNE", "KLBG", "VKB", "DD", "GR", "KWV", "LNL", "RC"],
-    "kcg-mumbai": ["WADI", "SUR", "PUNE", "KLBG", "VKB", "DD", "GR", "KWV", "LNL", "RC"],
+    "mumbai-kolkata": ["NGP", "ET", "BSP", "R", "JBP", "ROU", "DDU", "TATA", "GAYA", "BSL", "ASN", "KGP", "PCOI"],
+    "mumbai-secunderabad": ["PUNE", "DD", "KWV", "SUR", "KLBG", "WADI", "VKB"],
+    "secunderabad-mumbai": ["VKB", "WADI", "KLBG", "SUR", "KWV", "DD", "PUNE"],
+    "mumbai-hyderabad": ["PUNE", "DD", "KWV", "SUR", "KLBG", "WADI", "VKB"],
+    "hyderabad-mumbai": ["VKB", "WADI", "KLBG", "SUR", "KWV", "DD", "PUNE"],
+    "mumbai-sc": ["PUNE", "DD", "KWV", "SUR", "KLBG", "WADI", "VKB"],
+    "sc-mumbai": ["VKB", "WADI", "KLBG", "SUR", "KWV", "DD", "PUNE"],
+    "mumbai-hyb": ["PUNE", "DD", "KWV", "SUR", "KLBG", "WADI", "VKB"],
+    "hyb-mumbai": ["VKB", "WADI", "KLBG", "SUR", "KWV", "DD", "PUNE"],
+    "mumbai-kcg": ["PUNE", "DD", "KWV", "SUR", "KLBG", "WADI", "VKB"],
+    "kcg-mumbai": ["VKB", "WADI", "KLBG", "SUR", "KWV", "DD", "PUNE"],
     "mumbai-vijayawada": ["SUR", "SC", "NGP"],
     "vijayawada-mumbai": ["SC", "SUR", "NGP"],
     "mumbai-bza": ["SUR", "SC", "NGP"],
@@ -1112,7 +1112,7 @@ const DETERMINISTIC_CORRIDORS = {
     "chennai-delhi": ["BZA", "WL", "KZJ", "BPQ", "NGP", "ET", "BPL", "VGLJ", "GWL", "AGC", "MTJ", "SC"],
     "chennai-kolkata": ["BZA", "RJY", "VSKP", "VZM", "BAM", "KUR", "BBS", "CTC", "BHC", "BLS", "KGP", "GDR"],
     "chennai-hyderabad": ["GDR", "RU", "BZA"],
-    "chennai-secunderabad": ["GDR", "RU", "BZA", "SC"],
+    "chennai-secunderabad": ["GDR", "RU", "BZA"],
     "secunderabad-chennai": ["BZA", "RU", "GDR"],
     "chennai-patna": ["BZA", "KGP", "HWH", "PNBE"],
     "chennai-lucknow": ["BZA", "NGP", "ET", "CNB", "LKO"],
@@ -1322,20 +1322,20 @@ const DETERMINISTIC_CORRIDORS = {
     "smvb-dnr": ["DDU", "JBP", "ET", "NGP", "STA", "PCOI", "BZA", "SC", "BPQ", "GTL", "WADI", "GAYA"],
     "dnr-smvb": ["DDU", "JBP", "ET", "NGP", "STA", "PCOI", "BZA", "SC", "BPQ", "GTL", "WADI", "GAYA"],
     // —— Bengaluru – Secunderabad / Hyderabad ——
-    "bengaluru-secunderabad": ["GTL", "DMM", "DHNE", "KRNT", "MBNR", "RC", "WADI", "VKB", "ATP", "YG", "TDU", "HUP"],
-    "secunderabad-bengaluru": ["GTL", "DMM", "DHNE", "KRNT", "MBNR", "RC", "WADI", "VKB", "ATP", "YG", "TDU", "HUP"],
-    "bengaluru-hyderabad": ["GTL", "DMM", "DHNE", "KRNT", "MBNR", "RC", "WADI", "VKB", "ATP", "YG", "TDU", "HUP"],
-    "hyderabad-bengaluru": ["GTL", "DMM", "DHNE", "KRNT", "MBNR", "RC", "WADI", "VKB", "ATP", "YG", "TDU", "HUP"],
-    "bangalore-secunderabad": ["GTL", "DMM", "DHNE", "KRNT", "MBNR", "RC", "WADI", "VKB", "ATP", "YG", "TDU", "HUP"],
-    "secunderabad-bangalore": ["GTL", "DMM", "DHNE", "KRNT", "MBNR", "RC", "WADI", "VKB", "ATP", "YG", "TDU", "HUP"],
-    "bangalore-hyderabad": ["GTL", "DMM", "DHNE", "KRNT", "MBNR", "RC", "WADI", "VKB", "ATP", "YG", "TDU", "HUP"],
-    "hyderabad-bangalore": ["GTL", "DMM", "DHNE", "KRNT", "MBNR", "RC", "WADI", "VKB", "ATP", "YG", "TDU", "HUP"],
-    "bengaluru-sc": ["GTL", "DMM", "DHNE", "KRNT", "MBNR", "RC", "WADI", "VKB", "ATP", "YG", "TDU", "HUP"],
-    "sc-bengaluru": ["GTL", "DMM", "DHNE", "KRNT", "MBNR", "RC", "WADI", "VKB", "ATP", "YG", "TDU", "HUP"],
-    "bengaluru-kcg": ["GTL", "DMM", "DHNE", "KRNT", "MBNR", "RC", "WADI", "VKB", "ATP", "YG", "TDU", "HUP"],
-    "kcg-bengaluru": ["GTL", "DMM", "DHNE", "KRNT", "MBNR", "RC", "WADI", "VKB", "ATP", "YG", "TDU", "HUP"],
-    "bengaluru-hyb": ["GTL", "DMM", "DHNE", "KRNT", "MBNR", "RC", "WADI", "VKB", "ATP", "YG", "TDU", "HUP"],
-    "hyb-bengaluru": ["GTL", "DMM", "DHNE", "KRNT", "MBNR", "RC", "WADI", "VKB", "ATP", "YG", "TDU", "HUP"],
+    "bengaluru-secunderabad": ["DMM", "ATP", "GTL", "DHNE", "KRNT", "MBNR", "RC", "WADI"],
+    "secunderabad-bengaluru": ["MBNR", "KRNT", "DHNE", "GTL", "ATP", "DMM", "WADI", "RC"],
+    "bengaluru-hyderabad": ["DMM", "ATP", "GTL", "DHNE", "KRNT", "MBNR", "RC", "WADI"],
+    "hyderabad-bengaluru": ["MBNR", "KRNT", "DHNE", "GTL", "ATP", "DMM", "WADI", "RC"],
+    "bangalore-secunderabad": ["DMM", "ATP", "GTL", "DHNE", "KRNT", "MBNR", "RC", "WADI"],
+    "secunderabad-bangalore": ["MBNR", "KRNT", "DHNE", "GTL", "ATP", "DMM", "WADI", "RC"],
+    "bangalore-hyderabad": ["DMM", "ATP", "GTL", "DHNE", "KRNT", "MBNR", "RC", "WADI"],
+    "hyderabad-bangalore": ["MBNR", "KRNT", "DHNE", "GTL", "ATP", "DMM", "WADI", "RC"],
+    "bengaluru-sc": ["DMM", "ATP", "GTL", "DHNE", "KRNT", "MBNR", "RC", "WADI"],
+    "sc-bengaluru": ["MBNR", "KRNT", "DHNE", "GTL", "ATP", "DMM", "WADI", "RC"],
+    "bengaluru-kcg": ["DMM", "ATP", "GTL", "DHNE", "KRNT", "MBNR", "RC", "WADI"],
+    "kcg-bengaluru": ["MBNR", "KRNT", "DHNE", "GTL", "ATP", "DMM", "WADI", "RC"],
+    "bengaluru-hyb": ["DMM", "ATP", "GTL", "DHNE", "KRNT", "MBNR", "RC", "WADI"],
+    "hyb-bengaluru": ["MBNR", "KRNT", "DHNE", "GTL", "ATP", "DMM", "WADI", "RC"],
     "bengaluru-varanasi": ["PRYJ", "STA", "KTE", "JBP", "ET", "NGP", "BPQ", "WL", "BZA", "SC", "WADI", "GTL"],
     "varanasi-bengaluru": ["PRYJ", "STA", "KTE", "JBP", "ET", "NGP", "BPQ", "WL", "BZA", "SC", "WADI", "GTL"],
     "bangalore-varanasi": ["PRYJ", "STA", "KTE", "JBP", "ET", "NGP", "BPQ", "WL", "BZA", "SC", "WADI", "GTL"],
@@ -1549,8 +1549,8 @@ const DETERMINISTIC_CORRIDORS = {
     "hyderabad-chennai": ["BZA", "RU", "GDR"],
     "hyderabad-guwahati": ["BZA", "KGP", "HWH", "NJP"],
     "guwahati-hyderabad": ["NJP", "HWH", "KGP", "BZA"],
-    "hyderabad-varanasi": ["NGP", "ET", "JBP", "DDU"],
-    "varanasi-hyderabad": ["DDU", "JBP", "ET", "NGP"],
+    "hyderabad-varanasi": ["NGP", "ET", "JBP", "STA", "PRYJ"],
+    "varanasi-hyderabad": ["PRYJ", "STA", "JBP", "ET", "NGP"],
     "hyderabad-pune": ["WADI", "SUR", "DD"],
     "pune-hyderabad": ["DD", "SUR", "WADI"],
     "hyderabad-bhubaneswar": ["BZA", "VSKP"],
@@ -1560,13 +1560,18 @@ const DETERMINISTIC_CORRIDORS = {
     // —— Lucknow corridors ——
     "lucknow-mumbai": ["CNB", "VGLJ", "BPL", "ET", "BSL", "JHS", "BINA", "ORAI", "ST", "KOTA"],
     "lucknow-kolkata": ["PRYJ", "DDU", "GAYA", "ASN"],
-    "lucknow-chennai": ["CNB", "PRYJ", "BSB", "HWH", "BZA", "MAS"],
+    "lucknow-chennai": ["CNB", "VGLJ", "BPL", "ET", "NGP", "BZA"],
     "lucknow-hyderabad": ["CNB", "ET", "NGP"],
-    "lucknow-patna": ["PRYJ", "DDU", "GAYA"],
+    "lucknow-patna": ["PRYJ", "DDU", "BXR", "ARA"],
     "patna-lucknow": ["DDU", "BSB", "PRYJ", "CNB"],
-    "lucknow-guwahati": ["PNBE", "KGP", "NJP", "GHY"],
-    "lucknow-ahmedabad": ["JHS", "KOTA", "RTM"],
+    "lucknow-guwahati": ["CPR", "BJU", "PNBE", "KIR", "NJP"],
+    "guwahati-lucknow": ["NJP", "KIR", "PNBE", "BJU", "CPR"],
+    "lucknow-ahmedabad": ["CNB", "VGLJ", "BPL", "KOTA", "RTM"],
     "lucknow-jaipur": ["CNB", "AGC"],
+    "lucknow-varanasi": ["PRYJ", "AYC", "SLN", "DDU"],
+    "varanasi-lucknow": ["DDU", "SLN", "AYC", "PRYJ"],
+    "lucknow-pune": ["CNB", "VGLJ", "BPL", "ET", "BSL", "MMR"],
+    "pune-lucknow": ["MMR", "BSL", "ET", "BPL", "VGLJ", "CNB"],
     // —— Jaipur corridors ——
     "jaipur-mumbai": ["SWM", "KOTA", "BRC", "RTM", "ST", "AII", "ABR", "ADI"],
     "jaipur-chennai": ["KOTA", "BPL", "NGP", "SC"],
@@ -1603,8 +1608,12 @@ const DETERMINISTIC_CORRIDORS = {
     "pune-patna": ["MMR", "BSL", "ET", "JBP", "DDU"],
     // —— Varanasi corridors ——
     "varanasi-mumbai": ["DDU", "PRYJ", "PCOI", "JBP", "STA", "ET", "BSL", "KTE", "MKP", "CNB"],
-    "varanasi-chennai": ["DDU", "HWH", "BZA", "MAS"],
+    "varanasi-chennai": ["DDU", "PRYJ", "JBP", "ET", "NGP", "BZA"],
     "varanasi-kolkata": ["DDU", "GAYA", "PNBE", "ASN", "BWN"],
+    "varanasi-pune": ["DDU", "PRYJ", "JBP", "ET", "BSL", "MMR"],
+    "pune-varanasi": ["MMR", "BSL", "ET", "JBP", "PRYJ", "DDU"],
+    "varanasi-guwahati": ["DDU", "CPR", "BJU", "PNBE", "KIR", "NJP"],
+    "guwahati-varanasi": ["NJP", "KIR", "PNBE", "BJU", "CPR", "DDU"],
     // —— East/NE corridors ——
     "bhubaneswar-mumbai": ["KGP", "TATA", "NGP", "ET", "BSL"],
     "bhubaneswar-delhi": ["KGP", "DHN", "MGS", "CNB"],
@@ -2339,8 +2348,7 @@ class SplitJourneyEngine {
             }
             logger_1.winstonLogger.info(`[HUB_CAP] filtered: ${filteredRegular.length}→capped: ${hubCappedRegular.length}`);
             const topRegular = hubCappedRegular.slice(0, 6);
-            const top2SameTrain = filteredSameTrain.slice(0, 2);
-            const combinedSplits = [...topRegular, ...top2SameTrain];
+            const combinedSplits = topRegular;
             // ── PHASE_4C970: Apply premium gate (output transform only, no algo changes)
             const isPremiumUser = !!options?.isPremiumUser;
             const classType = options?.classType || 'SL';
@@ -2386,7 +2394,7 @@ class SplitJourneyEngine {
             result.split = fullySanitizedSplits;
             result.splits = fullySanitizedSplits;
             result.smart_routes = fullySanitizedSplits;
-            result.hasMoreSplits = regularSplits.length > 6 || sameTrainSplits.length > 2;
+            result.hasMoreSplits = regularSplits.length > 6;
             result.totalFound = totalFound;
             // PHASE_084K — Diagnostic structure for split monitoring and missing route telemetry.
             // topRejectionReason must reflect the actual inner rejection reason — never
@@ -2653,15 +2661,6 @@ class SplitJourneyEngine {
         let message = '';
         const engineStart = Date.now();
         logger_1.winstonLogger.info(`[SPLIT_ENGINE] Running hub search (direct=${directTrains.length}, recommended=${shouldRecommendSplit})`);
-        const segmentClass = options?.classType || '3A';
-        const segmentQuota = options?.quota || 'GN';
-        const { segmentAvailabilityEngine } = await Promise.resolve().then(() => __importStar(require('./segmentAvailabilityEngine')));
-        const segmentSplitsPromise = segmentAvailabilityEngine
-            .findSegmentSplits(source.toUpperCase(), destination.toUpperCase(), date, directTrains, segmentClass, segmentQuota)
-            .catch((e) => {
-            logger_1.winstonLogger.warn(`[SPLIT_ENGINE] Failed to resolve same-train segment splits: ${e.message}`);
-            return [];
-        });
         splitJourneys = await this.findSplitJourneys(sName, dName, sCodes, dCodes, date, directTrains);
         // PHASE_084K — harvest the per-stage rejection stats attached by findSplitJourneys
         const innerRejectionStats = splitJourneys._rejectionStats || {};
@@ -2855,11 +2854,8 @@ class SplitJourneyEngine {
                 safeSplits.push(...recoveredSplits);
             }
         }
-        // —— SAME-TRAIN SEGMENT RESCUES (started in parallel with hub search — PHASE_4C880) ——
-        const sameTrainSplits = await segmentSplitsPromise;
-        logger_1.winstonLogger.info(`[SPLIT_ENGINE] Same-train segment splits found: ${sameTrainSplits.length}`);
-        // Merge same-train splits with regular splits
-        const mergedSplits = [...sameTrainSplits, ...safeSplits];
+        // Split engine evaluates exclusively multi-train connection candidates
+        const mergedSplits = safeSplits;
         // —— PHASE_5B109 COMMON PHYSICAL TRUST GATE ————————————————————————————
         // Single choke point for EVERY producer (hub search + same-train segment
         // scan + fallbacks). Candidates are validated against the physical schedule
@@ -5875,6 +5871,10 @@ class SplitJourneyEngine {
      * Here we only reject clearly invalid train numbers and explicitly cancelled trains.
      */
     async searchLeg(from, to, date, forceDbFallback = false) {
+        const cleanFrom = stationAliases_1.IRCTC_CANONICAL[(from || '').toUpperCase().trim()] || (from || '').toUpperCase().trim();
+        const cleanTo = stationAliases_1.IRCTC_CANONICAL[(to || '').toUpperCase().trim()] || (to || '').toUpperCase().trim();
+        if (!cleanFrom || !cleanTo || cleanFrom === cleanTo)
+            return [];
         // Lightweight pre-filter: only dummy numbers and cancelled status
         const isBasicallyValid = (t) => {
             const num = String(t.train_number || t.trainNo || t.train_no || t.trainNumber || t.number || '').trim();
@@ -5896,7 +5896,7 @@ class SplitJourneyEngine {
             }
             return true;
         };
-        const cacheKey = `${from}-${to}-${date}`;
+        const cacheKey = `${cleanFrom}-${cleanTo}-${date}`;
         const cached = this.legSearchCache.get(cacheKey);
         if (cached && Date.now() - cached.timestamp < 180000) { // 3 min cache
             logger_1.winstonLogger.debug(`[SPLIT_SEARCH_CACHE_HIT] ${cacheKey}`);
@@ -5917,7 +5917,7 @@ class SplitJourneyEngine {
             try {
                 const apiResult = await Promise.race([
                     (0, apiPriority_1.fetchWithPriority)({
-                        irctc: () => irctcService_1.irctcService.search(from, to, date),
+                        irctc: () => irctcService_1.irctcService.search(cleanFrom, cleanTo, date),
                         // rapidAPI disabled
                     }),
                     new Promise((resolve) => {

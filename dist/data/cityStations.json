@@ -94,9 +94,7 @@
   "VARANASI": [
     "BSB",
     "BSBS",
-    "DDU",
-    "MUV",
-    "MGS"
+    "DDU"
   ],
   "PATNA": [
     "PNBE",
@@ -212,8 +210,7 @@
   ],
   "AYODHYA": [
     "AY",
-    "AYC",
-    "FD"
+    "AYC"
   ],
   "AGRA": [
     "AGC",
@@ -228,8 +225,7 @@
     "SFG",
     "PCOI",
     "NYN",
-    "PRRB",
-    "ALD"
+    "PRRB"
   ],
   "MIRZAPUR": [
     "MZP"
@@ -510,7 +506,6 @@
   ],
   "FAIZABAD": [
     "AYC",
-    "FD",
     "AY"
   ],
   "JAMMU": [
@@ -606,15 +601,12 @@
     "SFG",
     "PCOI",
     "NYN",
-    "PRRB",
-    "ALD"
+    "PRRB"
   ],
   "BANARAS": [
     "BSBS",
     "BSB",
-    "DDU",
-    "MUV",
-    "MGS"
+    "DDU"
   ],
   "ERNAKULAM": [
     "ERS",

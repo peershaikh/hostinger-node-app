@@ -62,9 +62,12 @@ function recordIrctcTelemetry(eventType, startMs, success, httpStatus = null, is
         logger_1.winstonLogger.warn(`[TELEMETRY_RECORD_FAIL] IRCTC: ${err?.message}`);
     }
 }
-// PHASE_4C862 — codes passed here are already resolved by trainStationResolver in availabilityProvider.
+// Canonicalize station codes so modern operational codes are always sent to IRCTC / RailKit
 function sanitizeStationCode(code) {
-    return (code || '').toUpperCase().trim();
+    if (!code)
+        return '';
+    const raw = (code || '').toUpperCase().trim();
+    return stationAliases_1.IRCTC_CANONICAL[raw] || raw;
 }
 // Module-level handle — populated by the async init on first use.
 let irctc = null;
@@ -551,7 +554,8 @@ class IrctcService {
         await this.ensureInit();
         if (!this.isReady() || !stationCode)
             return null;
-        const normCode = stationCode.toUpperCase().trim();
+        const rawCode = (stationCode || '').toUpperCase().trim();
+        const normCode = stationAliases_1.IRCTC_CANONICAL[rawCode] || rawCode;
         let formattedDate = undefined;
         if (date && date.includes('-')) {
             const parts = date.trim().split('-');
@@ -563,7 +567,7 @@ class IrctcService {
             }
         }
         if (!(0, stationAliases_1.isValidStationCode)(normCode)) {
-            logger_1.winstonLogger.warn(`[IRCTC_TIMETABLE_REJECT] Invalid station code rejected before API call: '${normCode}'`);
+            logger_1.winstonLogger.warn(`[IRCTC_TIMETABLE_REJECT] Invalid station code rejected before API call: '${normCode}' (raw='${rawCode}')`);
             return null;
         }
         const cacheKey = `stn_sched_${normCode}_${formattedDate || 'all'}`;
@@ -605,9 +609,10 @@ class IrctcService {
         await this.ensureInit();
         if (!this.isReady() || !stationCode)
             return null;
-        const normCode = stationCode.toUpperCase().trim();
+        const rawCode = (stationCode || '').toUpperCase().trim();
+        const normCode = stationAliases_1.IRCTC_CANONICAL[rawCode] || rawCode;
         if (!(0, stationAliases_1.isValidStationCode)(normCode)) {
-            logger_1.winstonLogger.warn(`[IRCTC_LIVE_STN_REJECT] Invalid station code rejected before API call: '${normCode}'`);
+            logger_1.winstonLogger.warn(`[IRCTC_LIVE_STN_REJECT] Invalid station code rejected before API call: '${normCode}' (raw='${rawCode}')`);
             return null;
         }
         const cacheKey = `stn_live_${normCode}_${hours}h`;
@@ -647,10 +652,16 @@ class IrctcService {
         await this.ensureInit();
         if (!this.isReady() || !from || !to || !date)
             return [];
-        const fromCode = (from || '').toUpperCase().trim();
-        const toCode = (to || '').toUpperCase().trim();
+        const fromRaw = (from || '').toUpperCase().trim();
+        const toRaw = (to || '').toUpperCase().trim();
+        const fromCode = stationAliases_1.IRCTC_CANONICAL[fromRaw] || fromRaw;
+        const toCode = stationAliases_1.IRCTC_CANONICAL[toRaw] || toRaw;
+        if (!fromCode || !toCode || fromCode === toCode) {
+            logger_1.winstonLogger.info(`[IRCTC_SEARCH_SKIP] Skipped invalid or identical from/to stations: from='${fromCode}', to='${toCode}'`);
+            return [];
+        }
         if (!(0, stationAliases_1.isValidStationCode)(fromCode) || !(0, stationAliases_1.isValidStationCode)(toCode)) {
-            logger_1.winstonLogger.warn(`[IRCTC_SEARCH_REJECT] Invalid station code rejected before external API call: from='${fromCode}', to='${toCode}'`);
+            logger_1.winstonLogger.warn(`[IRCTC_SEARCH_REJECT] Invalid station code rejected before external API call: from='${fromCode}' (raw='${fromRaw}'), to='${toCode}' (raw='${toRaw}')`);
             return [];
         }
         const cacheKey = `search_${fromCode}_${toCode}_${date}`;
@@ -664,14 +675,14 @@ class IrctcService {
         let teleSuccess = false;
         let teleStatus = null;
         try {
-            logger_1.winstonLogger.info(`[API_PRIMARY_ACTIVE] IRCTC Search: ${from} → ${to} | ${date}`);
+            logger_1.winstonLogger.info(`[API_PRIMARY_ACTIVE] IRCTC Search: ${fromCode} (${from}) → ${toCode} (${to}) | ${date}`);
             // Format date as DD-MM-YYYY (IRCTC requirement)
             let formattedDate = date.trim();
             if (formattedDate.includes('-') && formattedDate.split('-')[0].length === 4) {
                 const [y, m, d] = formattedDate.split('-');
                 formattedDate = `${d}-${m}-${y}`;
             }
-            const data = await irctc.searchTrainBetweenStations(from.toUpperCase().trim(), to.toUpperCase().trim(), formattedDate);
+            const data = await irctc.searchTrainBetweenStations(fromCode, toCode, formattedDate);
             teleStatus = 200;
             const results = data?.data || data?.trains || data || [];
             const finalResults = Array.isArray(results) ? results : (results.trains || results.data || []);
@@ -683,11 +694,11 @@ class IrctcService {
             // rapid retry — within the 30–60s spec from PHASE_4C931 requirements.
             if (finalResults.length > 0) {
                 cacheService_1.cacheService.set(cacheKey, finalResults, 1800); // 30 min — only for real results
-                logger_1.winstonLogger.info(`[IRCTC_SUCCESS] Found ${finalResults.length} trains ${from}→${to}`);
+                logger_1.winstonLogger.info(`[IRCTC_SUCCESS] Found ${finalResults.length} trains ${fromCode}→${toCode}`);
             }
             else {
                 cacheService_1.cacheService.set(cacheKey, finalResults, 45); // 45s negative-cache
-                logger_1.winstonLogger.warn(`[IRCTC_EMPTY_RESULT] ${from}→${to} on ${date} returned 0 trains from IRCTC. ` +
+                logger_1.winstonLogger.warn(`[IRCTC_EMPTY_RESULT] ${fromCode}→${toCode} on ${date} returned 0 trains from IRCTC. ` +
                     `Negative-cached for 45s. Next live call in ~45s.`);
             }
             return finalResults;
@@ -695,7 +706,7 @@ class IrctcService {
         catch (e) {
             teleSuccess = false;
             teleStatus = e?.response?.status || e?.status || null;
-            logger_1.winstonLogger.error(`[IRCTC_SEARCH_FAILED] ${from}→${to}: ${e.message}`);
+            logger_1.winstonLogger.error(`[IRCTC_SEARCH_FAILED] ${fromCode}→${toCode}: ${e.message}`);
             return [];
         }
         finally {
@@ -710,6 +721,10 @@ class IrctcService {
         }
         const fromNorm = sanitizeStationCode(from);
         const toNorm = sanitizeStationCode(to);
+        if (!fromNorm || !toNorm || fromNorm === toNorm) {
+            logger_1.winstonLogger.info(`[IRCTC_AVAIL_SKIP] Skipped invalid or identical from/to stations: train=${trainNo} from='${fromNorm}', to='${toNorm}'`);
+            return null;
+        }
         if (!(0, stationAliases_1.isValidStationCode)(fromNorm) || !(0, stationAliases_1.isValidStationCode)(toNorm)) {
             logger_1.winstonLogger.warn(`[IRCTC_AVAIL_REJECT] Invalid station code rejected before external API call: train=${trainNo} from='${fromNorm}', to='${toNorm}'`);
             return null;

@@ -7,16 +7,16 @@ import path from 'path';
  */
 
 export const PAN_INDIA_CLUSTERS: string[][] = [
-  ['CSMT', 'CSTM', 'DR', 'DDR', 'BDTS', 'MMCT', 'BCT', 'LTT', 'BVI', 'PNVL', 'KYN', 'TNA'],
+  ['CSMT', 'DR', 'DDR', 'BDTS', 'MMCT', 'LTT', 'BVI', 'PNVL', 'KYN', 'TNA'],
   ['NDLS', 'DLI', 'NZM', 'ANVT', 'DEC', 'GZB', 'DEE'],
   ['HWH', 'SDAH', 'KOAA', 'SHM', 'SRC'],
-  ['MAS', 'MS', 'PER', 'TBM', 'MMC'],
-  ['SBC', 'YPR', 'SMVB', 'BNC', 'KSR', 'KJM'],
+  ['MAS', 'MS', 'PER', 'TBM'],
+  ['SBC', 'YPR', 'SMVB', 'BNC', 'KJM'],
   ['SC', 'HYB', 'KCG', 'LPI'],
   ['PUNE', 'CCH', 'LNL', 'SVJR', 'KK', 'HDP'],
   ['ADI', 'SBT', 'SBIB', 'GNC'],
-  ['BSB', 'BSBS', 'DDU', 'MUV', 'MGS'],
-  ['PRYJ', 'PRRB', 'NYN', 'ALD', 'PCOI', 'SFG', 'COI'],
+  ['BSB', 'BSBS', 'DDU'],
+  ['PRYJ', 'PRRB', 'NYN', 'PCOI', 'SFG'],
   ['PNBE', 'PPTA', 'RJPB', 'DNR'],
   ['LKO', 'LJN', 'ASH', 'BNZ', 'GTNR'],
   ['JP', 'GADJ', 'DPA', 'GTJT'],
@@ -24,9 +24,9 @@ export const PAN_INDIA_CLUSTERS: string[][] = [
   ['TVC', 'KCVL'],
   ['GHY', 'KYQ'],
   ['ST', 'UDN'],
-  ['BPL', 'RKMP', 'HBJ'],
-  ['VGLJ', 'JHS'],
-  ['AY', 'AYC', 'FD'],
+  ['BPL', 'RKMP'],
+  ['VGLJ'],
+  ['AY', 'AYC'],
   ['NGP', 'AJNI'],
   ['JBP', 'MML'],
   ['JUC', 'JRC']
@@ -40,25 +40,41 @@ for (const cluster of PAN_INDIA_CLUSTERS) {
   }
 }
 
-/** IRCTC canonical codes for alias clusters — applied only when train schedule contains the canonical stop. */
+/** IRCTC canonical codes for alias clusters — applied to ensure modern operational codes are always sent to RailKit/IRCTC. */
 export const IRCTC_CANONICAL: Record<string, string> = {
+  // Mumbai
   CSTM: 'CSMT',
+  CST:  'CSMT',
+  VT:   'CSMT',
+  BCT:  'MMCT',
+  // Chennai
   MMC:  'MAS',
+  // Bengaluru
   KSR:  'SBC',
-  // PHASE_5B037 — ADI cluster: Sabarmati / Gandhinagar Canton → Ahmedabad
+  // Ahmedabad / Sabarmati
   GNC:  'ADI',
   SBT:  'ADI',
-  // PHASE_5B037 — Bengaluru: Yeshwantpur → SBC (IRCTC canonical)
+  // Bengaluru: Yeshwantpur → SBC (IRCTC canonical fallback)
   YPR:  'SBC',
   // Renamed station aliases to modern operational codes
   ALD:  'PRYJ',
   COI:  'PCOI',
+  ACOI: 'PCOI',
   MGS:  'DDU',
   MUV:  'BSBS',
   JHS:  'VGLJ',
   HBJ:  'RKMP',
   FD:   'AYC',
 };
+
+// Bridge legacy/renamed station codes in TERMINAL_ALIASES so queries for legacy codes still resolve to the full cluster
+for (const [legacy, canonical] of Object.entries(IRCTC_CANONICAL)) {
+  if (TERMINAL_ALIASES[canonical]) {
+    TERMINAL_ALIASES[legacy] = [canonical, ...TERMINAL_ALIASES[canonical]];
+  } else {
+    TERMINAL_ALIASES[legacy] = [canonical];
+  }
+}
 
 export function areStationsCompatible(code1: string, code2: string): boolean {
   const c1 = code1.toUpperCase().trim();
@@ -98,11 +114,9 @@ export function isCompatibleWithRequestedDestinations(finalTo: string, dCodes: s
 export function normalizeForAPILegacy(code: string): string {
   if (!code) return '';
   const clean = code.toUpperCase().trim();
-  if (clean === 'CSTM') return 'CSMT';
+  if (IRCTC_CANONICAL[clean]) return IRCTC_CANONICAL[clean];
   if (clean === 'DR')   return 'CSMT';
   if (clean === 'DDR')  return 'CSMT';
-  if (clean === 'MMC') return 'MAS';
-  if (clean === 'KSR') return 'SBC';
   return clean;
 }
 

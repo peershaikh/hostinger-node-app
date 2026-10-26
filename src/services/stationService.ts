@@ -165,29 +165,57 @@ const COMMON_COLLOQUIAL_ALIASES: Record<string, string> = {
   'VT': 'CSMT',
   'VICTORIA TERMINUS': 'CSMT',
   'MUMBAI CENTRAL': 'MMCT',
+  'BOMBAY CENTRAL': 'MMCT',
   'BCT': 'MMCT',
+  'DADAR': 'DR',
+  'LTT': 'LTT',
+  'BDTS': 'BDTS',
   'CALCUTTA': 'HWH',
   'KOLKATA': 'HWH',
   'HOWRAH': 'HWH',
   'MADRAS': 'MAS',
   'CHENNAI': 'MAS',
+  'MMC': 'MAS',
   'BANGALORE': 'SBC',
   'BENGALURU': 'SBC',
+  'KSR': 'SBC',
   'DELHI': 'NDLS',
   'NEW DELHI': 'NDLS',
   'NEWDELHI': 'NDLS',
+  'OLD DELHI': 'DLI',
+  'HAZRAT NIZAMUDDIN': 'NZM',
+  'NIZAMUDDIN': 'NZM',
+  'ANAND VIHAR': 'ANVT',
   'DELHI CANTT': 'DEC',
   'SECUNDERABAD': 'SC',
   'HYDERABAD': 'HYB',
   'VARANASI': 'BSB',
   'BANARAS': 'BSBS',
+  'MANDUADIH': 'BSBS',
+  'MUV': 'BSBS',
+  'PRAYAGRAJ': 'PRYJ',
+  'ALLAHABAD': 'PRYJ',
+  'ALD': 'PRYJ',
+  'CHHEOKI': 'PCOI',
+  'COI': 'PCOI',
+  'MUGHALSARAI': 'DDU',
+  'MGS': 'DDU',
+  'JHANSI': 'VGLJ',
+  'JHS': 'VGLJ',
+  'BHOPAL': 'BPL',
+  'HABIBGANJ': 'RKMP',
+  'HBJ': 'RKMP',
+  'RANI KAMLAPATI': 'RKMP',
+  'FAIZABAD': 'AYC',
+  'FD': 'AYC',
+  'AYODHYA CANTT': 'AYC',
+  'AYODHYA': 'AY',
   'AHMEDABAD': 'ADI',
   'BARODA': 'BRC',
   'VADODARA': 'BRC',
   'JAIPUR': 'JP',
   'LUCKNOW': 'LKO',
   'PATNA': 'PNBE',
-  'BHOPAL': 'BPL',
   'NAGPUR': 'NGP',
   'KANPUR': 'CNB',
   'SURAT': 'ST',
@@ -214,6 +242,12 @@ export class StationService {
     // 1. If input already isValidStationCode → return as-is (CSMT, AII, NDLS untouched)
     if (isValidStationCode(raw)) {
       return IRCTC_CANONICAL[raw] || raw;
+    }
+
+    // 2. Direct colloquial/renamed station lookup (e.g. "MUMBAI CENTRAL" → MMCT, "AYODHYA CANTT" → AYC, "HAZRAT NIZAMUDDIN" → NZM)
+    if (COMMON_COLLOQUIAL_ALIASES[raw]) {
+      const aliased = COMMON_COLLOQUIAL_ALIASES[raw];
+      return IRCTC_CANONICAL[aliased] || aliased;
     }
 
     // 2. Parentheses extract: "NAME (CODE)" → CODE (existing)
