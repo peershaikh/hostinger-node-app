@@ -2079,7 +2079,7 @@ export class SplitJourneyEngine {
   private readonly MAX_ENGINE_TIME_MS = 22000;
   private readonly MAX_COMBOS_PER_HUB = 8;
   /** PHASE_087N111 — Phase 2 call reserve so Phase 1 candidate fanout never starves Leg-2 fetches */
-  private readonly MIN_PHASE2_RESERVE = 15;
+  private readonly MIN_PHASE2_RESERVE = 20;
   private readonly PHASE1_HUB_CAP = 10;
 
   /**
@@ -4014,12 +4014,18 @@ export class SplitJourneyEngine {
             const searchResults = await Promise.all(
               sCodes.map(async (sc, index) => {
                 try {
-                  this.apiCallCount++;
                   // PHASE_087N98: primary terminal (index 0) always LIVE;
                   // second terminal (index 1) LIVE unless micro/suburban;
                   // index >= 2 always DB-only.
                   const isMicro = SplitJourneyEngine.N98_MICRO_TERMINALS.has(sc);
-                  const forceDb = isMicro ? true : index > 1;
+                  let forceDb = isMicro ? true : index > 1;
+                  if (!forceDb) {
+                    if (this.apiCallCount >= this.MAX_TOTAL_CALLS - this.MIN_PHASE2_RESERVE) {
+                      forceDb = true; // Downgrade to DB-only when Phase 1 live budget is met
+                    } else {
+                      this.apiCallCount++;
+                    }
+                  }
                   return { sc, raw: await this.searchLeg(sc, hCode, date, forceDb), forceDb };
                 } catch { return { sc, raw: [], forceDb: true }; }
               })

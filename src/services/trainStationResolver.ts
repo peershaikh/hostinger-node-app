@@ -658,9 +658,19 @@ export async function resolveSegmentForAvailability(
   const dayOffset = fromStop ? getDayOffsetForStop(ctx.stops, fromStop) : 0;
   let originDepartureDate = date;
   if (date && dayOffset > 0) {
-    const d = new Date(date);
-    d.setDate(d.getDate() - dayOffset);
-    originDepartureDate = d.toISOString().split('T')[0];
+    let cleanDate = date.trim();
+    if (cleanDate.includes('-')) {
+      const parts = cleanDate.split('-').map(p => p.trim());
+      if (parts.length === 3 && parts[0].length !== 4) {
+        // DD-MM-YYYY -> YYYY-MM-DD
+        cleanDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+    }
+    const d = new Date(`${cleanDate}T00:00:00.000Z`);
+    if (!isNaN(d.getTime())) {
+      d.setUTCDate(d.getUTCDate() - dayOffset);
+      originDepartureDate = d.toISOString().split('T')[0];
+    }
   }
 
   return {
