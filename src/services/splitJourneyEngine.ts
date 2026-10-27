@@ -2156,9 +2156,10 @@ export class SplitJourneyEngine {
   // —————————————————————————————————————————————————————————————————————————
   private async prefetchRunningDays(
     candidateTrainNos: Set<string>,
-    remainingBudgetMs: number
+    remainingBudgetMs: number,
+    initialCache?: Map<string, RunningDaysEntry>
   ): Promise<{ cache: Map<string, RunningDaysEntry>; apiCalls: number; cacheHits: number }> {
-    const result = new Map<string, RunningDaysEntry>();
+    const result = initialCache || new Map<string, RunningDaysEntry>();
     const wallDeadline = Date.now() + Math.min(remainingBudgetMs, 12000); // hard 12s wall
     let apiCalls = 0;
     let cacheHits = 0;
@@ -2175,6 +2176,10 @@ export class SplitJourneyEngine {
       // Check if we already have a schedule context cached from a prior call this search
       // (the trainStationResolver cacheKey is `sched_ctx_v4_<padded>`)
       const padded = tNo.padStart(5, '0');
+      if (result.has(padded) && result.get(padded)?.runningDaysAuthoritative) {
+        cacheHits++;
+        continue;
+      }
       const existingCtx = cacheService.get<any>(`sched_ctx_v4_${padded}`);
       if (existingCtx && existingCtx.runningDaysAuthoritative === true && existingCtx.runningDays) {
         result.set(padded, {
@@ -4135,22 +4140,46 @@ export class SplitJourneyEngine {
     // so resolveSegmentForAvailability can reuse the authoritative data instead
     // of calling getTrainInfo N times during pairing (which exhausts the budget).
     const rdCandidateNos = new Set<string>();
+    const seededRunningDaysCache = new Map<string, RunningDaysEntry>();
+
+    const seedCandidateRunningDays = (t: any) => {
+      const num = String(
+        t?.train_number || t?.trainNo || t?.train_no || t?.number || ''
+      ).trim();
+      if (!num || num.length < 4) return;
+      rdCandidateNos.add(num);
+
+      // SOUTH-RUNNING-DAYS-FIX: Seed runningDaysCache from live search results
+      // when running_days is a valid 7-char bitmask /^[01]{7}$/.
+      const rd = String(
+        t?.running_days || t?.runningDays || t?.running_days_pattern || t?.runningDaysPattern || ''
+      ).trim();
+      if (/^[01]{7}$/.test(rd)) {
+        const padded = num.padStart(5, '0');
+        const isCancelled =
+          t?.is_cancelled === true || t?.isCancelled === true
+            ? true
+            : (t?.is_cancelled === false || t?.isCancelled === false ? false : null);
+        const entry: RunningDaysEntry = {
+          trainNo: padded,
+          runningDays: rd,
+          runningDaysAuthoritative: true,
+          isCancelled,
+          fetchedAt: Date.now(),
+        };
+        seededRunningDaysCache.set(padded, entry);
+        seededRunningDaysCache.set(num, entry);
+      }
+    };
+
     for (const { trains } of viableHubs) {
       for (const t of trains) {
-        const num = String(
-          (t as any).train_number || (t as any).trainNo ||
-          (t as any).train_no || (t as any).number || ''
-        ).trim();
-        if (num && num.length >= 4) rdCandidateNos.add(num);
+        seedCandidateRunningDays(t);
       }
     }
     for (const trains of leg2Cache.values()) {
       for (const t of trains) {
-        const num = String(
-          (t as any).train_number || (t as any).trainNo ||
-          (t as any).train_no || (t as any).number || ''
-        ).trim();
-        if (num && num.length >= 4) rdCandidateNos.add(num);
+        seedCandidateRunningDays(t);
       }
     }
     // Leave at least 15s for the pairing loop; cap prefetch budget at 10s
@@ -4158,8 +4187,8 @@ export class SplitJourneyEngine {
     const rdBudgetMs = Math.max(0, Math.min(10000, this.MAX_ENGINE_TIME_MS - rdElapsed - 15000));
     const { cache: runningDaysCache, apiCalls: rdApiCalls, cacheHits: rdCacheHits } =
       rdBudgetMs > 100 && rdCandidateNos.size > 0
-        ? await this.prefetchRunningDays(rdCandidateNos, rdBudgetMs)
-        : { cache: new Map<string, RunningDaysEntry>(), apiCalls: 0, cacheHits: 0 };
+        ? await this.prefetchRunningDays(rdCandidateNos, rdBudgetMs, seededRunningDaysCache)
+        : { cache: seededRunningDaysCache, apiCalls: 0, cacheHits: 0 };
 
     // Observability: one WARN-level summary per split search (not per candidate)
     winstonLogger.warn(
