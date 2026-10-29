@@ -1,13 +1,13 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
-import { supabase, isSupabaseConfigured } from '../config/supabase';
+import { supabase, isSupabaseConfigured, isNoWriteMode } from '../config/supabase';
 import { winstonLogger } from '../middleware/logger';
 import { emailService } from '../services/emailService';
-
-const CONTACT_MESSAGES_FILE = path.join(__dirname, '../../../data/contact_messages.json');
-const FEEDBACK_FILE = path.join(__dirname, '../../../data/feedback.json');
+import {
+  enqueueFeedbackRecord,
+  StorageCapacityExceededError,
+  MAX_FALLBACK_CAPACITY,
+} from '../utils/feedbackStorage';
 
 export const contactController = {
   submit: async (req: Request, res: Response) => {
@@ -37,19 +37,6 @@ export const contactController = {
       const contactId = crypto.randomUUID();
       const timestamp = new Date().toISOString();
 
-      const record = {
-        id: contactId,
-        timestamp,
-        name: cleanName,
-        email: cleanEmail,
-        phone: cleanPhone,
-        subject: cleanSubject,
-        category: cleanCategory,
-        message: cleanMessage,
-        ip: req.ip || req.socket.remoteAddress || 'unknown',
-        userAgent: req.headers['user-agent'] || 'unknown',
-      };
-
       // 1. Resolve Admin Emails
       const rawEmails = process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || '';
       const envEmails = rawEmails.split(',').map((e: string) => e.trim()).filter(Boolean);
@@ -73,25 +60,11 @@ export const contactController = {
         });
       });
 
-      // 3. Local JSON Storage (contact_messages.json)
-      try {
-        let messages: any[] = [];
-        if (fs.existsSync(CONTACT_MESSAGES_FILE)) {
-          messages = JSON.parse(fs.readFileSync(CONTACT_MESSAGES_FILE, 'utf-8'));
-        }
-        messages.unshift(record);
-        if (!fs.existsSync(path.dirname(CONTACT_MESSAGES_FILE))) {
-          fs.mkdirSync(path.dirname(CONTACT_MESSAGES_FILE), { recursive: true });
-        }
-        fs.writeFileSync(CONTACT_MESSAGES_FILE, JSON.stringify(messages.slice(0, 500), null, 2));
-      } catch (fileErr: any) {
-        winstonLogger.warn(`[CONTACT_FILE_FAIL] Local write failed: ${fileErr.message}`);
-      }
-
-      // 4. Save to Supabase `feedback` table for unified Admin Panel review
+      // 3. Save to Supabase `feedback` table for unified Admin Panel review
+      let dbSuccess = false;
       if (isSupabaseConfigured()) {
         try {
-          await supabase.from('feedback').insert([{
+          const { error } = await supabase.from('feedback').insert([{
             id: contactId,
             timestamp,
             comments: `[CONTACT_US] [Subject: ${cleanSubject}] [Category: ${cleanCategory}] [Phone: ${cleanPhone || 'N/A'}] Message: ${cleanMessage}`,
@@ -103,44 +76,70 @@ export const contactController = {
             ui: cleanSubject,
             is_accurate: true,
           }]);
+          if (!error) {
+            dbSuccess = true;
+          } else {
+            winstonLogger.warn(`[CONTACT_DB_WARN] Supabase write failed: ${error.message}`);
+          }
         } catch (dbErr: any) {
           winstonLogger.warn(`[CONTACT_DB_WARN] Supabase write fallback: ${dbErr.message}`);
         }
       }
 
-      // Also append to feedback.json so existing Admin FeedbackReviewPanel shows it immediately
-      try {
-        let allFeedback: any[] = [];
-        if (fs.existsSync(FEEDBACK_FILE)) {
-          allFeedback = JSON.parse(fs.readFileSync(FEEDBACK_FILE, 'utf-8'));
+      // 4. Asynchronous Fallback ONLY if database persistence failed or is unconfigured
+      // Uses shared serialized queue, FIFO order, bounded capacity, and atomic file write
+      let fallbackSuccess = false;
+      let capacityExceeded = false;
+      if (!dbSuccess && !isNoWriteMode()) {
+        try {
+          const fallbackRecord = {
+            id: contactId,
+            timestamp,
+            name: cleanName,
+            email: cleanEmail,
+            device: cleanPhone ? `Phone: ${cleanPhone}` : 'Web Contact',
+            os: cleanCategory,
+            feature: 'CONTACT_US',
+            bug: cleanSubject,
+            suggestions: cleanMessage,
+            severity: 'medium',
+            comments: `[CONTACT_US] [Subject: ${cleanSubject}] [Category: ${cleanCategory}] [Phone: ${cleanPhone || 'N/A'}] Message: ${cleanMessage}`,
+            ui: cleanSubject,
+            is_accurate: true,
+          };
+          await enqueueFeedbackRecord(fallbackRecord);
+          fallbackSuccess = true;
+        } catch (fbErr: any) {
+          if (fbErr instanceof StorageCapacityExceededError) {
+            capacityExceeded = true;
+            winstonLogger.error(`[CONTACT_FALLBACK_SATURATED] Queue capacity reached (${MAX_FALLBACK_CAPACITY}).`);
+          } else {
+            winstonLogger.error(`[CONTACT_FALLBACK_FAIL] Fallback persistence failed: ${fbErr.message}`);
+          }
         }
-        allFeedback.unshift({
-          id: contactId,
-          timestamp,
-          name: cleanName,
-          email: cleanEmail,
-          device: cleanPhone ? `Phone: ${cleanPhone}` : 'Web Contact',
-          os: cleanCategory,
-          feature: 'CONTACT_US',
-          bug: cleanSubject,
-          suggestions: cleanMessage,
-          severity: 'medium',
-        });
-        fs.writeFileSync(FEEDBACK_FILE, JSON.stringify(allFeedback.slice(0, 1000), null, 2));
-      } catch (fbErr: any) {
-        winstonLogger.warn(`[CONTACT_FEEDBACK_SYNC] Feedback sync failed: ${fbErr.message}`);
       }
 
-      winstonLogger.info(`[CONTACT_INQUIRY_RECEIVED] From: ${cleanEmail} (${cleanName}) | Subject: ${cleanSubject}`);
-      return res.status(200).json({
-        success: true,
-        message: 'Your inquiry has been received. Our team will contact you shortly.',
+      // 5. Evaluate Persistence Durability & Return Response
+      // Succeeded via Supabase, simulated via no-write mode (unless capacity exceeded), or persisted via local fallback
+      if (dbSuccess || (isNoWriteMode() && !capacityExceeded) || fallbackSuccess) {
+        winstonLogger.info(`[CONTACT_INQUIRY_RECEIVED] id=${contactId} category=${cleanCategory}`);
+        return res.status(200).json({
+          success: true,
+          message: 'Your inquiry has been received. Our team will contact you shortly.',
+        });
+      }
+
+      // Both primary Supabase and local fallback persistence failed (or capacity exceeded)
+      winstonLogger.error(`[CONTACT_PERSISTENCE_FAILED] Persistence failed for id=${contactId}`);
+      return res.status(503).json({
+        success: false,
+        error: 'Service temporarily unavailable. Please try again later or email us directly at support@trayago.in.',
       });
     } catch (err: any) {
       winstonLogger.error(`[CONTACT_SUBMIT_ERROR] ${err.message}`);
       return res.status(500).json({
         success: false,
-        error: 'Failed to send message. Please try again or email us directly at support@trayago.in.',
+        error: 'Failed to process inquiry. Please try again later.',
       });
     }
   },

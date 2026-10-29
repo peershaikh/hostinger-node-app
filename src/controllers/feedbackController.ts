@@ -2,12 +2,16 @@ import crypto from 'crypto';
 import { Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
-import { supabase, isSupabaseConfigured } from '../config/supabase';
+import { supabase, isSupabaseConfigured, isNoWriteMode } from '../config/supabase';
 import { winstonLogger } from '../middleware/logger';
 import { llmService } from '../services/llmService';
 import { userFeedbackIntelligenceService } from '../services/userFeedbackIntelligenceService';
+import {
+  enqueueFeedbackRecord,
+  StorageCapacityExceededError,
+  MAX_FALLBACK_CAPACITY,
+} from '../utils/feedbackStorage';
 
-const FEEDBACK_FILE = path.join(__dirname, '../../../data/feedback.json');
 const FEEDBACK_CATEGORIES_FILE = path.join(__dirname, '../../../data/feedback_categories.json');
 
 // ─── Async background categorization (non-blocking) ─────────────────────────
@@ -96,7 +100,7 @@ export const feedbackController = {
       // Primary: Write to Supabase with full schema
       if (isSupabaseConfigured()) {
         try {
-          await supabase.from('feedback').insert([{
+          const { error } = await supabase.from('feedback').insert([{
             id: feedback.id,
             timestamp: feedback.timestamp,
             pnr: pnrVal,
@@ -117,28 +121,40 @@ export const feedbackController = {
             search_id: searchId || null,
             route_context: routeContext || null
           }]);
-          dbSuccess = true;
+          if (!error) {
+            dbSuccess = true;
+          } else {
+            winstonLogger.warn(`[FEEDBACK] Supabase primary write failed: ${error.message}, falling back to JSON.`);
+          }
         } catch (dbErr: any) {
           winstonLogger.warn(`[FEEDBACK] Supabase primary write failed: ${dbErr.message}, falling back to JSON.`);
         }
       }
 
       // Secondary: Local JSON Fallback (Always write to keep local log, but especially crucial if DB fails)
-      let allFeedback = [];
-      if (fs.existsSync(FEEDBACK_FILE)) {
+      if (!isNoWriteMode()) {
         try {
-          allFeedback = JSON.parse(fs.readFileSync(FEEDBACK_FILE, 'utf-8'));
-        } catch (e) {
-          allFeedback = [];
+          await enqueueFeedbackRecord(feedback);
+        } catch (fbErr: any) {
+          if (fbErr instanceof StorageCapacityExceededError) {
+            winstonLogger.error(`[FEEDBACK_STORAGE_SATURATED] Feedback queue capacity reached (${MAX_FALLBACK_CAPACITY}).`);
+            if (!dbSuccess) {
+              return res.status(503).json({
+                success: false,
+                error: 'Feedback storage temporarily unavailable. Please try again later.'
+              });
+            }
+          } else {
+            winstonLogger.warn(`[FEEDBACK_STORAGE_WARN] Fallback write failed: ${fbErr.message}`);
+            if (!dbSuccess) {
+              return res.status(503).json({
+                success: false,
+                error: 'Feedback storage temporarily unavailable. Please try again later.'
+              });
+            }
+          }
         }
       }
-      
-      allFeedback.push(feedback);
-      
-      if (!fs.existsSync(path.dirname(FEEDBACK_FILE))) {
-        fs.mkdirSync(path.dirname(FEEDBACK_FILE), { recursive: true });
-      }
-      fs.writeFileSync(FEEDBACK_FILE, JSON.stringify(allFeedback, null, 2));
 
       // ─── Non-blocking GPT categorization ───────────────────────────────────
       // Build the text to classify from the richest available field

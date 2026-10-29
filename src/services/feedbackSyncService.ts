@@ -3,6 +3,12 @@ import path from 'path';
 import { isNoWriteMode, isSupabaseConfigured, safeWriteFileSync, supabase } from '../config/supabase';
 import { winstonLogger } from '../middleware/logger';
 import { quarantineRecord, replayUniversalEventsFallback } from './eventQueueWorker';
+import {
+  FEEDBACK_FILE,
+  clearFeedbackFileSafely,
+  getFeedbackRecordKey,
+  removeSyncedFeedbackRecords,
+} from '../utils/feedbackStorage';
 
 const DATA_DIR = path.join(__dirname, '../../data');
 const BATCH_SIZE = 50;
@@ -46,7 +52,7 @@ export class FeedbackSyncService {
 
   // ─── 1. feedback.json (Legacy JSON array) ──────────────────────────────────
   private async syncFeedbackFile(): Promise<void> {
-    const filePath = path.join(__dirname, '../../../data/feedback.json');
+    const filePath = FEEDBACK_FILE;
     if (!fs.existsSync(filePath)) return;
 
     try {
@@ -58,32 +64,43 @@ export class FeedbackSyncService {
         items = JSON.parse(content);
       } catch (parseErr: any) {
         quarantineRecord('feedback_json', content, `JSON parse error: ${parseErr.message}`);
-        if (!isNoWriteMode()) safeWriteFileSync(filePath, '[]', 'utf8');
+        if (!isNoWriteMode()) await clearFeedbackFileSafely();
         return;
       }
 
       if (!Array.isArray(items) || items.length === 0) return;
       winstonLogger.info(`[FALLBACK_REPLAY_START] file=feedback.json total_lines=${items.length}`);
 
-      const remainingItems: any[] = [];
+      const syncedKeys = new Set<string>();
       let successCount = 0;
+      const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
       for (const item of items) {
         try {
-          const { data, error } = await supabase
-            .from('feedback')
-            .select('id')
-            .eq('pnr', item.pnr || '')
-            .eq('timestamp', item.timestamp || '');
+          const hasValidUuid = typeof item.id === 'string' && UUID_REGEX.test(item.id);
+
+          let query = supabase.from('feedback').select('id');
+          if (hasValidUuid) {
+            query = query.eq('id', item.id);
+          } else if (item.pnr) {
+            query = query.eq('pnr', item.pnr).eq('timestamp', item.timestamp || '');
+          } else if (item.email && item.timestamp) {
+            query = query.eq('email', item.email).eq('timestamp', item.timestamp);
+          } else {
+            query = query.eq('pnr', item.pnr || '').eq('timestamp', item.timestamp || '');
+          }
+
+          const { data, error } = await query;
 
           if (error) throw error;
 
           if (data && data.length > 0) {
             successCount++;
+            syncedKeys.add(getFeedbackRecordKey(item));
             continue;
           }
 
-          const { error: insertError } = await supabase.from('feedback').insert([{
+          const insertPayload: Record<string, any> = {
             pnr: item.pnr,
             is_accurate: item.is_accurate,
             comments: item.comments,
@@ -102,24 +119,28 @@ export class FeedbackSyncService {
             user_id: item.user_id || item.userId || null,
             search_id: item.search_id || item.searchId || null,
             route_context: item.route_context || item.routeContext || null
-          }]);
+          };
 
-          if (insertError) {
-            remainingItems.push(item);
-          } else {
+          if (hasValidUuid) {
+            insertPayload.id = item.id;
+          }
+
+          const { error: insertError } = await supabase.from('feedback').insert([insertPayload]);
+
+          if (!insertError || insertError.code === '23505') {
             successCount++;
+            syncedKeys.add(getFeedbackRecordKey(item));
           }
         } catch {
-          remainingItems.push(item);
+          // Keep item in file by not adding to syncedKeys
         }
       }
 
       if (!isNoWriteMode()) {
-        if (remainingItems.length > 0) {
-          safeWriteFileSync(filePath, JSON.stringify(remainingItems, null, 2), 'utf8');
-          winstonLogger.info(`[FALLBACK_REPLAY_SUCCESS] file=feedback.json recovered=${successCount} remaining=${remainingItems.length}`);
+        const { remainingCount } = await removeSyncedFeedbackRecords(syncedKeys);
+        if (remainingCount > 0) {
+          winstonLogger.info(`[FALLBACK_REPLAY_SUCCESS] file=feedback.json recovered=${successCount} remaining=${remainingCount}`);
         } else {
-          safeWriteFileSync(filePath, '[]', 'utf8');
           winstonLogger.info(`[FALLBACK_REPLAY_SUCCESS] file=feedback.json recovered=${successCount} — cleared`);
         }
       }
