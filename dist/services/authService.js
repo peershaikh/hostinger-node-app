@@ -427,7 +427,7 @@ class AuthService {
         if (!user)
             throw new Error('User not found');
         const hashedPassword = bcryptjs_1.default.hashSync(newPassword, 10);
-        const nextTokenVersion = (user.tokenVersion || 1) + 1;
+        const nextTokenVersion = (user.tokenVersion || 1) + 10;
         const nextSessionEpoch = (user.sessionEpoch || 1) + 1;
         // Atomically persist password update and session/token invalidation to Supabase
         if ((0, supabase_1.isSupabaseConfigured)()) {
