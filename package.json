@@ -43,7 +43,7 @@
     "msedge-tts": "^2.1.0",
     "node-cache": "^5.1.2",
     "node-cron": "^4.2.1",
-    "nodemailer": "^10.0.13",
+    "nodemailer": "^10.1.4",
     "nodemon": "^3.1.4",
     "pg": "^8.20.0",
     "posthog-node": "^5.34.2",
@@ -58,15 +58,21 @@
     "winston": "^3.14.2",
     "winston-daily-rotate-file": "^5.0.0",
     "xss-clean": "^0.1.4",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "overrides": {
     "@fastify/busboy": "^3.2.2",
     "@grpc/grpc-js": "^1.14.5",
+    "body-parser": "^1.20.9",
     "cookie": "^0.7.2",
     "engine.io": "^6.6.11",
+    "follow-redirects": "^1.16.1",
+    "ip-address": "^10.7.4",
     "moment": "^2.31.0",
+    "nodemailer": "^10.1.4",
     "proxy-addr": "^2.0.8",
-    "uuid": "^11.1.1"
+    "qs": "^6.16.1",
+    "uuid": "^11.1.1",
+    "zod": "^4.6.7"
   }
 }
