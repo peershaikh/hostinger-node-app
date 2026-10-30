@@ -1089,7 +1089,12 @@ const DETERMINISTIC_CORRIDORS = {
     "kolkata-patna": ["ASN", "DHN", "GAYA"],
     "patna-kolkata": ["GAYA", "DHN", "ASN"],
     "kolkata-lucknow": ["ASN", "DDU", "PRYJ"],
-    "kolkata-varanasi": ["ASN", "DDU"],
+    "kolkata-varanasi": ["DHN", "GAYA", "PNBE"],
+    "howrah-varanasi": ["DHN", "GAYA", "PNBE"],
+    "kolkata-bsb": ["DHN", "GAYA", "PNBE"],
+    "howrah-bsb": ["DHN", "GAYA", "PNBE"],
+    "hwh-varanasi": ["DHN", "GAYA", "PNBE"],
+    "hwh-bsb": ["DHN", "GAYA", "PNBE"],
     "kolkata-ahmedabad": ["KGP", "TATA", "NGP", "BPL", "RTM"],
     "kolkata-ernakulam": ["KGP", "BBS", "VSKP", "BZA", "MAS"],
     "kolkata-trivandrum": ["KGP", "BBS", "BZA", "MAS", "ERS"],
@@ -1609,7 +1614,12 @@ const DETERMINISTIC_CORRIDORS = {
     // —— Varanasi corridors ——
     "varanasi-mumbai": ["DDU", "PRYJ", "PCOI", "JBP", "STA", "ET", "BSL", "KTE", "MKP", "CNB"],
     "varanasi-chennai": ["DDU", "PRYJ", "JBP", "ET", "NGP", "BZA"],
-    "varanasi-kolkata": ["DDU", "GAYA", "PNBE", "ASN", "BWN"],
+    "varanasi-kolkata": ["GAYA", "DHN", "PNBE"],
+    "varanasi-howrah": ["GAYA", "DHN", "PNBE"],
+    "bsb-kolkata": ["GAYA", "DHN", "PNBE"],
+    "bsb-howrah": ["GAYA", "DHN", "PNBE"],
+    "varanasi-hwh": ["GAYA", "DHN", "PNBE"],
+    "bsb-hwh": ["GAYA", "DHN", "PNBE"],
     "varanasi-pune": ["DDU", "PRYJ", "JBP", "ET", "BSL", "MMR"],
     "pune-varanasi": ["MMR", "BSL", "ET", "JBP", "PRYJ", "DDU"],
     "varanasi-guwahati": ["DDU", "CPR", "BJU", "PNBE", "KIR", "NJP"],
@@ -1870,7 +1880,7 @@ class SplitJourneyEngine {
         this.MAX_ENGINE_TIME_MS = 22000;
         this.MAX_COMBOS_PER_HUB = 8;
         /** PHASE_087N111 — Phase 2 call reserve so Phase 1 candidate fanout never starves Leg-2 fetches */
-        this.MIN_PHASE2_RESERVE = 15;
+        this.MIN_PHASE2_RESERVE = 20;
         this.PHASE1_HUB_CAP = 10;
         /** Hard budget for API fallback calls inside searchLeg. After this many ms
          *  from engine start, searchLeg skips live APIs and uses DB-only. */
@@ -1917,8 +1927,8 @@ class SplitJourneyEngine {
     //   - fail-safe: fetch failure = UNKNOWN entry (conservative reject preserved)
     //   - deduplicates train numbers before fetching
     // —————————————————————————————————————————————————————————————————————————
-    async prefetchRunningDays(candidateTrainNos, remainingBudgetMs) {
-        const result = new Map();
+    async prefetchRunningDays(candidateTrainNos, remainingBudgetMs, initialCache) {
+        const result = initialCache || new Map();
         const wallDeadline = Date.now() + Math.min(remainingBudgetMs, 12000); // hard 12s wall
         let apiCalls = 0;
         let cacheHits = 0;
@@ -1933,6 +1943,10 @@ class SplitJourneyEngine {
             // Check if we already have a schedule context cached from a prior call this search
             // (the trainStationResolver cacheKey is `sched_ctx_v4_<padded>`)
             const padded = tNo.padStart(5, '0');
+            if (result.has(padded) && result.get(padded)?.runningDaysAuthoritative) {
+                cacheHits++;
+                continue;
+            }
             const existingCtx = cacheService_1.cacheService.get(`sched_ctx_v4_${padded}`);
             if (existingCtx && existingCtx.runningDaysAuthoritative === true && existingCtx.runningDays) {
                 result.set(padded, {
@@ -3591,12 +3605,19 @@ class SplitJourneyEngine {
                     // Fan out all source stations for this hub in parallel
                     const searchResults = await Promise.all(sCodes.map(async (sc, index) => {
                         try {
-                            this.apiCallCount++;
                             // PHASE_087N98: primary terminal (index 0) always LIVE;
                             // second terminal (index 1) LIVE unless micro/suburban;
                             // index >= 2 always DB-only.
                             const isMicro = SplitJourneyEngine.N98_MICRO_TERMINALS.has(sc);
-                            const forceDb = isMicro ? true : index > 1;
+                            let forceDb = isMicro ? true : index > 1;
+                            if (!forceDb) {
+                                if (this.apiCallCount >= this.MAX_TOTAL_CALLS - this.MIN_PHASE2_RESERVE) {
+                                    forceDb = true; // Downgrade to DB-only when Phase 1 live budget is met
+                                }
+                                else {
+                                    this.apiCallCount++;
+                                }
+                            }
                             return { sc, raw: await this.searchLeg(sc, hCode, date, forceDb), forceDb };
                         }
                         catch {
@@ -3694,28 +3715,47 @@ class SplitJourneyEngine {
         // so resolveSegmentForAvailability can reuse the authoritative data instead
         // of calling getTrainInfo N times during pairing (which exhausts the budget).
         const rdCandidateNos = new Set();
+        const seededRunningDaysCache = new Map();
+        const seedCandidateRunningDays = (t) => {
+            const num = String(t?.train_number || t?.trainNo || t?.train_no || t?.number || '').trim();
+            if (!num || num.length < 4)
+                return;
+            rdCandidateNos.add(num);
+            // SOUTH-RUNNING-DAYS-FIX: Seed runningDaysCache from live search results
+            // when running_days is a valid 7-char bitmask /^[01]{7}$/.
+            const rd = String(t?.running_days || t?.runningDays || t?.running_days_pattern || t?.runningDaysPattern || '').trim();
+            if (/^[01]{7}$/.test(rd)) {
+                const padded = num.padStart(5, '0');
+                const isCancelled = t?.is_cancelled === true || t?.isCancelled === true
+                    ? true
+                    : (t?.is_cancelled === false || t?.isCancelled === false ? false : null);
+                const entry = {
+                    trainNo: padded,
+                    runningDays: rd,
+                    runningDaysAuthoritative: true,
+                    isCancelled,
+                    fetchedAt: Date.now(),
+                };
+                seededRunningDaysCache.set(padded, entry);
+                seededRunningDaysCache.set(num, entry);
+            }
+        };
         for (const { trains } of viableHubs) {
             for (const t of trains) {
-                const num = String(t.train_number || t.trainNo ||
-                    t.train_no || t.number || '').trim();
-                if (num && num.length >= 4)
-                    rdCandidateNos.add(num);
+                seedCandidateRunningDays(t);
             }
         }
         for (const trains of leg2Cache.values()) {
             for (const t of trains) {
-                const num = String(t.train_number || t.trainNo ||
-                    t.train_no || t.number || '').trim();
-                if (num && num.length >= 4)
-                    rdCandidateNos.add(num);
+                seedCandidateRunningDays(t);
             }
         }
         // Leave at least 15s for the pairing loop; cap prefetch budget at 10s
         const rdElapsed = Date.now() - startTime;
         const rdBudgetMs = Math.max(0, Math.min(10000, this.MAX_ENGINE_TIME_MS - rdElapsed - 15000));
         const { cache: runningDaysCache, apiCalls: rdApiCalls, cacheHits: rdCacheHits } = rdBudgetMs > 100 && rdCandidateNos.size > 0
-            ? await this.prefetchRunningDays(rdCandidateNos, rdBudgetMs)
-            : { cache: new Map(), apiCalls: 0, cacheHits: 0 };
+            ? await this.prefetchRunningDays(rdCandidateNos, rdBudgetMs, seededRunningDaysCache)
+            : { cache: seededRunningDaysCache, apiCalls: 0, cacheHits: 0 };
         // Observability: one WARN-level summary per split search (not per candidate)
         logger_1.winstonLogger.warn(`[RD_PREFETCH] src=${sCode}→${dCode}/${date} candidates=${rdCandidateNos.size}` +
             ` fetched=${runningDaysCache.size / 2}` + // /2 because each entry is keyed by padded AND raw
