@@ -50,7 +50,7 @@ class DbService {
                 .from('api_search_cache')
                 .select('response, expires_at')
                 .eq('route_key', routeKey)
-                .single();
+                .maybeSingle();
             if (error || !data) {
                 return null;
             }
@@ -206,15 +206,28 @@ class DbService {
             }
         }
         catch { }
-        // 2. Supabase DB lookup with number and Train_No tolerance
+        // 2. Supabase DB lookup with number and Train_No tolerance across trains and train_registry
         try {
-            const { data, error } = await supabase_1.supabase
+            let dbName;
+            const { data: trainData, error: trainError } = await supabase_1.supabase
                 .from('trains')
-                .select('name, Train_Name')
-                .or(`number.in.(${lookupNumbers.join(',')}),Train_No.in.(${lookupNumbers.join(',')})`)
+                .select('name')
+                .in('number', lookupNumbers)
                 .maybeSingle();
-            const dbName = data?.name || data?.Train_Name;
-            if (!error && dbName && !/^(Passenger|Unknown Express|Unknown Train|Train)\s*\d*/i.test(dbName)) {
+            if (!trainError && trainData?.name) {
+                dbName = trainData.name;
+            }
+            else {
+                const { data: regData, error: regError } = await supabase_1.supabase
+                    .from('train_registry')
+                    .select('Train_Name')
+                    .in('Train_No', lookupNumbers)
+                    .maybeSingle();
+                if (!regError && regData?.Train_Name) {
+                    dbName = regData.Train_Name;
+                }
+            }
+            if (dbName && !/^(Passenger|Unknown Express|Unknown Train|Train)\s*\d*/i.test(dbName)) {
                 try {
                     const { cacheService } = require('./cacheService');
                     cacheService.set(cacheKey, dbName, 86400);

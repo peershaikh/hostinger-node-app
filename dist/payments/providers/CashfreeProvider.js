@@ -32,7 +32,7 @@ class CashfreeProvider {
         const orderId = `order_${crypto_1.default.randomUUID().replace(/-/g, '').substring(0, 12)}`;
         let customerPhone = '9999999999';
         if ((0, supabase_1.isSupabaseConfigured)()) {
-            const { data } = await supabase_1.supabase.from('users').select('phone').eq('id', userId).single();
+            const { data } = await supabase_1.supabase.from('users').select('phone').eq('id', userId).maybeSingle();
             if (data?.phone) {
                 customerPhone = data.phone;
             }

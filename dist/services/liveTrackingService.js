@@ -309,12 +309,19 @@ class LiveTrackingService {
             // Fall through to legacy shape.
         }
         try {
-            const { data } = await supabase_1.supabase
-                .from('trains')
+            const { data: regData } = await supabase_1.supabase
+                .from('train_registry')
                 .select('Train_Name')
                 .eq('Train_No', trainNo)
                 .maybeSingle();
-            return data?.Train_Name || '';
+            if (regData?.Train_Name)
+                return regData.Train_Name;
+            const { data: trainData } = await supabase_1.supabase
+                .from('trains')
+                .select('name')
+                .eq('number', trainNo)
+                .maybeSingle();
+            return trainData?.name || '';
         }
         catch {
             return '';

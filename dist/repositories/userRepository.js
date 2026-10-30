@@ -184,7 +184,7 @@ class UserRepository {
         if (!id || !UUID_REGEX.test(id))
             return null;
         try {
-            const { data, error } = await supabase_1.supabase.from('users').select('*').eq('id', id).single();
+            const { data, error } = await supabase_1.supabase.from('users').select('*').eq('id', id).maybeSingle();
             if (error) {
                 if (error.code === 'PGRST116')
                     return null; // Not found
@@ -202,7 +202,7 @@ class UserRepository {
         if (!(0, supabase_1.isSupabaseConfigured)())
             return null;
         try {
-            const { data, error } = await supabase_1.supabase.from('users').select('*').eq('email', email).single();
+            const { data, error } = await supabase_1.supabase.from('users').select('*').eq('email', email).maybeSingle();
             if (error) {
                 if (error.code === 'PGRST116')
                     return null; // Not found

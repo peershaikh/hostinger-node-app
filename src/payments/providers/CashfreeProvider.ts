@@ -31,7 +31,7 @@ export class CashfreeProvider implements IPaymentProvider {
         
         let customerPhone = '9999999999';
         if (isSupabaseConfigured()) {
-            const { data } = await supabase.from('users').select('phone').eq('id', userId).single();
+            const { data } = await supabase.from('users').select('phone').eq('id', userId).maybeSingle();
             if (data?.phone) {
                 customerPhone = data.phone;
             }

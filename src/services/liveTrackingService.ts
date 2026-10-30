@@ -377,12 +377,19 @@ export class LiveTrackingService {
     }
 
     try {
-      const { data } = await supabase
-        .from('trains')
+      const { data: regData } = await supabase
+        .from('train_registry')
         .select('Train_Name')
         .eq('Train_No', trainNo)
         .maybeSingle();
-      return data?.Train_Name || '';
+      if (regData?.Train_Name) return regData.Train_Name;
+
+      const { data: trainData } = await supabase
+        .from('trains')
+        .select('name')
+        .eq('number', trainNo)
+        .maybeSingle();
+      return trainData?.name || '';
     } catch {
       return '';
     }

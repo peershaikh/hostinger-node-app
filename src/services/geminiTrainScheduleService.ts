@@ -144,7 +144,7 @@ export class GeminiTrainScheduleService {
         if (e1) {
           try {
             await supabase
-              .from('trains')
+              .from('train_registry')
               .upsert(
                 { Train_No: trainNo, Train_Name: schedule.train_name.trim() },
                 { onConflict: 'Train_No' }

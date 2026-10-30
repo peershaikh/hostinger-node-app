@@ -2601,7 +2601,7 @@ class SplitJourneyEngine {
                     .from('api_search_cache')
                     .select('response, expires_at')
                     .eq('route_key', dbKey)
-                    .single();
+                    .maybeSingle();
                 if (!error && data) {
                     if (new Date(data.expires_at) >= new Date()) {
                         const parsed = JSON.parse(data.response);
@@ -3013,7 +3013,7 @@ class SplitJourneyEngine {
                         .from('api_search_cache')
                         .select('response, expires_at')
                         .eq('route_key', dbKey)
-                        .single();
+                        .maybeSingle();
                     if (!error && data) {
                         if (new Date(data.expires_at) >= new Date()) {
                             let parsed = JSON.parse(data.response);
@@ -3422,29 +3422,17 @@ class SplitJourneyEngine {
             }
         }
         if (missingCodes.length > 0) {
-            try {
-                const { supabase } = await Promise.resolve().then(() => __importStar(require('../config/supabase')));
-                const { data, error } = await supabase
-                    .from('station_registry')
-                    .select('station_code, latitude, longitude, station_name, city')
-                    .in('station_code', missingCodes);
-                if (!error && data) {
-                    data.forEach((row) => {
-                        const code = row.station_code.toUpperCase().trim();
-                        if (row.latitude && row.longitude) {
-                            const coords = {
-                                lat: Number(row.latitude),
-                                lon: Number(row.longitude)
-                            };
-                            preloadedCoords.set(code, coords);
-                            const cacheKey = `station_info_${code}`;
-                            cacheService_1.cacheService.set(cacheKey, row, 3600);
-                        }
-                    });
+            for (const code of missingCodes) {
+                const coords = stationService_1.stationService.getCoordinatesSync(code);
+                if (coords) {
+                    preloadedCoords.set(code, coords);
+                    const cacheKey = `station_info_${code}`;
+                    cacheService_1.cacheService.set(cacheKey, {
+                        station_code: code,
+                        latitude: coords.lat,
+                        longitude: coords.lon
+                    }, 3600);
                 }
-            }
-            catch (err) {
-                logger_1.winstonLogger.warn(`[BATCH_PRELOAD] Failed: ${err.message}`);
             }
         }
         const getCoordsFallbackLocal = (code) => {

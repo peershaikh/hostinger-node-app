@@ -87,8 +87,32 @@ const RENAMED_STATION_MAP: Record<string, string> = {
   CSMT: 'CSTM',
 };
 
-// Global coordinates mapping loaded from local GeoJSON fallback
+const KNOWN_STATION_NAMES: Record<string, string> = {
+  PRYJ: 'Prayagraj Junction',
+  PCOI: 'Prayagraj Chheoki',
+  ALD:  'Allahabad Junction',
+  COI:  'Chheoki',
+  DDU:  'Pt. Deen Dayal Upadhyaya Junction',
+  MGS:  'Mughalsarai Junction',
+  BSBS: 'Banaras',
+  MUV:  'Manduadih',
+  VGLJ: 'Virangana Lakshmibai Jhansi',
+  JHS:  'Jhansi Junction',
+  RKMP: 'Rani Kamalapati',
+  HBJ:  'Habibganj',
+  AYC:  'Ayodhya Cantt',
+  FD:   'Faizabad Junction',
+  NYN:  'Naini Junction',
+  SFG:  'Subedarganj',
+  PYGS: 'Prayagraj Sangam',
+  PRRB: 'Prayagraj Rambag',
+  CSMT: 'Chhatrapati Shivaji Maharaj Terminus',
+  CSTM: 'Chhatrapati Shivaji Terminus'
+};
+
+// Global coordinates and names mapping loaded from local GeoJSON fallback
 let COORDINATES_MAP: Record<string, { lat: number; lon: number }> = { ...KNOWN_STATION_COORDINATES };
+let STATION_NAME_MAP: Record<string, string> = { ...KNOWN_STATION_NAMES };
 
 try {
   const stationsPath = path.join(__dirname, '../data/full_stations.json');
@@ -97,10 +121,14 @@ try {
     if (rawData && rawData.features) {
       rawData.features.forEach((f: any) => {
         if (f.properties && f.properties.code && f.geometry && f.geometry.coordinates) {
-          COORDINATES_MAP[f.properties.code.toUpperCase().trim()] = {
+          const code = f.properties.code.toUpperCase().trim();
+          COORDINATES_MAP[code] = {
             lat: Number(f.geometry.coordinates[1]),
             lon: Number(f.geometry.coordinates[0])
           };
+          if (f.properties.name && !STATION_NAME_MAP[code]) {
+            STATION_NAME_MAP[code] = f.properties.name;
+          }
         }
       });
       // Re-apply known overrides to ensure precedence
@@ -662,41 +690,33 @@ export class StationService {
       const degreeDelta = radius / 111;
 
       try {
-        const { data, error } = await supabase
-          .from('station_registry')
-          .select('*')
-          .neq('station_code', cleanCode)
-          .gte('latitude', coords.lat - degreeDelta)
-          .lte('latitude', coords.lat + degreeDelta)
-          .gte('longitude', coords.lon - degreeDelta)
-          .lte('longitude', coords.lon + degreeDelta)
-          .limit(20);
+        const candidates: Array<{ station_code: string; station_name: string; distance_km: number }> = [];
 
-        if (error) continue;
-
-        if (data && data.length > 0) {
-          nearby = data
-            .map((s: any) => {
-              const distance = this._calculateHaversine(
-                coords.lat,
-                coords.lon,
-                Number(s.latitude),
-                Number(s.longitude)
-              );
-              return {
-                station_code: s.Station_Code || s.station_code,
-                station_name: s.Station_Name || s.station_name,
+        for (const [code, pos] of Object.entries(COORDINATES_MAP)) {
+          if (code === cleanCode) continue;
+          if (
+            pos.lat >= coords.lat - degreeDelta &&
+            pos.lat <= coords.lat + degreeDelta &&
+            pos.lon >= coords.lon - degreeDelta &&
+            pos.lon <= coords.lon + degreeDelta
+          ) {
+            const distance = this._calculateHaversine(coords.lat, coords.lon, pos.lat, pos.lon);
+            if (distance <= radius) {
+              candidates.push({
+                station_code: code,
+                station_name: STATION_NAME_MAP[code] || code,
                 distance_km: Math.round(distance * 10) / 10
-              };
-            })
-            .filter((s) => s.distance_km <= radius)
-            .sort((a, b) => a.distance_km - b.distance_km)
-            .slice(0, 5);
-
-          if (nearby.length > 0) {
-            winstonLogger.info(`[STATION] Found ${nearby.length} nearby stations for ${cleanCode} within ${radius}km`);
-            break;
+              });
+            }
           }
+        }
+
+        candidates.sort((a, b) => a.distance_km - b.distance_km);
+        nearby = candidates.slice(0, 5);
+
+        if (nearby.length > 0) {
+          winstonLogger.info(`[STATION] Found ${nearby.length} nearby stations for ${cleanCode} within ${radius}km`);
+          break;
         }
       } catch (e: any) {
         winstonLogger.debug(`[STATION] Nearby search failed at radius ${radius}km: ${e.message}`);

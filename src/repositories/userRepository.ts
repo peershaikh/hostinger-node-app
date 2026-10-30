@@ -154,7 +154,7 @@ class UserRepository {
     if (!isSupabaseConfigured()) return null;
     if (!id || !UUID_REGEX.test(id)) return null;
     try {
-      const { data, error } = await supabase.from('users').select('*').eq('id', id).single();
+      const { data, error } = await supabase.from('users').select('*').eq('id', id).maybeSingle();
       if (error) {
         if (error.code === 'PGRST116') return null; // Not found
         throw new DatabaseError(error.code, error.message);
@@ -169,7 +169,7 @@ class UserRepository {
   async findByEmail(email: string): Promise<User | null> {
     if (!isSupabaseConfigured()) return null;
     try {
-      const { data, error } = await supabase.from('users').select('*').eq('email', email).single();
+      const { data, error } = await supabase.from('users').select('*').eq('email', email).maybeSingle();
       if (error) {
         if (error.code === 'PGRST116') return null; // Not found
         throw new DatabaseError(error.code, error.message);
