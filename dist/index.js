@@ -110,6 +110,29 @@ app.use((req, res, next) => {
         return next();
     (0, xss_clean_1.default)()(req, res, next);
 });
+// Mirrored route prefixes to cover both /api/ prefixed and Vercel-rewritten un-prefixed routes (PHASE 0C.34E.47A)
+const MIRRORED_ROUTE_PREFIXES = [
+    '/api',
+    '/auth',
+    '/trains',
+    '/pnr',
+    '/analytics',
+    '/stations',
+    '/admin',
+    '/referrals',
+    '/news',
+    '/feedback',
+    '/contact',
+    '/payments',
+    '/notifications',
+    '/content',
+    '/beta',
+    '/alarms',
+    '/ai',
+    '/whatsapp',
+    '/tts',
+    '/live-train'
+];
 // Global Fallback Rate Limiter for unmatched routes
 const globalLimiter = (0, express_rate_limit_1.default)({
     windowMs: 15 * 60 * 1000,
@@ -120,16 +143,22 @@ const globalLimiter = (0, express_rate_limit_1.default)({
     skip: (req) => {
         if (['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip || ''))
             return true;
+        const fullPath = (req.originalUrl || req.path || '').split('?')[0].toLowerCase();
+        const relPath = (req.path || '').split('?')[0].toLowerCase();
+        if (fullPath.includes('webhook'))
+            return true;
+        if (fullPath.startsWith('/uploads') || fullPath.includes('robots.txt') || fullPath.includes('.well-known'))
+            return true;
         const heartbeatPaths = [
             '/api/auth/status', '/auth/status',
             '/api/auth/quota-status', '/auth/quota-status',
             '/api/health', '/health'
         ];
-        return req.method === 'GET' && heartbeatPaths.includes(req.path);
+        return req.method === 'GET' && (heartbeatPaths.includes(fullPath) || heartbeatPaths.includes(relPath));
     },
     message: { success: false, error: 'Too many requests from this IP, please try again after 15 minutes' },
 });
-app.use('/api', globalLimiter);
+app.use(MIRRORED_ROUTE_PREFIXES, globalLimiter);
 // CSRF Protection - PHASE_4C759 Fix #2 (P1-SEC-003)
 app.use(csrfProtection_1.conditionalCsrf);
 app.use(csrfProtection_1.attachCsrfToken);
