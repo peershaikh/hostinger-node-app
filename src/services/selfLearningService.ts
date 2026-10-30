@@ -352,17 +352,12 @@ export class SelfLearningService {
       try {
         const { data, error } = await supabase
           .from('missing_queries')
-          .select('id, count')
+          .select('id')
           .eq('source', cleanSource)
           .eq('destination', cleanDestination)
-          .eq('status', 'pending')
           .maybeSingle();
 
         if (!error && data) {
-          await supabase
-            .from('missing_queries')
-            .update({ count: data.count + 1, last_seen: new Date().toISOString() })
-            .eq('id', data.id);
           dbId = data.id;
         } else {
           await supabase
@@ -371,11 +366,8 @@ export class SelfLearningService {
               id: dbId,
               source: cleanSource,
               destination: cleanDestination,
-              date,
-              user_id: userId,
-              count: 1,
-              status: 'pending',
-              last_seen: new Date().toISOString()
+              date: date || null,
+              user_id: userId
             });
         }
       } catch (err: any) {
@@ -648,13 +640,12 @@ export class SelfLearningService {
           .from('missing_stations')
           .select('id, count')
           .eq('query', cleanQuery)
-          .eq('status', 'pending')
           .maybeSingle();
 
         if (!error && data) {
           await supabase
             .from('missing_stations')
-            .update({ count: data.count + 1, last_seen: new Date().toISOString() })
+            .update({ count: (data.count || 1) + 1, last_seen: new Date().toISOString() })
             .eq('id', data.id);
         } else {
           await supabase
@@ -664,7 +655,6 @@ export class SelfLearningService {
               query: cleanQuery,
               user_id: userId,
               count: 1,
-              status: 'pending',
               last_seen: new Date().toISOString()
             });
         }
