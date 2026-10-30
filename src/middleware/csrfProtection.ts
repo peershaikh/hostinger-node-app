@@ -1,14 +1,13 @@
 /**
  * PHASE_4C759 — P1-SEC-003: CSRF Protection Middleware
- * 
- * Protects state-changing routes (POST/PUT/DELETE/PATCH) from CSRF attacks.
- * Uses csurf package with cookie-based token storage.
- * 
- * Flow:
- * 1. Client makes GET request to any route
- * 2. Server generates CSRF token and sends it in response header + cookie
- * 3. Client stores token and includes it in subsequent state-changing requests
- * 4. Server validates token before processing request
+ * PHASE_0C33J, PHASE_0C33L & PHASE_0C33N — Controlled Local CSRF Remediation:
+ * 1. Exact, normalized route matching (replaces unanchored endsWith/includes/startsWith)
+ * 2. Strict Origin/Referer verification for cookie-authenticated refresh/logout
+ * 3. Verified Bearer token CSRF bypass (deferring to authMiddleware's x-user-id)
+ * 4. Protection restored on sensitive form endpoints (/contact, /feedback)
+ * 5. Exact read-only POST exemption for Same Train Rescue (/trains/same-train-rescue with method === POST)
+ * 6. Mobile session refresh & logout support via secure origin & mobile app package verification
+ * 7. Strict webhook isolation to exact registered routes
  */
 
 import csrf from 'csurf';
@@ -31,21 +30,15 @@ export const csrfProtection = csrf({
  */
 export const attachCsrfToken = (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Generate CSRF token (only if csrfProtection middleware has run)
     if (req.csrfToken) {
       const token = req.csrfToken();
-      
-      // Attach token to response header for client to read
       res.setHeader('X-CSRF-Token', token);
-      
-      // Also expose it in response locals for views/templates if needed
       res.locals.csrfToken = token;
     }
-    
     next();
   } catch (error: any) {
     winstonLogger.warn(`[CSRF] Failed to attach CSRF token: ${error.message}`);
-    next(); // Don't block request if token attachment fails
+    next();
   }
 };
 
@@ -54,108 +47,219 @@ export const attachCsrfToken = (req: Request, res: Response, next: NextFunction)
  */
 export const csrfErrorHandler = (err: any, req: Request, res: Response, next: NextFunction) => {
   if (err.code === 'EBADCSRFTOKEN') {
-    // Log the CSRF violation for security monitoring
     winstonLogger.warn(`[CSRF_VIOLATION] ${req.method} ${req.path} from IP ${req.ip} - Invalid or missing CSRF token`);
-    
     return res.status(403).json({
       success: false,
       error: 'Invalid CSRF token. Please refresh the page and try again.',
       code: 'CSRF_INVALID'
     });
   }
-  
-  // Pass other errors to the next error handler
   next(err);
 };
 
+// ─── EXACT STATIC ROUTE ALLOWLISTS (Dual-Mounted /api and un-prefixed) ─────────
+
+const EXACT_WEBHOOK_ROUTES: ReadonlySet<string> = new Set([
+  '/api/payments/webhook',
+  '/payments/webhook',
+  '/api/whatsapp/webhook',
+  '/whatsapp/webhook'
+]);
+
+const EXACT_PUBLIC_AUTH_ROUTES: ReadonlySet<string> = new Set([
+  '/api/auth/login',
+  '/auth/login',
+  '/api/auth/signup',
+  '/auth/signup',
+  '/api/auth/send-otp',
+  '/auth/send-otp',
+  '/api/auth/verify-otp',
+  '/auth/verify-otp',
+  '/api/auth/forgot-password',
+  '/auth/forgot-password',
+  '/api/auth/reset-password',
+  '/auth/reset-password',
+  '/api/auth/mobile/send-otp',
+  '/auth/mobile/send-otp',
+  '/api/auth/mobile/verify-otp',
+  '/auth/mobile/verify-otp',
+  '/api/auth/app-open',
+  '/auth/app-open',
+  '/api/auth/google-login',
+  '/auth/google-login',
+  '/api/auth/google',
+  '/auth/google',
+  '/api/auth/google/callback',
+  '/auth/google/callback'
+]);
+
+const EXACT_TELEMETRY_ROUTES: ReadonlySet<string> = new Set([
+  '/api/analytics/event',
+  '/analytics/event',
+  '/api/analytics/split-click',
+  '/analytics/split-click',
+  '/api/analytics/complaint',
+  '/analytics/complaint'
+]);
+
+// PHASE_0C33L Fix A & PHASE_0C33N Fix CSRF-03: Exact read-only POST availability scan paths
+const EXACT_READ_ONLY_POST_ROUTES: ReadonlySet<string> = new Set([
+  '/api/trains/same-train-rescue',
+  '/trains/same-train-rescue'
+]);
+
+// ─── TRUSTED WEB & MOBILE ORIGINS FOR COOKIE-AUTHENTICATED ENDPOINTS ──────────
+
+const TRUSTED_WEB_ORIGINS: ReadonlySet<string> = new Set([
+  'https://trayago.in',
+  'https://www.trayago.in',
+  'https://trayago.com',
+  'https://www.trayago.com',
+  'https://trayago.online',
+  'https://www.trayago.online',
+  'capacitor://localhost' // PHASE_0C33L Fix B: un-spoofable native mobile app scheme
+]);
+
+export function isTrustedWebOrigin(origin: string | undefined, req?: Request): boolean {
+  if (!origin || typeof origin !== 'string') return false;
+  const normalized = origin.trim().toLowerCase();
+  if (TRUSTED_WEB_ORIGINS.has(normalized)) return true;
+
+  // In non-production, trust all local loopback addresses
+  if (process.env.NODE_ENV !== 'production') {
+    if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(normalized)) {
+      return true;
+    }
+  }
+
+  // PHASE_0C33N Fix CSRF-02:
+  // In production, support Android Capacitor WebView on localhost only when accompanied
+  // by genuine Android Capacitor client signals (X-Requested-With package ID or WebView UA).
+  // Arbitrary desktop/mobile browsers accessing localhost do NOT pass this check.
+  if (normalized === 'http://localhost' || normalized === 'https://localhost') {
+    if (req) {
+      const reqWith = req.headers['x-requested-with'];
+      const ua = (req.headers['user-agent'] as string) || '';
+      if (reqWith === 'in.trayago.app' || /(in\.trayago\.app|capacitor|wv)/i.test(ua)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function normalizePath(rawPath: string | undefined): string {
+  if (!rawPath || typeof rawPath !== 'string') return '/';
+  let path = rawPath.trim().toLowerCase();
+  if (path.length > 1 && path.endsWith('/')) {
+    path = path.replace(/\/+$/, '');
+  }
+  return path;
+}
+
 /**
- * Conditional CSRF middleware - only applies to authenticated routes
- * Public routes (guest access) can bypass CSRF for ease of integration
+ * Conditional CSRF middleware:
+ * Enforces CSRF token verification across all state-changing endpoints,
+ * with strictly audited exemptions for webhooks, public auth, telemetry,
+ * exact read-only availability scans, and verified Bearer-authenticated clients.
  */
 export const conditionalCsrf = (req: Request, res: Response, next: NextFunction) => {
-  // Skip CSRF for health checks and monitoring endpoints
-  if (req.path === '/api/health' || req.path === '/' || req.path === '/health') {
+  const normalizedPath = normalizePath(req.path);
+
+  // 1. Skip CSRF for health checks and monitoring endpoints
+  if (normalizedPath === '/' || normalizedPath === '/health' || normalizedPath === '/api/health') {
     return next();
   }
 
-  // PHASE_4C971 FIX: Next.js proxy strips '/api/' prefix before forwarding to backend.
-  // So backend receives '/auth/login' NOT '/api/auth/login'.
-  // Use endsWith matching to handle BOTH '/api/auth/login' and '/auth/login'.
-  const authSuffixes = [
-    '/auth/login',
-    '/auth/signup',
-    '/auth/refresh',
-    '/auth/logout',
-    '/auth/send-otp',
-    '/auth/verify-otp',
-    '/auth/forgot-password',
-    '/auth/reset-password',
-    '/auth/mobile/send-otp',
-    '/auth/mobile/verify-otp',
-    '/auth/app-open',
-    '/auth/google',
-    '/auth/google/callback',
-    '/auth/google-login',
-  ];
-  if (authSuffixes.some(suffix => req.path === suffix || req.path.endsWith(suffix) || req.path.includes('google-login'))) {
+  // 2. Exact webhook callbacks (HMAC signature verification in controllers)
+  if (EXACT_WEBHOOK_ROUTES.has(normalizedPath)) {
     return next();
   }
 
-
-  // Skip CSRF for webhook callbacks (e.g., payment gateways)
-  if (req.path.startsWith('/api/webhooks/') || req.path.startsWith('/api/payments/webhook')
-      || req.path.startsWith('/webhooks/') || req.path.startsWith('/payments/webhook')) {
+  // 3. Exact public unauthenticated auth routes (initial login, signup, OTP bootstrap)
+  if (EXACT_PUBLIC_AUTH_ROUTES.has(normalizedPath)) {
     return next();
   }
 
-  // STEP 5.10BC: Exact-path CSRF exemption for Meta WhatsApp webhooks.
-  // GET is challenge-verified; POST requires HMAC-SHA256 signature verification in controller.
-  // Safely normalizes trailing slashes without broad prefix matching.
-  const rawPath = typeof req.path === 'string' ? req.path : '';
-  const normalizedPath = rawPath.length > 1 && rawPath.endsWith('/')
-    ? rawPath.replace(/\/+$/, '')
-    : rawPath;
-  if (normalizedPath === '/api/whatsapp/webhook' || normalizedPath === '/whatsapp/webhook') {
+  // 4. Exact anonymous client telemetry beacons (sendBeacon write-only logging)
+  // Sensitive endpoints like /contact and /feedback are strictly excluded
+  if (EXACT_TELEMETRY_ROUTES.has(normalizedPath)) {
     return next();
   }
 
-  // same-train-rescue is a read-only availability scan (no state-changing writes).
-  if (req.path.endsWith('/trains/same-train-rescue')) {
+  // 5. PHASE_0C33L Fix A & PHASE_0C33N Fix CSRF-03: Exact read-only availability search POST routes
+  // Idempotent search logic intentionally accessible to anonymous guests; abuse protected by IP-based sameTrainRescueLimiter
+  // Strictly restricted to POST method on the exact normalized routes.
+  if (req.method === 'POST' && EXACT_READ_ONLY_POST_ROUTES.has(normalizedPath)) {
     return next();
   }
 
-  // Public, read-only station autocomplete queries (allows edge CDN caching)
-  if (req.method === 'GET' && (req.path.startsWith('/api/stations/') || req.path.startsWith('/stations/'))) {
+  // 6. Read-only station autocomplete queries
+  if (req.method === 'GET' && (normalizedPath === '/api/stations' || normalizedPath.startsWith('/api/stations/') || normalizedPath === '/stations' || normalizedPath.startsWith('/stations/'))) {
     return next();
   }
 
-  // PHASE_087N84: Anonymous analytics telemetry endpoints (no auth required).
-  // These are write-only event logging designed for unauthenticated client tracking.
-  // Explicitly exclude /referrals/claim which may affect account rewards.
-  const analyticsPublicPaths = [
-    '/analytics/event',
-    '/api/analytics/event',
-    '/analytics/split-click',
-    '/api/analytics/split-click',
-    '/analytics/feedback',
-    '/api/analytics/feedback',
-    '/feedback',
-    '/api/feedback',
-    '/contact',
-    '/api/contact',
-    '/analytics/complaint',
-    '/api/analytics/complaint'
-  ];
-  if (analyticsPublicPaths.includes(req.path)) {
+  // 7. Strict Origin Guard for session lifecycle routes (/auth/refresh and /auth/logout)
+  if (normalizedPath === '/api/auth/refresh' || normalizedPath === '/auth/refresh' ||
+      normalizedPath === '/api/auth/logout' || normalizedPath === '/auth/logout') {
+    const rawOrigin = req.headers.origin;
+    const rawReferer = req.headers.referer;
+    let effectiveOrigin: string | undefined = undefined;
+    if (typeof rawOrigin === 'string' && rawOrigin.trim()) {
+      effectiveOrigin = rawOrigin.trim();
+    } else if (typeof rawReferer === 'string' && rawReferer.trim()) {
+      try {
+        effectiveOrigin = new URL(rawReferer).origin;
+      } catch {
+        effectiveOrigin = undefined;
+      }
+    }
+
+    const hasCookie = Boolean(req.cookies?.refreshToken || req.headers.cookie?.includes('refreshToken='));
+
+    // PHASE_0C33N Fix CSRF-01:
+    // If an Origin or Referer is present (all browser and cross-origin POSTs), it MUST match trusted web origins.
+    // Untrusted origins are rejected IMMEDIATELY with HTTP 403, even when req.body.refreshToken is present.
+    // This prevents Login CSRF and Session Fixation attacks from third-party sites.
+    if (effectiveOrigin) {
+      if (!isTrustedWebOrigin(effectiveOrigin, req)) {
+        winstonLogger.warn(`[CSRF_ORIGIN_BLOCKED] Rejected untrusted origin "${effectiveOrigin}" on ${normalizedPath}`);
+        return res.status(403).json({
+          success: false,
+          error: 'Cross-origin request rejected',
+          code: 'CROSS_ORIGIN_FORBIDDEN'
+        });
+      }
+      return next(); // Trusted web/mobile origin allowed to proceed to controller
+    }
+
+    // If relying on httpOnly cookies without Origin/Referer header, reject fail-closed
+    if (hasCookie) {
+      winstonLogger.warn(`[CSRF_COOKIE_BLOCKED] Missing Origin/Referer on cookie-authenticated ${normalizedPath}`);
+      return res.status(403).json({
+        success: false,
+        error: 'Origin verification required for cookie session',
+        code: 'CROSS_ORIGIN_FORBIDDEN'
+      });
+    }
+
+    // Native mobile / server clients without cookies and without Origin header:
+    // Fall through to controller where authService.verifyRefreshToken validates cryptographic token signature.
     return next();
   }
 
-  // PHASE_4C839 NF-006: Mobile/API clients use Bearer JWT without CSRF cookies.
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    return next();
+  // 8. Cryptographically verified Bearer Token Exemption:
+  // authMiddleware runs BEFORE conditionalCsrf and sets req.headers['x-user-id'] ONLY after
+  // jwt.verify() succeeds against process.env.JWT_SECRET (client-supplied x-user-id is stripped).
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+    if (req.headers['x-user-id']) {
+      return next(); // Verified Bearer-authenticated client (mobile / API)
+    }
+    // Malformed, tampered, or expired Bearer token: do NOT exempt.
+    // Falls through to csrfProtection below and will be blocked if CSRF token is missing.
   }
 
-  // Apply CSRF protection
+  // 9. Apply CSRF protection to all remaining state-changing requests
   csrfProtection(req as any, res as any, next);
 };

@@ -159,12 +159,12 @@ const globalLimiter = (0, express_rate_limit_1.default)({
     message: { success: false, error: 'Too many requests from this IP, please try again after 15 minutes' },
 });
 app.use(MIRRORED_ROUTE_PREFIXES, globalLimiter);
-// CSRF Protection - PHASE_4C759 Fix #2 (P1-SEC-003)
+const authMiddleware_1 = require("./middleware/authMiddleware");
+app.use(authMiddleware_1.authMiddleware);
+// CSRF Protection - PHASE_4C759 Fix #2 (P1-SEC-003) & PHASE_0C33J Remediation
 app.use(csrfProtection_1.conditionalCsrf);
 app.use(csrfProtection_1.attachCsrfToken);
 app.use('/uploads', express_1.default.static(path_1.default.join(__dirname, '../public/uploads')));
-const authMiddleware_1 = require("./middleware/authMiddleware");
-app.use(authMiddleware_1.authMiddleware);
 const requestContext_1 = require("./middleware/requestContext");
 app.use(requestContext_1.requestContextMiddleware);
 app.use(universalInstrumentation_1.universalInstrumentationMiddleware);

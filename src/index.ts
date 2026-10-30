@@ -162,17 +162,14 @@ const globalLimiter = rateLimit({
 });
 app.use(MIRRORED_ROUTE_PREFIXES, globalLimiter);
 
+import { authMiddleware } from './middleware/authMiddleware';
+app.use(authMiddleware);
 
-
-
-// CSRF Protection - PHASE_4C759 Fix #2 (P1-SEC-003)
+// CSRF Protection - PHASE_4C759 Fix #2 (P1-SEC-003) & PHASE_0C33J Remediation
 app.use(conditionalCsrf);
 app.use(attachCsrfToken);
 
 app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
-
-import { authMiddleware } from './middleware/authMiddleware';
-app.use(authMiddleware);
 
 import { requestContextMiddleware } from './middleware/requestContext';
 app.use(requestContextMiddleware);
