@@ -38,50 +38,19 @@ class SearchHistoryService {
      */
     async updateSearchPopularity(source, destination) {
         try {
-            const routeKey = `${source}_${destination}`;
-            // Get current count
-            const { data: existing, error: selectError } = await supabase_1.supabase
-                .from('search_popularity')
-                .select('count')
-                .eq('route_key', routeKey)
-                .single();
-            if (selectError && selectError.code !== 'PGRST116') {
-                logger_1.winstonLogger.error(`[SEARCH_POPULARITY] Error checking existing record: ${selectError.message}`);
+            const s = String(source || '').trim().toUpperCase();
+            const d = String(destination || '').trim().toUpperCase();
+            if (!s || !d || s === d)
                 return;
-            }
-            const newCount = (existing?.count || 0) + 1;
-            // Insert or update record
-            if (existing) {
-                const { error: updateError } = await supabase_1.supabase
-                    .from('search_popularity')
-                    .update({
-                    count: newCount,
-                    last_searched_at: new Date().toISOString()
-                })
-                    .eq('route_key', routeKey);
-                if (updateError) {
-                    logger_1.winstonLogger.error(`[SEARCH_POPULARITY] Error updating record: ${updateError.message}`);
-                }
-                else {
-                    logger_1.winstonLogger.info(`[SEARCH_POPULARITY] Updated popularity for route: ${source} → ${destination} (count: ${newCount})`);
-                }
+            const { error } = await supabase_1.supabase.rpc('increment_search_popularity', {
+                p_source: s,
+                p_destination: d
+            });
+            if (error) {
+                logger_1.winstonLogger.warn(`[SEARCH_POPULARITY] RPC increment_search_popularity skipped: ${error.message}`);
             }
             else {
-                const { error: insertError } = await supabase_1.supabase
-                    .from('search_popularity')
-                    .insert({
-                    route_key: routeKey,
-                    source,
-                    destination,
-                    count: 1,
-                    last_searched_at: new Date().toISOString()
-                });
-                if (insertError) {
-                    logger_1.winstonLogger.error(`[SEARCH_POPULARITY] Error inserting record: ${insertError.message}`);
-                }
-                else {
-                    logger_1.winstonLogger.info(`[SEARCH_POPULARITY] Inserted new popularity record for route: ${source} → ${destination}`);
-                }
+                logger_1.winstonLogger.info(`[SEARCH_POPULARITY] Updated popularity for route: ${s} -> ${d}`);
             }
         }
         catch (error) {
@@ -95,14 +64,19 @@ class SearchHistoryService {
         try {
             const { data, error } = await supabase_1.supabase
                 .from('search_popularity')
-                .select('source, destination, count')
-                .order('count', { ascending: false })
+                .select('source, destination, search_count')
+                .order('search_count', { ascending: false })
                 .limit(limit);
             if (error) {
                 logger_1.winstonLogger.error(`[TRENDING_ROUTES] Error fetching trending routes: ${error.message}`);
                 return [];
             }
-            return data || [];
+            return (data || []).map((row) => ({
+                source: row.source,
+                destination: row.destination,
+                count: Number(row.search_count || 1),
+                search_count: Number(row.search_count || 1)
+            }));
         }
         catch (error) {
             logger_1.winstonLogger.error(`[TRENDING_ROUTES] Unexpected error: ${error.message}`);

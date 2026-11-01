@@ -359,34 +359,21 @@ class DbService {
     destination: string;
     count?: number;
   }): Promise<void> {
-    const routeKey = `${data.source}_${data.destination}`;
+    const s = String(data.source || '').trim().toUpperCase();
+    const d = String(data.destination || '').trim().toUpperCase();
+    if (!s || !d || s === d) return;
 
     try {
-      // Get current count
-      const { data: existing } = await supabase
-        .from('search_popularity')
-        .select('count')
-        .eq('route_key', routeKey)
-        .single();
-
-      const newCount = (existing?.count || 0) + (data.count || 1);
-
-      const popularityPayload = {
-        route_key: routeKey,
-        source: data.source,
-        destination: data.destination,
-        count: newCount,
-        last_searched_at: new Date().toISOString(),
-      };
-
-      if (existing) {
-        await supabase.from('search_popularity').update(popularityPayload).eq('route_key', routeKey);
-      } else {
-        await supabase.from('search_popularity').insert(popularityPayload);
+      const { error } = await supabase.rpc('increment_search_popularity', {
+        p_source: s,
+        p_destination: d,
+      });
+      if (error) {
+        winstonLogger.debug(`[DB_SERVICE] Search popularity RPC skipped: ${error.message}`);
       }
     } catch (err: any) {
       // Silent fail for analytics - don't break main flow
-      winstonLogger.debug(`Failed to update search popularity for ${routeKey}`);
+      winstonLogger.debug(`[DB_SERVICE] Failed to update search popularity for ${s}->${d}: ${err.message}`);
     }
   }
 

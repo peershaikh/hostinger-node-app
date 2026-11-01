@@ -1106,16 +1106,16 @@ export class NewsContentGrowthService {
       try {
         const { data, error } = await supabase
           .from('search_popularity')
-          .select('query, count, category')
-          .order('count', { ascending: false })
+          .select('source, destination, search_count')
+          .order('search_count', { ascending: false })
           .limit(50);
 
         if (!error && data) {
           data.forEach((row: any) => {
             demand.push({
-              query: row.query || '',
-              count: Number(row.count || 1),
-              category: row.category || 'TRAIN',
+              query: row.source && row.destination ? `${row.source} -> ${row.destination}` : '',
+              count: Number(row.search_count || 1),
+              category: 'ROUTE_DEMAND',
             });
           });
         }

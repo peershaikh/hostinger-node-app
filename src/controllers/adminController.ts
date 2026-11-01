@@ -1857,8 +1857,8 @@ export class AdminController {
         try {
           const { data: popData } = await supabase
             .from('search_popularity')
-            .select('source, destination, count, last_searched_at')
-            .order('count', { ascending: false })
+            .select('source, destination, search_count, last_searched_at')
+            .order('search_count', { ascending: false })
             .limit(100);
 
           if (popData && popData.length > 0) {
@@ -1869,7 +1869,7 @@ export class AdminController {
               const dst = normalizeRouteStation(r.destination);
               if (!src || !dst || src === dst) continue;
               const key = `${src}->${dst}`;
-              const countVal = Number(r.count) || 1;
+              const countVal = Number(r.search_count || (r as any).count) || 1;
               const existing = routeMap.get(key);
               if (existing) {
                 existing.count += countVal;
