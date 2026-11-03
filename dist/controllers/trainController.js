@@ -52,6 +52,8 @@ const segmentAvailabilityEngine_1 = require("../services/segmentAvailabilityEngi
 const providerConfigService_1 = require("../services/providerConfigService");
 const booking_1 = require("../services/booking");
 const irctcService_1 = require("../services/irctcService");
+const entitlementService_1 = require("../services/entitlementService");
+const betaService_1 = require("../services/betaService");
 class TrainController {
     constructor() {
         /**
@@ -197,6 +199,9 @@ class TrainController {
             }
         };
         this.searchAdvanced = async (req, res) => {
+            let splitUserId = null;
+            let splitReservationId = null;
+            let isSplitPaid = false;
             try {
                 // P0-4 (PHASE_4C885): capture wall-time here — timeTakenMs must be actual elapsed ms,
                 // NOT Date.now() - Date.parse(date) which produces epoch-deltas in the billions
@@ -214,8 +219,8 @@ class TrainController {
                 const userId = req.headers['x-user-id'] || null;
                 const deviceId = req.headers['x-device-id'];
                 const betaCode = req.headers['x-beta-code'];
-                if (userId || betaCode) {
-                    // Authenticated user or beta - check usage limits
+                if (!includeSplit && (userId || betaCode)) {
+                    // Authenticated user or beta direct search - check usage limits
                     const canUse = await authService_1.authService.canUseFeature(userId, 'search', betaCode);
                     if (!canUse) {
                         return res.status(403).json({
@@ -224,11 +229,8 @@ class TrainController {
                             message: "Upgrade to continue"
                         });
                     }
-                    // Increment usage count
+                    // Increment direct search usage count
                     await authService_1.authService.incrementUsage(userId, 'search', betaCode);
-                }
-                else {
-                    // Guest user
                 }
                 logger_1.winstonLogger.info(`[ADVANCED] ${source} → ${destination} | split=${includeSplit}`);
                 const [memoryRoutes, trainData] = await Promise.all([
@@ -246,13 +248,35 @@ class TrainController {
                 let finalSplits = [];
                 let splitResult = null;
                 if (includeSplit) {
-                    // Check if user can use split feature
-                    const userId = req.headers['x-user-id'] || null;
-                    const betaCode = req.headers['x-beta-code'];
-                    let canUse = false;
-                    if (userId || betaCode) {
-                        canUse = await authService_1.authService.canUseSplit(userId, betaCode);
+                    // Authoritative Entitlement Check & Two-Phase Reserve for Split Journey
+                    splitUserId = req.headers['x-user-id'] || req.body?.userId || null;
+                    const splitBetaCode = req.headers['x-beta-code'];
+                    if (splitBetaCode && betaService_1.betaService.isValidCode(splitBetaCode)) {
+                        // Beta code grants unlimited access
+                        isSplitPaid = true;
                     }
+                    else if (splitUserId) {
+                        const entitlement = await entitlementService_1.entitlementService.reserveFreeCredit(splitUserId, 'split', 120000);
+                        if (!entitlement.allowed) {
+                            return res.status(403).json({
+                                success: false,
+                                error: 'limit_exceeded',
+                                code: entitlement.status,
+                                message: entitlement.message || 'Daily free Split Journey limit reached. Upgrade to Pro for unlimited split routes.'
+                            });
+                        }
+                        splitReservationId = entitlement.reservationId || null;
+                        isSplitPaid = Boolean(entitlement.status === 'ALLOW_PAID' || entitlement.isPaid);
+                    }
+                    else {
+                        return res.status(401).json({
+                            success: false,
+                            error: 'auth_required',
+                            code: 'REQUIRE_LOGIN',
+                            message: 'Please log in to claim your free daily Split Journey.'
+                        });
+                    }
+                    const canUse = true;
                     const effectiveClass2 = (req.body.classType || req.query.classType || '');
                     if (!effectiveClass2) {
                         logger_1.winstonLogger.info('[ADVANCED] classType not specified — defaulting to 3A for segment scan');
@@ -395,6 +419,15 @@ class TrainController {
                 if (finalSplits.length === 0) {
                     logger_1.winstonLogger.warn('[ADVANCED] Returning 0 splits to frontend');
                 }
+                // TWO-PHASE COMMIT / RELEASE FOR SPLIT JOURNEY
+                if (includeSplit && splitReservationId && !isSplitPaid && splitUserId) {
+                    if (finalSplits.length > 0) {
+                        await entitlementService_1.entitlementService.commitFreeCredit(splitUserId, 'split', splitReservationId);
+                    }
+                    else {
+                        await entitlementService_1.entitlementService.releaseFreeCredit(splitUserId, 'split', splitReservationId);
+                    }
+                }
                 // PHASE_4C880: defer non-critical learning writes — do not block response
                 setImmediate(() => {
                     try {
@@ -450,6 +483,9 @@ class TrainController {
                 });
             }
             catch (err) {
+                if (splitReservationId && !isSplitPaid && splitUserId) {
+                    await entitlementService_1.entitlementService.releaseFreeCredit(splitUserId, 'split', splitReservationId).catch(() => { });
+                }
                 logger_1.winstonLogger.error('❌ search-advanced error:', err);
                 logger_1.winstonLogger.error(`[ADVANCED] Failed: ${err.message}`);
                 return res.json({
@@ -582,6 +618,9 @@ class TrainController {
          * Returns: { success, trainNo, rescueOptions[] }
          */
         this.sameTrainRescue = async (req, res) => {
+            let userId = null;
+            let rescueReservationId = null;
+            let isRescuePaid = false;
             try {
                 const trainNo = (req.body.trainNo || req.body.train_no);
                 const source = (req.body.source || req.body.from);
@@ -608,26 +647,36 @@ class TrainController {
                         error: 'source and destination cannot be the same'
                     });
                 }
-                // ── Auth / quota check + Pro split gate (mirrors searchAdvanced) ─────────
-                const userId = req.headers['x-user-id'] || null;
+                // ── Entitlement check for Same Train Rescue ──────────────────────────
+                userId = req.headers['x-user-id'] || req.body?.userId || null;
                 const betaCode = req.headers['x-beta-code'];
-                if (userId || betaCode) {
-                    const canUse = await authService_1.authService.canUseFeature(userId, 'search', betaCode);
-                    if (!canUse) {
+                if (betaCode && betaService_1.betaService.isValidCode(betaCode)) {
+                    // Beta code grants unlimited access
+                    isRescuePaid = true;
+                }
+                else if (userId) {
+                    // Two-phase reservation (60s lease window)
+                    const entitlement = await entitlementService_1.entitlementService.reserveFreeCredit(userId, 'rescue', 60000);
+                    if (!entitlement.allowed) {
                         return res.status(403).json({
                             success: false,
                             error: 'limit_exceeded',
-                            message: 'Upgrade to continue'
+                            code: entitlement.status,
+                            message: entitlement.message || 'Daily free Same-Train Rescue limit reached. Upgrade to Pro for unlimited rescues.'
                         });
                     }
-                    // Rescue counts as one search usage
-                    await authService_1.authService.incrementUsage(userId, 'search', betaCode);
+                    rescueReservationId = entitlement.reservationId || null;
+                    isRescuePaid = Boolean(entitlement.status === 'ALLOW_PAID' || entitlement.isPaid);
                 }
-                // ── Pro split gate (same as searchAdvanced:262) ──────────────────────────
-                let canUseRescue = false;
-                if (userId || betaCode) {
-                    canUseRescue = await authService_1.authService.canUseSplit(userId, betaCode);
+                else {
+                    return res.status(401).json({
+                        success: false,
+                        error: 'auth_required',
+                        code: 'REQUIRE_LOGIN',
+                        message: 'Please log in to use your free daily Same-Train Rescue.'
+                    });
                 }
+                const canUseRescue = true;
                 // P1.4 (PHASE_4C812): Track total request time from the top
                 const requestStart = Date.now();
                 logger_1.winstonLogger.info(`[RESCUE_CTRL] Train ${trainNo} | ${source} → ${destination} | ${journeyDate} | class=${classCode}`);
@@ -657,6 +706,15 @@ class TrainController {
                 logger_1.winstonLogger.info(`[RESCUE_TIMING] ENGINE_MS=${engineMs} TOTAL_REQUEST_MS=${totalMs} results=${rescueOptions.length}`);
                 const startTime = requestStart; // keep for learningService.logSearch below
                 logger_1.winstonLogger.info(`[RESCUE_CTRL] Rescue options found: ${rescueOptions.length}`);
+                // TWO-PHASE COMMIT / RELEASE FOR SAME-TRAIN RESCUE
+                if (rescueReservationId && !isRescuePaid && userId) {
+                    if (rescueOptions.length > 0) {
+                        await entitlementService_1.entitlementService.commitFreeCredit(userId, 'rescue', rescueReservationId);
+                    }
+                    else {
+                        await entitlementService_1.entitlementService.releaseFreeCredit(userId, 'rescue', rescueReservationId);
+                    }
+                }
                 // ── Split confirmed vs partial RAC (PHASE_4C807) ──────────────────────
                 // Confirmed rescues (rescueType = SAME_TRAIN_SEGMENT) are unchanged.
                 // Partial RAC rescues (rescueType = PARTIAL_RAC) are separated only when
@@ -758,6 +816,9 @@ class TrainController {
                 return res.status(200).json(responseBody);
             }
             catch (err) {
+                if (rescueReservationId && !isRescuePaid && userId) {
+                    await entitlementService_1.entitlementService.releaseFreeCredit(userId, 'rescue', rescueReservationId).catch(() => { });
+                }
                 logger_1.winstonLogger.error(`[RESCUE_CTRL] Failed: ${err.message}`);
                 return res.status(500).json({
                     success: false,

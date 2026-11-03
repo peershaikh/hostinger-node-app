@@ -1,19 +1,62 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.usageMiddleware = void 0;
+const crypto_1 = __importDefault(require("crypto"));
 const authService_1 = require("../services/authService");
+const ipResolver_1 = require("../utils/ipResolver");
+function sanitizeDeviceId(rawId) {
+    if (!rawId || typeof rawId !== 'string')
+        return null;
+    const trimmed = rawId.trim();
+    if (trimmed.length < 8 || trimmed.length > 128)
+        return null;
+    // Disallow path traversal, control chars, spaces, tags
+    if (!/^[a-zA-Z0-9_\-\.]+$/.test(trimmed))
+        return null;
+    // Disallow common placeholders or malformed strings
+    if (/^(null|undefined|none|guest|anonymous|deviceId|\[object Object\])$/i.test(trimmed))
+        return null;
+    return trimmed;
+}
 const usageMiddleware = (feature) => {
     return async (req, res, next) => {
+        // Decouple Split Journey from general direct-search quota:
+        // Split requests hitting search-advanced are authoritatively governed by EntitlementService
+        const isSplitRequest = feature === 'search' && (req.query.includeSplit === 'true' ||
+            req.body?.includeSplit === true ||
+            req.body?.includeSplit === 'true');
+        if (isSplitRequest) {
+            return next();
+        }
         const userId = req.headers['x-user-id'] || null;
-        let deviceId = req.headers['x-device-id'];
         const betaCode = req.headers['x-beta-code'];
-        // Fallback to IP if no deviceId is provided for guests
-        if (!userId && !deviceId) {
-            deviceId = `ip_${req.ip}`;
+        const clientIp = (0, ipResolver_1.resolveClientIp)(req);
+        // Stable server-validated device identity strategy
+        let deviceId = sanitizeDeviceId(req.headers['x-device-id']);
+        if (!deviceId && req.cookies?.trayago_did) {
+            deviceId = sanitizeDeviceId(req.cookies.trayago_did);
+        }
+        // If still missing or invalid, generate a unique server-assigned guest device ID
+        // NEVER fall back to shared proxy IP alone, to avoid cross-user blocking collisions
+        if (!deviceId) {
+            deviceId = `srv_${crypto_1.default.randomUUID()}`;
+            try {
+                res.cookie('trayago_did', deviceId, {
+                    maxAge: 365 * 24 * 60 * 60 * 1000,
+                    httpOnly: false,
+                    sameSite: 'lax',
+                    path: '/'
+                });
+            }
+            catch { }
+            res.setHeader('x-device-id', deviceId);
         }
         // IP + Device Binding Protection (Guest Security Hardening)
         if (!userId && !betaCode && deviceId) {
-            const isSafe = authService_1.authService.verifyDeviceIpBinding(req.ip || '0.0.0.0', deviceId);
+            const isSafe = authService_1.authService.verifyDeviceIpBinding(clientIp, deviceId);
             if (!isSafe) {
                 return res.status(429).json({
                     success: false,
@@ -31,8 +74,6 @@ const usageMiddleware = (feature) => {
                     message: "Your account has been suspended."
                 });
             }
-            // Cryptographic validity is already verified by jwt.verify in authMiddleware.
-            // We do not reject valid access tokens on usage based on rotation version drift.
         }
         const canUse = await authService_1.authService.canUseFeature(userId, feature, betaCode, deviceId);
         if (!canUse) {
@@ -42,10 +83,7 @@ const usageMiddleware = (feature) => {
                 message: "Limit exceeded. Watch an ad or upgrade to PRO."
             });
         }
-        // Crucial Logic:
-        // If the user is logged in (userId) or has a betaCode, trainController WILL increment the usage internally.
-        // If the user is a GUEST (no userId and no betaCode), trainController completely bypasses incrementing.
-        // So, we MUST increment guest usage here to prevent infinite guest searches!
+        // Increment guest usage per validated device ID
         if (!userId && !betaCode && deviceId) {
             await authService_1.authService.incrementGuestUsage(deviceId, feature);
         }
