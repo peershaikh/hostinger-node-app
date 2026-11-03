@@ -47,7 +47,7 @@ export interface User {
   isAdmin: boolean;
   isBlocked?: boolean;
   tokenVersion?: number;
-  // PHASE_4C965 — access-token revocation epoch (E), decoupled from refresh rotation (R)
+  // PHASE_4C965 - access-token revocation epoch (E), decoupled from refresh rotation (R)
   sessionEpoch?: number;
 
   fullName?: string;
@@ -60,6 +60,7 @@ export interface User {
   mobileVerified?: boolean;
   mobileVerificationMethod?: string | null;
   mobileVerifiedAt?: string | null;
+  mobileVerificationRevokedAt?: string | null;
   birthdayRewardLastClaimedYear?: number | null;
   gender?: 'M' | 'F' | 'T' | string;
 
@@ -143,6 +144,21 @@ export class AuthService {
       if (user) {
         const localUser = this.users.find(u => u.id === userId);
         if (localUser) {
+          const isRemoteRevoked = Boolean(
+            user.mobileVerificationRevokedAt &&
+            (!user.mobileVerifiedAt || new Date(user.mobileVerificationRevokedAt).getTime() >= new Date(user.mobileVerifiedAt).getTime())
+          );
+          let resolvedMobileVerified = false;
+          if (isRemoteRevoked) {
+            resolvedMobileVerified = false;
+          } else if (typeof user.mobileVerified === 'boolean') {
+            // SEC-143F-02: Authoritative remote boolean from PostgreSQL strictly governs
+            resolvedMobileVerified = user.mobileVerified;
+          } else {
+            // Only fall back to local JSON if remote DB did not specify mobileVerified
+            resolvedMobileVerified = Boolean(localUser.mobileVerified && !localUser.mobileVerificationRevokedAt);
+          }
+
           user = {
             ...localUser,
             ...user,
@@ -150,10 +166,20 @@ export class AuthService {
             isAdmin: (localUser.isAdmin === true) || (user.isAdmin === true),
             avatarUrl: user.avatarUrl || localUser.avatarUrl || '',
             mobileNumber: user.mobileNumber || localUser.mobileNumber || '',
-            mobileVerified: user.mobileVerified || localUser.mobileVerified || false,
+            gender: user.gender || localUser.gender || undefined,
+            mobileVerified: resolvedMobileVerified,
             mobileVerificationMethod: user.mobileVerificationMethod || localUser.mobileVerificationMethod || null,
-            mobileVerifiedAt: user.mobileVerifiedAt || localUser.mobileVerifiedAt || null
+            mobileVerifiedAt: user.mobileVerifiedAt || localUser.mobileVerifiedAt || null,
+            mobileVerificationRevokedAt: user.mobileVerificationRevokedAt || localUser.mobileVerificationRevokedAt || null
           };
+
+          // Synchronize in-memory registry so local state reflects authoritative truth
+          localUser.mobileVerified = resolvedMobileVerified;
+          localUser.mobileVerificationRevokedAt = user.mobileVerificationRevokedAt;
+        } else {
+          if (typeof user.mobileVerified !== 'boolean') {
+            user.mobileVerified = false;
+          }
         }
         await userCache.setUser(user);
         return user;
@@ -163,7 +189,11 @@ export class AuthService {
       return this.users.find(u => u.id === userId) || null;
     } catch (err: any) {
       winstonLogger.error(`[AUTH_PHASE2A] getUserById repository fallback: ${err.message}`);
-      return this.users.find(u => u.id === userId) || null;
+      const localUser = this.users.find(u => u.id === userId);
+      if (localUser) {
+        return localUser;
+      }
+      throw err;
     }
   }
 
@@ -173,6 +203,21 @@ export class AuthService {
       if (user) {
         const localUser = this.users.find(u => u.email === email);
         if (localUser) {
+          const isRemoteRevoked = Boolean(
+            user.mobileVerificationRevokedAt &&
+            (!user.mobileVerifiedAt || new Date(user.mobileVerificationRevokedAt).getTime() >= new Date(user.mobileVerifiedAt).getTime())
+          );
+          let resolvedMobileVerified = false;
+          if (isRemoteRevoked) {
+            resolvedMobileVerified = false;
+          } else if (typeof user.mobileVerified === 'boolean') {
+            // SEC-143F-02: Authoritative remote boolean from PostgreSQL strictly governs
+            resolvedMobileVerified = user.mobileVerified;
+          } else {
+            // Only fall back to local JSON if remote DB did not specify mobileVerified
+            resolvedMobileVerified = Boolean(localUser.mobileVerified && !localUser.mobileVerificationRevokedAt);
+          }
+
           user = {
             ...localUser,
             ...user,
@@ -180,10 +225,20 @@ export class AuthService {
             isAdmin: (localUser.isAdmin === true) || (user.isAdmin === true),
             avatarUrl: user.avatarUrl || localUser.avatarUrl || '',
             mobileNumber: user.mobileNumber || localUser.mobileNumber || '',
-            mobileVerified: user.mobileVerified || localUser.mobileVerified || false,
+            gender: user.gender || localUser.gender || undefined,
+            mobileVerified: resolvedMobileVerified,
             mobileVerificationMethod: user.mobileVerificationMethod || localUser.mobileVerificationMethod || null,
-            mobileVerifiedAt: user.mobileVerifiedAt || localUser.mobileVerifiedAt || null
+            mobileVerifiedAt: user.mobileVerifiedAt || localUser.mobileVerifiedAt || null,
+            mobileVerificationRevokedAt: user.mobileVerificationRevokedAt || localUser.mobileVerificationRevokedAt || null
           };
+
+          // Synchronize in-memory registry so local state reflects authoritative truth
+          localUser.mobileVerified = resolvedMobileVerified;
+          localUser.mobileVerificationRevokedAt = user.mobileVerificationRevokedAt;
+        } else {
+          if (typeof user.mobileVerified !== 'boolean') {
+            user.mobileVerified = false;
+          }
         }
         await userCache.setUser(user);
         return user;
@@ -299,7 +354,7 @@ export class AuthService {
     }
 
     this.updateLocalUser(user);
-    this.saveUsers();
+    this.saveUsers(userId, { includeSecurityFields: true });
     return true;
   }
 
@@ -317,7 +372,7 @@ export class AuthService {
     }
 
     this.updateLocalUser(user);
-    this.saveUsers();
+    this.saveUsers(user.id, { includeSecurityFields: true });
     return true;
   }
 
@@ -345,7 +400,7 @@ export class AuthService {
     }
 
     this.updateLocalUser(user);
-    this.saveUsers();
+    this.saveUsers(userId);
     return true;
   }
 
@@ -374,7 +429,7 @@ export class AuthService {
     }
 
     this.updateLocalUser(user);
-    this.saveUsers();
+    this.saveUsers(userId);
     return true;
   }
 
@@ -396,7 +451,7 @@ export class AuthService {
     await userCache.invalidate(userId);
 
     this.updateLocalUser(user);
-    this.saveUsers();
+    this.saveUsers(user.id, { includeSecurityFields: true });
     return true;
   }
 
@@ -421,7 +476,7 @@ export class AuthService {
     await userCache.invalidate(userId);
 
     this.updateLocalUser(user);
-    this.saveUsers();
+    this.saveUsers(user.id);
     return true;
   }
 
@@ -531,7 +586,7 @@ export class AuthService {
     }
 
     this.updateLocalUser(user);
-    this.saveUsers();
+    this.saveUsers(user.id, { includeSecurityFields: true });
     return { success: true, cacheInvalidated };
   }
 
@@ -599,7 +654,21 @@ export class AuthService {
                           ads_watched_today: localUser.adsWatchedToday,
                           last_ad_watch_time: localUser.lastAdWatchTime,
                           is_admin: localUser.isAdmin,
-                          is_blocked: (localUser as any).isBlocked || false
+                          is_blocked: (localUser as any).isBlocked || false,
+                          full_name: localUser.fullName || null,
+                          mobile_number: localUser.mobileNumber || null,
+                          dob: localUser.dob || null,
+                          gender: localUser.gender || null,
+                          avatar_url: localUser.avatarUrl || null,
+                          mobile_verified: localUser.mobileVerified === true,
+                          mobile_verification_method: localUser.mobileVerificationMethod || null,
+                          mobile_verified_at: localUser.mobileVerifiedAt || null,
+                          mobile_verification_revoked_at: localUser.mobileVerificationRevokedAt || null,
+                          notify_email: localUser.notifyEmail ?? true,
+                          notify_birthday: localUser.notifyBirthday ?? true,
+                          notify_marketing: localUser.notifyMarketing ?? true,
+                          token_version: localUser.tokenVersion ?? 1,
+                          session_epoch: localUser.sessionEpoch ?? 1
                       });
                       if (!insertErr) {
                           winstonLogger.info(`[AUTH_MIGRATION] User migrated: ${localUser.email}`);
@@ -613,6 +682,30 @@ export class AuthService {
               // Combine remote truth and local migrations
               this.users = Array.from(remoteDict.values()).map(row => {
                   const localUser = this.users.find(u => u.email === row.email) || ({} as Partial<User>);
+                  const remoteRevokedAtStr = row.mobile_verification_revoked_at || row.mobileVerificationRevokedAt || null;
+                  const remoteRevokedAt = remoteRevokedAtStr ? new Date(remoteRevokedAtStr).getTime() : 0;
+                  const remoteVerifiedAtStr = row.mobile_verified_at || row.mobileVerifiedAt || null;
+                  const remoteVerifiedAt = remoteVerifiedAtStr ? new Date(remoteVerifiedAtStr).getTime() : 0;
+                  const localVerifiedAt = (localUser.mobileVerified === true && localUser.mobileVerifiedAt) ? new Date(localUser.mobileVerifiedAt).getTime() : 0;
+                  let resolvedMobileVerified = false;
+                  let resolvedRevokedAt = remoteRevokedAtStr || localUser.mobileVerificationRevokedAt || null;
+                  if (remoteRevokedAt > 0 && remoteRevokedAt >= Math.max(localVerifiedAt, remoteVerifiedAt)) {
+                      resolvedMobileVerified = false;
+                      resolvedRevokedAt = remoteRevokedAtStr;
+                  } else if (row.mobile_verified === true || row.mobileVerified === true) {
+                      resolvedMobileVerified = true;
+                      if (remoteRevokedAt > 0 && (remoteVerifiedAt > remoteRevokedAt || localVerifiedAt > remoteRevokedAt)) {
+                          resolvedRevokedAt = null;
+                      }
+                  } else if (row.mobile_verified === false || row.mobileVerified === false) {
+                      // SEC-143F-02: Authoritative remote false strictly enforced; never resurrect from stale local JSON
+                      resolvedMobileVerified = false;
+                      resolvedRevokedAt = remoteRevokedAtStr || null;
+                  } else {
+                      // Fallback ONLY when remote mobile_verified is null/undefined (column not yet populated)
+                      resolvedMobileVerified = Boolean(localUser.mobileVerified === true && !localUser.mobileVerificationRevokedAt);
+                      resolvedRevokedAt = localUser.mobileVerificationRevokedAt || null;
+                  }
                   return {
                       id: row.id,
                       email: row.email,
@@ -638,11 +731,13 @@ export class AuthService {
                       fullName: row.full_name || row.fullName || localUser.fullName || '',
                       mobileNumber: row.mobile_number || row.mobileNumber || localUser.mobileNumber || '',
                       dob: row.dob || row.dob || localUser.dob || '',
+                      gender: row.gender || row.gender || localUser.gender || undefined,
                       avatarUrl: row.avatar_url || row.avatarUrl || localUser.avatarUrl || '',
                       notifyEmail: row.notify_email ?? row.notifyEmail ?? localUser.notifyEmail ?? true,
                       notifyBirthday: row.notify_birthday ?? row.notifyBirthday ?? localUser.notifyBirthday ?? true,
                       notifyMarketing: row.notify_marketing ?? row.notifyMarketing ?? localUser.notifyMarketing ?? true,
-                      mobileVerified: row.mobile_verified ?? row.mobileVerified ?? localUser.mobileVerified ?? false,
+                      mobileVerified: resolvedMobileVerified,
+                      mobileVerificationRevokedAt: resolvedRevokedAt,
                       mobileVerificationMethod: row.mobile_verification_method || row.mobileVerificationMethod || localUser.mobileVerificationMethod || null,
                       mobileVerifiedAt: row.mobile_verified_at || row.mobileVerifiedAt || localUser.mobileVerifiedAt || null,
                       birthdayRewardLastClaimedYear: row.birthday_reward_last_claimed_year || row.birthdayRewardLastClaimedYear || localUser.birthdayRewardLastClaimedYear || null,
@@ -678,7 +773,7 @@ export class AuthService {
     }
   }
  
-  private saveUsers() {
+  private async saveUsers(targetUserId?: string, options?: { includeSecurityFields?: boolean }) {
     try {
       // In test/staging isolation mode, suppress local file write and bulk Supabase upsert
       if (process.env.AUTH_DISABLE_AUTO_SYNC === 'true' || process.env.AUTH_ISOLATION_MODE === 'true') {
@@ -692,47 +787,88 @@ export class AuthService {
  
       // Async Supabase sync
       if (isSupabaseConfigured()) {
-          const dbPayload = this.users.map(localUser => ({
-                id: localUser.id,
-                email: localUser.email,
-                password: localUser.password,
-                referral_code: localUser.referralCode,
-                referred_by: localUser.referredBy,
-                device_id: localUser.deviceId,
-                created_at: localUser.createdAt,
-                daily_search_count: localUser.dailySearchCount,
-                daily_pnr_count: localUser.dailyPnrCount,
-                daily_live_count: localUser.dailyLiveCount,
-                last_usage_reset: localUser.lastUsageReset,
-                split_access_until: localUser.splitAccessUntil,
-                plan_type: localUser.planType,
-                plan_expiry: localUser.planExpiry,
-                last_subscription_date: localUser.lastSubscriptionDate,
-                credits: localUser.credits,
-                ai_split_searches: localUser.aiSplitSearches,
-                ads_watched_today: localUser.adsWatchedToday,
-                last_ad_watch_time: localUser.lastAdWatchTime,
-                is_admin: localUser.isAdmin,
-                is_blocked: (localUser as any).isBlocked || false,
-                full_name: localUser.fullName || null,
-                mobile_number: localUser.mobileNumber || null,
-                dob: localUser.dob || null,
-                avatar_url: localUser.avatarUrl || null,
-                notify_email: localUser.notifyEmail ?? true,
-                notify_birthday: localUser.notifyBirthday ?? true,
-                notify_marketing: localUser.notifyMarketing ?? true,
-                mobile_verified: localUser.mobileVerified ?? false,
-                mobile_verification_method: localUser.mobileVerificationMethod || null,
-                mobile_verified_at: localUser.mobileVerifiedAt || null,
-                birthday_reward_last_claimed_year: localUser.birthdayRewardLastClaimedYear || null,
-                token_version: localUser.tokenVersion ?? 1,
-                session_epoch: localUser.sessionEpoch ?? 1
-          }));
+          let targets: User[];
+          if (targetUserId) {
+            const single = this.users.find(u => u.id === targetUserId);
+            targets = single ? [single] : [];
+          } else {
+            // SEC-143F-01: When no targetUserId is supplied, skip bulk Supabase upsert
+            // to prevent cross-user state overwrite race where stale in-memory entries
+            // overwrite newer remote revocations. Local users.json is already flushed.
+            winstonLogger.debug('[AUTH_SUPABASE] saveUsers invoked without targetUserId; local file saved, skipping bulk upsert to protect remote concurrent state.');
+            return;
+          }
+
+          if (targets.length === 0) return;
+
+          const dbPayload = targets.map(localUser => {
+                const payload: any = {
+                  id: localUser.id,
+                  email: localUser.email,
+                  password: localUser.password,
+                  referral_code: localUser.referralCode,
+                  referred_by: localUser.referredBy,
+                  device_id: localUser.deviceId,
+                  created_at: localUser.createdAt,
+                  daily_search_count: localUser.dailySearchCount,
+                  daily_pnr_count: localUser.dailyPnrCount,
+                  daily_live_count: localUser.dailyLiveCount,
+                  last_usage_reset: localUser.lastUsageReset,
+                  split_access_until: localUser.splitAccessUntil,
+                  plan_type: localUser.planType,
+                  plan_expiry: localUser.planExpiry,
+                  last_subscription_date: localUser.lastSubscriptionDate,
+                  credits: localUser.credits,
+                  ai_split_searches: localUser.aiSplitSearches,
+                  ads_watched_today: localUser.adsWatchedToday,
+                  last_ad_watch_time: localUser.lastAdWatchTime,
+                  is_admin: localUser.isAdmin,
+                  is_blocked: (localUser as any).isBlocked || false,
+                  full_name: localUser.fullName || null,
+                  mobile_number: localUser.mobileNumber || null,
+                  dob: localUser.dob || null,
+                  gender: localUser.gender || null,
+                  avatar_url: localUser.avatarUrl || null,
+                  notify_email: localUser.notifyEmail ?? true,
+                  notify_birthday: localUser.notifyBirthday ?? true,
+                  notify_marketing: localUser.notifyMarketing ?? true,
+                  birthday_reward_last_claimed_year: localUser.birthdayRewardLastClaimedYear || null
+                };
+
+                // SEC-143H-01: Only write security lifecycle fields during explicit auth lifecycle events
+                if (options?.includeSecurityFields) {
+                  payload.mobile_verified = localUser.mobileVerified ?? false;
+                  payload.mobile_verification_method = localUser.mobileVerificationMethod || null;
+                  payload.mobile_verified_at = localUser.mobileVerifiedAt || null;
+                  payload.mobile_verification_revoked_at = localUser.mobileVerificationRevokedAt || null;
+                  payload.token_version = localUser.tokenVersion ?? 1;
+                  payload.session_epoch = localUser.sessionEpoch ?? 1;
+                }
+
+                return payload;
+          });
           
-          supabase.from('users').upsert(dbPayload).then(({error}) => {
+          const executeUpsert = async (payload: any[]) => {
+              const { error } = await supabase.from('users').upsert(payload);
               if (error && error.code !== 'PGRST116') {
-                  winstonLogger.error(`[AUTH_SUPABASE] Upsert error: ${error.message}`);
+                  if (error.message?.includes('column "gender"') || error.message?.includes('column gender')) {
+                      winstonLogger.warn(`[AUTH_SUPABASE] Resilient Column Warning in saveUsers: ${error.message}. Retrying core payload without gender.`);
+                      const stripped = payload.map(u => {
+                          const c = { ...u };
+                          delete c.gender;
+                          return c;
+                      });
+                      const { error: retryErr } = await supabase.from('users').upsert(stripped);
+                      if (retryErr) winstonLogger.error(`[AUTH_SUPABASE] Retry upsert without gender failed: ${retryErr.message}`);
+                  } else if (error.message?.includes('mobile_verification_revoked_at')) {
+                      winstonLogger.error(`[AUTH_SECURITY] Critical schema error: remote database missing mobile_verification_revoked_at column. Security write rejected.`);
+                  } else {
+                      winstonLogger.error(`[AUTH_SUPABASE] Upsert error: ${error.message}`);
+                  }
               }
+          };
+          await executeUpsert(dbPayload).catch(err => {
+              winstonLogger.error(`[AUTH_SUPABASE] Upsert execution exception: ${err.message}`);
           });
       }
     } catch (e) {
@@ -788,7 +924,7 @@ export class AuthService {
     for (const adminEmail of adminEmails) {
       const existingAdmin = this.users.find(u => u.email === adminEmail);
       if (existingAdmin) {
-        // Only update admin flags — do NOT overwrite password.
+        // Only update admin flags - do NOT overwrite password.
         // Password is managed via direct sync scripts to avoid hash drift on reboots.
         existingAdmin.isAdmin = true;
         existingAdmin.planType = 'admin';
@@ -800,7 +936,7 @@ export class AuthService {
           }
         }
         this.updateLocalUser(existingAdmin);
-        this.saveUsers();
+        this.saveUsers(existingAdmin.id, { includeSecurityFields: true });
       } else {
         const today = new Date().toISOString().split('T')[0];
         const adminUser: User = {
@@ -830,7 +966,7 @@ export class AuthService {
         };
         adminUser.referralCode = generateReferralCodeSync(adminUser.id);
         this.users.push(adminUser);
-        this.saveUsers();
+        this.saveUsers(adminUser.id, { includeSecurityFields: true });
       }
     }
   }
@@ -876,7 +1012,7 @@ export class AuthService {
             await userCache.invalidate(userId);
           }
           this.updateLocalUser(user);
-          this.saveUsers();
+          this.saveUsers(user.id);
         }
       }
     }
@@ -996,6 +1132,7 @@ export class AuthService {
       mobileNumber: mobileNumber ? (normalizeIndianPhoneNumber(mobileNumber) || mobileNumber) : '',
       dob: dob || '',
       gender: validatedGender,
+      mobileVerified: false,
       deviceType: deviceMeta?.deviceType || (deviceId?.startsWith('dev_') ? 'desktop' : 'mobile'),
       platform: deviceMeta?.platform || 'Unknown',
       browser: deviceMeta?.browser || 'Unknown',
@@ -1046,7 +1183,7 @@ export class AuthService {
       await userCache.setUser(newUser);
     }
 
-    this.saveUsers();
+    this.saveUsers(newUser.id, { includeSecurityFields: true });
 
     // Fire-and-forget: migrate any guest alarms created before signup to this user
     if (deviceId && isSupabaseConfigured()) {
@@ -1123,7 +1260,7 @@ export class AuthService {
     }
     
     this.updateLocalUser(user);
-    this.saveUsers();
+    this.saveUsers(user.id);
 
     // Fire-and-forget: migrate any guest alarms created before this login to this user
     if (deviceId && isSupabaseConfigured()) {
@@ -1213,7 +1350,7 @@ export class AuthService {
       }
 
       this.users.push(user);
-      this.saveUsers();
+      this.saveUsers(user.id);
 
       if (isSupabaseConfigured()) {
         try {
@@ -1242,7 +1379,7 @@ export class AuthService {
       
       if (updated) {
         this.updateLocalUser(user);
-        this.saveUsers();
+        this.saveUsers(user.id);
         if (isSupabaseConfigured()) {
           userRepository.update(user.id, {
             fullName: user.fullName,
@@ -1265,7 +1402,7 @@ export class AuthService {
         await userCache.invalidate(user.id);
       }
       this.updateLocalUser(user);
-      this.saveUsers();
+      this.saveUsers(user.id);
     }
 
     if (deviceId && isSupabaseConfigured()) {
@@ -1297,7 +1434,7 @@ export class AuthService {
         .select('id, enabled, created_at');
 
       if (migrateErr) {
-        // Table might not exist yet — log at debug and exit silently
+        // Table might not exist yet - log at debug and exit silently
         winstonLogger.debug(`[AUTH_MIGRATION] user_station_alarms not accessible: ${migrateErr.message}`);
         return;
       }
@@ -1309,7 +1446,7 @@ export class AuthService {
 
       winstonLogger.info(`[AUTH_MIGRATION] Migrated ${count} guest alarm(s) from device ${deviceId} to user ${userId}`);
 
-      // Step 2: Enforce 3-alarm ceiling — find all enabled alarms for this user now
+      // Step 2: Enforce 3-alarm ceiling - find all enabled alarms for this user now
       const { data: enabledAlarms, error: fetchErr } = await supabase
         .from('user_station_alarms')
         .select('id, created_at')
@@ -1334,7 +1471,7 @@ export class AuthService {
         }
       }
     } catch (err: any) {
-      // Never throw — migration errors must not break authentication
+      // Never throw - migration errors must not break authentication
       winstonLogger.warn(`[AUTH_MIGRATION] Unexpected error during guest alarm migration: ${err.message}`);
     }
   }
@@ -1438,7 +1575,7 @@ export class AuthService {
     user.tokenVersion = nextVersion;
     await userCache.invalidate(userId).catch(() => {});
     this.updateLocalUser(user);
-    this.saveUsers();
+    this.saveUsers(userId);
 
     return this.generateTokens(user);
   }
@@ -1473,7 +1610,7 @@ export class AuthService {
 
     await userCache.invalidate(userId).catch(() => {});
     this.updateLocalUser(user);
-    this.saveUsers();
+    this.saveUsers(userId);
 
     return { globalRevoked: true };
   }
@@ -1490,7 +1627,7 @@ export class AuthService {
       if (user.isAdmin === true && user.planType !== 'admin') {
         user.planType = 'admin';
         this.updateLocalUser(user);
-        this.saveUsers();
+        this.saveUsers(user.id);
       }
       return true;
     }
@@ -1515,7 +1652,7 @@ export class AuthService {
                 );
             }
             this.updateLocalUser(user);
-            this.saveUsers();
+            this.saveUsers(user.id);
             return false;
         }
     }
@@ -1535,7 +1672,7 @@ export class AuthService {
                 );
             }
             this.updateLocalUser(user);
-            this.saveUsers();
+            this.saveUsers(user.id);
             return false;
         }
     }
@@ -1587,7 +1724,7 @@ export class AuthService {
       }
 
       this.updateLocalUser(user);
-      this.saveUsers();
+      this.saveUsers(userId);
       return true;
   }
 
@@ -1757,12 +1894,12 @@ export class AuthService {
             lastAdWatchTime: 0
         };
         this.users.push(user);
-        this.saveUsers();
+        this.saveUsers(user.id);
     }
 
     if (user.isBlocked) return false;
 
-    // Admin / beta / premium — never enforce daily caps
+    // Admin / beta / premium - never enforce daily caps
     if (this.userBypassesQuota(user) || this.isProPlanActive(user)) return true;
 
     // implicit reset removed
@@ -1808,7 +1945,7 @@ export class AuthService {
             lastAdWatchTime: 0
         };
         this.users.push(user);
-        this.saveUsers();
+        this.saveUsers(user.id);
     }
 
     if (user.isBlocked) return false;
@@ -1875,7 +2012,7 @@ export class AuthService {
             lastAdWatchTime: 0
         };
         this.users.push(user);
-        this.saveUsers();
+        this.saveUsers(user.id);
     }
 
     // Admins and Premium Users have unlimited access (do not increment capped usage)
@@ -1894,7 +2031,7 @@ export class AuthService {
             userRepository.incrementUsage(user.id, 'searches').catch(e => winstonLogger.error(`[AUTH_PHASE1] Dual-write error: ${e.message}`));
             await userCache.invalidate(user.id);
           }
-          this.saveUsers();
+          this.saveUsers(user.id);
           return true;
         }
         break;
@@ -1906,7 +2043,7 @@ export class AuthService {
             userRepository.incrementUsage(user.id, 'pnr').catch(e => winstonLogger.error(`[AUTH_PHASE1] Dual-write error: ${e.message}`));
             await userCache.invalidate(user.id);
           }
-          this.saveUsers();
+          this.saveUsers(user.id);
           return true;
         }
         break;
@@ -1918,7 +2055,7 @@ export class AuthService {
             userRepository.incrementUsage(user.id, 'live').catch(e => winstonLogger.error(`[AUTH_PHASE1] Dual-write error: ${e.message}`));
             await userCache.invalidate(user.id);
           }
-          this.saveUsers();
+          this.saveUsers(user.id);
           return true;
         }
         break;
@@ -1982,8 +2119,12 @@ export class AuthService {
           entity.dailySearchCount--; // Effectively gives +1 search
       }
 
-      if (userId) this.saveUsers();
-      else this.saveGuests();
+      if (userId) {
+          this.updateLocalUser(entity as User);
+          this.saveUsers(userId);
+      } else {
+          this.saveGuests();
+      }
 
       return { success: true, message: "Ad watched successfully! +1 Search granted." };
   }
@@ -2003,7 +2144,7 @@ export class AuthService {
               winstonLogger.error(`[AUTH] Failed to sync dailySearchCount to Supabase: ${err.message}`)
             );
           }
-          this.saveUsers();
+          this.saveUsers(userId);
           return {
               success: true,
               message: "🎉 Thank you for rating Trayago! +2 Extra Searches Unlocked!",
@@ -2195,28 +2336,65 @@ export class AuthService {
       if (updates.preferences.notifyMarketing !== undefined) user.notifyMarketing = !!updates.preferences.notifyMarketing;
     }
 
-    if (updates.mobileNumber !== undefined) {
-      const targetNumber = updates.mobileNumber ? (normalizeIndianPhoneNumber(updates.mobileNumber) || updates.mobileNumber) : '';
-      if (targetNumber !== user.mobileNumber) {
-        user.mobileNumber = targetNumber;
-        user.mobileVerified = false;
-        user.mobileVerificationMethod = null;
-        user.mobileVerifiedAt = null;
+    let mobileNumberChanged = false;
+    if (updates.mobileNumber !== undefined && typeof updates.mobileNumber === 'string') {
+      const trimmedInput = updates.mobileNumber.trim();
+      // Only evaluate mobile changes if the user explicitly provided a non-empty number
+      if (trimmedInput !== '') {
+        const normalizedTarget = normalizeIndianPhoneNumber(trimmedInput) || trimmedInput;
+        const normalizedCurrent = user.mobileNumber ? (normalizeIndianPhoneNumber(user.mobileNumber) || user.mobileNumber.trim()) : '';
+
+        // Only revoke verification if the phone number is genuinely different after canonical normalization
+        if (normalizedCurrent && normalizedTarget !== normalizedCurrent) {
+          user.mobileNumber = normalizedTarget;
+          user.mobileVerified = false;
+          user.mobileVerificationMethod = null;
+          user.mobileVerifiedAt = null;
+          user.mobileVerificationRevokedAt = new Date().toISOString();
+          mobileNumberChanged = true;
+        } else if (!normalizedCurrent) {
+          // Initial phone assignment without prior number
+          user.mobileNumber = normalizedTarget;
+          user.mobileVerified = false;
+          user.mobileVerificationMethod = null;
+          user.mobileVerifiedAt = null;
+          mobileNumberChanged = true;
+        } else if (user.mobileNumber !== normalizedTarget) {
+          // Same phone number with different formatting; adopt canonical format without revoking verification
+          user.mobileNumber = normalizedTarget;
+        }
       }
     }
 
     if (isSupabaseConfigured()) {
       try {
-        await userRepository.update(userId, {
+        const dbUpdates: Partial<User> = {
           fullName: user.fullName,
           dob: user.dob,
           gender: user.gender,
-          mobileNumber: user.mobileNumber,
-          signupState: user.signupState,
-          mobileVerified: user.mobileVerified,
-          mobileVerificationMethod: user.mobileVerificationMethod,
-          mobileVerifiedAt: user.mobileVerifiedAt
-        });
+          signupState: user.signupState
+        };
+
+        if (updates.preferences !== undefined) {
+          dbUpdates.notifyEmail = user.notifyEmail;
+          dbUpdates.notifyBirthday = user.notifyBirthday;
+          dbUpdates.notifyMarketing = user.notifyMarketing;
+        }
+
+        if (mobileNumberChanged) {
+          dbUpdates.mobileNumber = user.mobileNumber;
+          dbUpdates.mobileVerified = false;
+          dbUpdates.mobileVerificationMethod = null;
+          dbUpdates.mobileVerifiedAt = null;
+          if (user.mobileVerificationRevokedAt) {
+            dbUpdates.mobileVerificationRevokedAt = user.mobileVerificationRevokedAt;
+          }
+        }
+
+        // SEC-143H-02: Do NOT pass mobileVerificationRevokedAt: null on profile updates.
+        // Authoritative revocation timestamp must be preserved.
+
+        await userRepository.update(userId, dbUpdates);
       } catch (err: any) {
         winstonLogger.error(`[AUTH_SUPABASE] Failed to sync updateUserProfile to Supabase: ${err.message}`);
         throw new Error(`Profile persistence failed: ${err.message}`);
@@ -2225,7 +2403,7 @@ export class AuthService {
     }
 
     this.updateLocalUser(user);
-    this.saveUsers();
+    this.saveUsers(userId);
     return user;
   }
 
@@ -2301,6 +2479,30 @@ export class AuthService {
     return true;
   }
 
+
+  public async revokeMobileVerification(userId: string, reason = 'Administrative Revocation'): Promise<boolean> {
+    const user = await this.getUserById(userId);
+    if (!user) throw new Error('User not found');
+    const revokedAt = new Date().toISOString();
+    user.mobileVerified = false;
+    user.mobileVerificationRevokedAt = revokedAt;
+    if (isSupabaseConfigured()) {
+      try {
+        await userRepository.update(userId, {
+          mobileVerified: false,
+          mobileVerificationRevokedAt: revokedAt
+        });
+      } catch (err: any) {
+        winstonLogger.error(`[AUTH_REVOCATION] Failed to persist mobile verification revocation: ${err.message}`);
+        throw new Error(`Revocation persistence failed: ${err.message}`);
+      }
+      await userCache.invalidate(userId);
+    }
+    this.updateLocalUser(user);
+    this.saveUsers(userId, { includeSecurityFields: true });
+    winstonLogger.warn(`[AUTH_REVOCATION] Mobile verification revoked for user ${userId}. Reason: ${reason}`);
+    return true;
+  }
   public async verifyMobileOtp(userId: string, otpCode: string): Promise<boolean> {
     const user = await this.getUserById(userId);
     if (!user) throw new Error('User not found');
@@ -2323,6 +2525,7 @@ export class AuthService {
     user.mobileVerified = true;
     user.mobileVerificationMethod = verifiedResult.channel || 'SMS';
     user.mobileVerifiedAt = new Date().toISOString();
+    user.mobileVerificationRevokedAt = null;
 
     // Consume local test copy immediately
     delete this.mobileOtps[userId];
@@ -2334,7 +2537,8 @@ export class AuthService {
           mobileNumber: user.mobileNumber,
           mobileVerified: user.mobileVerified,
           mobileVerificationMethod: user.mobileVerificationMethod,
-          mobileVerifiedAt: user.mobileVerifiedAt
+          mobileVerifiedAt: user.mobileVerifiedAt,
+          mobileVerificationRevokedAt: null
         });
       } catch (err: any) {
         winstonLogger.error(`[AUTH_SUPABASE] Failed to sync mobile verification to Supabase: ${err.message}`);
@@ -2346,7 +2550,7 @@ export class AuthService {
     }
     
     this.updateLocalUser(user);
-    this.saveUsers();
+    this.saveUsers(userId, { includeSecurityFields: true });
     winstonLogger.info(`[MOBILE_OTP] Successfully verified mobile for user ${userId} (${maskPhoneNumber(user.mobileNumber)}).`);
     return true;
   }
