@@ -3,9 +3,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.alarmLimiter = exports.notificationPrefsLimiter = exports.notificationRegisterLimiter = exports.cacheClearLimiter = exports.diagnosticsLimiter = exports.adminLimiter = exports.referralLimiter = exports.complaintLimiter = exports.liveLimiter = exports.pnrLimiter = exports.sameTrainRescueLimiter = exports.availabilityLimiter = exports.advancedSearchLimiter = exports.searchLimiter = exports.paymentLimiter = exports.authLimiter = void 0;
+exports.alarmLimiter = exports.notificationPrefsLimiter = exports.notificationRegisterLimiter = exports.cacheClearLimiter = exports.diagnosticsLimiter = exports.adminLimiter = exports.referralLimiter = exports.complaintLimiter = exports.liveLimiter = exports.pnrLimiter = exports.stationSearchLimiter = exports.sameTrainRescueLimiter = exports.availabilityLimiter = exports.advancedSearchLimiter = exports.searchLimiter = exports.paymentLimiter = exports.authLimiter = void 0;
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
 const logger_1 = require("./logger");
+const ipResolver_1 = require("../utils/ipResolver");
 // Helper to safely parse env numeric values with fallback defaults
 const parseEnvMs = (envVar, defaultMs) => {
     const parsed = parseInt(envVar || '', 10);
@@ -23,14 +24,11 @@ exports.authLimiter = (0, express_rate_limit_1.default)({
     standardHeaders: true, legacyHeaders: false,
     validate: false, // PHASE_8.8: Suppress express-rate-limit v8 validation warnings
     keyGenerator: (req) => {
-        return req.headers['cf-connecting-ip'] ||
-            req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-            req.ip ||
-            '127.0.0.1';
+        return (0, ipResolver_1.resolveClientIp)(req);
     },
     message: { success: false, error: 'Too many authentication attempts, please try again later.' },
     handler: (req, res) => {
-        const clientIp = req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
+        const clientIp = (0, ipResolver_1.resolveClientIp)(req);
         logger_1.winstonLogger.warn(`[RATE_LIMIT] Auth limit exceeded for IP: ${clientIp}`);
         res.status(429).json({ success: false, error: 'Too many authentication attempts, please try again later.' });
     }
@@ -96,6 +94,23 @@ exports.sameTrainRescueLimiter = (0, express_rate_limit_1.default)({
     handler: (req, res) => {
         logger_1.winstonLogger.warn(`[RATE_LIMIT] Same Train Rescue limit exceeded for IP: ${req.ip}`);
         res.status(429).json({ success: false, error: 'Too many rescue scan requests, please wait.' });
+    }
+});
+// --- STATION SEARCH LIMITER ---
+// Default: 120 requests / 1 minute
+exports.stationSearchLimiter = (0, express_rate_limit_1.default)({
+    windowMs: parseEnvMs(process.env.RATE_LIMIT_STATION_SEARCH_WINDOW_MS, 1 * 60 * 1000),
+    max: parseEnvMax(process.env.RATE_LIMIT_STATION_SEARCH_MAX, 120),
+    standardHeaders: true, legacyHeaders: false,
+    validate: false,
+    keyGenerator: (req) => {
+        return (0, ipResolver_1.resolveClientIp)(req);
+    },
+    message: { success: false, error: 'Too many station search requests, please try again later.' },
+    handler: (req, res) => {
+        const clientIp = (0, ipResolver_1.resolveClientIp)(req);
+        logger_1.winstonLogger.warn(`[RATE_LIMIT] Station search limit exceeded for IP: ${clientIp}`);
+        res.status(429).json({ success: false, error: 'Too many station search requests, please try again later.' });
     }
 });
 // --- PNR LIMITER ---

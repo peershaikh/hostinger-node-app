@@ -96,6 +96,42 @@ class CacheService {
   }
 
   /**
+   * Get all active cache keys
+   */
+  keys(): string[] {
+    try {
+      return cache.keys();
+    } catch (error) {
+      winstonLogger.error(`[CACHE_KEYS_ERROR]: ${error}`);
+      return [];
+    }
+  }
+
+  /**
+   * Delete cached keys matching a given prefix
+   * @param prefix String prefix to match
+   * @returns Number of deleted keys
+   */
+  delPrefix(prefix: string): number {
+    if (!prefix || typeof prefix !== 'string' || prefix.trim().length === 0) {
+      return 0;
+    }
+    try {
+      const allKeys = cache.keys();
+      const matching = allKeys.filter((k) => k.startsWith(prefix));
+      if (matching.length === 0) {
+        return 0;
+      }
+      const count = cache.del(matching);
+      winstonLogger.info(`[CACHE_DEL_PREFIX] prefix="${prefix}" deleted=${count}`);
+      return count;
+    } catch (error) {
+      winstonLogger.error(`[CACHE_DEL_PREFIX_ERROR] prefix="${prefix}": ${error}`);
+      return 0;
+    }
+  }
+
+  /**
    * Clear all cache
    */
   flushAll(): void {

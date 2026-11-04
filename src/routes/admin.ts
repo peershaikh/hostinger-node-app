@@ -96,6 +96,7 @@ router.get('/audit-logs', adminLimiter as any, requireAdmin as any, adminControl
 router.post('/audit-logs', adminLimiter as any, requireAdmin as any, adminController.logAuditEvent.bind(adminController));
 router.get('/diagnostics', diagnosticsLimiter as any, requireAdmin as any, adminController.getDiagnostics.bind(adminController));
 router.post('/cache/clear', cacheClearLimiter as any, requireAdmin as any, adminController.clearCache.bind(adminController));
+router.get('/cache/stats', adminLimiter as any, requireAdmin as any, adminController.getCacheStats.bind(adminController));
 router.get('/feedback', adminLimiter as any, requireAdmin as any, adminController.listFeedback.bind(adminController));
 router.get('/feedback/categories', adminLimiter as any, requireAdmin as any, adminController.listFeedbackCategories.bind(adminController));
 router.get('/feedback/analytics', adminLimiter as any, requireAdmin as any, adminController.getFeedbackCategoryAnalytics.bind(adminController));

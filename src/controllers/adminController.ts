@@ -1394,6 +1394,29 @@ export class AdminController {
     }
   }
 
+  async getCacheStats(req: Request, res: Response) {
+    try {
+      const { cacheService } = require('../services/cacheService');
+      const stats = cacheService.getStats();
+      const allKeys = cacheService.keys();
+
+      res.status(200).json({
+        success: true,
+        stats: {
+          hits: Number(stats?.hits || 0),
+          misses: Number(stats?.misses || 0),
+          keys: Number(stats?.keys !== undefined ? stats.keys : allKeys.length),
+          ksize: Number(stats?.ksize || 0),
+          vsize: Number(stats?.vsize || 0),
+        },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      winstonLogger.error(`[ADMIN_CACHE] getCacheStats error: ${err.message}`);
+      res.status(500).json({ success: false, error: 'Failed to retrieve cache stats' });
+    }
+  }
+
   async listFeedback(req: Request, res: Response) {
     try {
       const FEEDBACK_FILE = path.join(__dirname, '../../../data/feedback.json');

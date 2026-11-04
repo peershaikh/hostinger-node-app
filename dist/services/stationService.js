@@ -627,53 +627,94 @@ class StationService {
             return COORDINATES_MAP['CSMT'];
         return null;
     }
-    async getNearbyStations(targetCode, initialRadiusKm = 50) {
-        const cleanCode = this.normalizeInput(targetCode);
-        const coords = await this.getCoordinates(cleanCode);
-        if (!coords) {
-            logger_1.winstonLogger.warn(`[STATION] Cannot find coordinates for ${cleanCode}`);
-            return [];
-        }
-        const RADIUS_STEPS = [initialRadiusKm, 80, 120];
-        let nearby = [];
-        for (const radius of RADIUS_STEPS) {
-            const degreeDelta = radius / 111;
-            try {
-                const candidates = [];
-                for (const [code, pos] of Object.entries(COORDINATES_MAP)) {
-                    if (code === cleanCode)
-                        continue;
-                    if (pos.lat >= coords.lat - degreeDelta &&
-                        pos.lat <= coords.lat + degreeDelta &&
-                        pos.lon >= coords.lon - degreeDelta &&
-                        pos.lon <= coords.lon + degreeDelta) {
-                        const distance = this._calculateHaversine(coords.lat, coords.lon, pos.lat, pos.lon);
-                        if (distance <= radius) {
-                            candidates.push({
-                                station_code: code,
-                                station_name: STATION_NAME_MAP[code] || code,
-                                distance_km: Math.round(distance * 10) / 10
-                            });
+    /**
+     * Public helper to calculate great-circle distance between two coordinates
+     */
+    calculateDistance(lat1, lon1, lat2, lon2) {
+        return this._calculateHaversine(lat1, lon1, lat2, lon2);
+    }
+    async getNearbyStations(target, initialRadiusKm = 50, limit = 20) {
+        if (typeof target === 'string') {
+            const cleanCode = this.normalizeInput(target);
+            const coords = await this.getCoordinates(cleanCode);
+            if (!coords) {
+                logger_1.winstonLogger.warn(`[STATION] Cannot find coordinates for ${cleanCode}`);
+                return [];
+            }
+            const RADIUS_STEPS = [initialRadiusKm, 80, 120];
+            let nearby = [];
+            for (const radius of RADIUS_STEPS) {
+                const degreeDelta = radius / 111;
+                try {
+                    const candidates = [];
+                    for (const [code, pos] of Object.entries(COORDINATES_MAP)) {
+                        if (code === cleanCode)
+                            continue;
+                        if (pos.lat >= coords.lat - degreeDelta &&
+                            pos.lat <= coords.lat + degreeDelta &&
+                            pos.lon >= coords.lon - degreeDelta &&
+                            pos.lon <= coords.lon + degreeDelta) {
+                            const distance = this._calculateHaversine(coords.lat, coords.lon, pos.lat, pos.lon);
+                            if (distance <= radius) {
+                                candidates.push({
+                                    station_code: code,
+                                    station_name: STATION_NAME_MAP[code] || code,
+                                    distance_km: Math.round(distance * 10) / 10
+                                });
+                            }
                         }
                     }
+                    candidates.sort((a, b) => a.distance_km - b.distance_km);
+                    nearby = candidates.slice(0, 5);
+                    if (nearby.length > 0) {
+                        logger_1.winstonLogger.info(`[STATION] Found ${nearby.length} nearby stations for ${cleanCode} within ${radius}km`);
+                        break;
+                    }
                 }
-                candidates.sort((a, b) => a.distance_km - b.distance_km);
-                nearby = candidates.slice(0, 5);
-                if (nearby.length > 0) {
-                    logger_1.winstonLogger.info(`[STATION] Found ${nearby.length} nearby stations for ${cleanCode} within ${radius}km`);
-                    break;
+                catch (e) {
+                    logger_1.winstonLogger.debug(`[STATION] Nearby search failed at radius ${radius}km: ${e.message}`);
                 }
             }
-            catch (e) {
-                logger_1.winstonLogger.debug(`[STATION] Nearby search failed at radius ${radius}km: ${e.message}`);
+            return nearby.map((s) => ({
+                station_code: s.station_code,
+                station_name: s.station_name,
+                distance_km: s.distance_km,
+                tag: "Nearby Station",
+            }));
+        }
+        // Coordinate-based radius search (Phase 146Q.1.27)
+        const lat = target?.lat;
+        const lon = target?.lng ?? target?.lon;
+        if (typeof lat !== 'number' || typeof lon !== 'number' ||
+            isNaN(lat) || isNaN(lon) || !isFinite(lat) || !isFinite(lon) ||
+            lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+            return [];
+        }
+        const safeRadius = Math.min(Math.max(initialRadiusKm, 0.1), 120);
+        const safeLimit = Math.min(Math.max(limit, 1), 50);
+        const degreeDelta = safeRadius / 111;
+        const candidates = [];
+        for (const [code, pos] of Object.entries(COORDINATES_MAP)) {
+            if (!pos || typeof pos.lat !== 'number' || typeof pos.lon !== 'number' || (pos.lat === 0 && pos.lon === 0))
+                continue;
+            if (pos.lat >= lat - degreeDelta &&
+                pos.lat <= lat + degreeDelta &&
+                pos.lon >= lon - degreeDelta &&
+                pos.lon <= lon + degreeDelta) {
+                const distance = this._calculateHaversine(lat, lon, pos.lat, pos.lon);
+                if (distance <= safeRadius) {
+                    candidates.push({
+                        station_code: code,
+                        station_name: STATION_NAME_MAP[code] || code,
+                        distance_km: Math.round(distance * 10) / 10,
+                        latitude: pos.lat,
+                        longitude: pos.lon,
+                    });
+                }
             }
         }
-        return nearby.map((s) => ({
-            station_code: s.station_code,
-            station_name: s.station_name,
-            distance_km: s.distance_km,
-            tag: "Nearby Station",
-        }));
+        candidates.sort((a, b) => a.distance_km - b.distance_km || a.station_code.localeCompare(b.station_code));
+        return candidates.slice(0, safeLimit);
     }
     _calculateHaversine(lat1, lon1, lat2, lon2) {
         const R = 6371;

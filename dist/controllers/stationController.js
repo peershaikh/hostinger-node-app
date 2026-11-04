@@ -300,6 +300,103 @@ class StationController {
             return res.json(fallback);
         }
     }
+    /**
+     * Nearby Station Search (Phase 146Q.1.27)
+     * GET /api/stations/nearby?lat=...&lng=...&radius=...&limit=...
+     */
+    async getNearbyStations(req, res) {
+        try {
+            const { lat, lng, radius, limit } = req.query;
+            // 1. Mandatory coordinate presence check
+            if (lat === undefined || lng === undefined || lat === '' || lng === '') {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Missing required query parameters: lat and lng are required.',
+                });
+            }
+            // 2. Latitude validation: -90 to 90
+            const parsedLat = Number(lat);
+            if (isNaN(parsedLat) || !isFinite(parsedLat) || parsedLat < -90 || parsedLat > 90) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Invalid latitude. Must be a valid numeric value between -90 and 90.',
+                });
+            }
+            // 3. Longitude validation: -180 to 180
+            const parsedLng = Number(lng);
+            if (isNaN(parsedLng) || !isFinite(parsedLng) || parsedLng < -180 || parsedLng > 180) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Invalid longitude. Must be a valid numeric value between -180 and 180.',
+                });
+            }
+            // 4. Radius validation: optional, default 120 km, maximum 120 km, positive numeric
+            let parsedRadius = 120;
+            if (radius !== undefined && radius !== '') {
+                const r = Number(radius);
+                if (isNaN(r) || !isFinite(r) || r <= 0) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Invalid radius. Must be a positive numeric value.',
+                    });
+                }
+                if (r > 120) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Excessive radius. Maximum allowed radius is 120 km.',
+                    });
+                }
+                parsedRadius = r;
+            }
+            // 5. Limit validation: optional, default 20, positive integer, maximum 50
+            let parsedLimit = 20;
+            if (limit !== undefined && limit !== '') {
+                const l = Number(limit);
+                if (isNaN(l) || !isFinite(l) || l <= 0 || !Number.isInteger(l)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Invalid limit. Must be a positive integer.',
+                    });
+                }
+                if (l > 50) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Excessive limit. Maximum allowed limit is 50.',
+                    });
+                }
+                parsedLimit = l;
+            }
+            const { stationService } = require('../services/stationService');
+            const rawStations = await stationService.getNearbyStations({ lat: parsedLat, lng: parsedLng }, parsedRadius, parsedLimit);
+            const stations = (rawStations || []).map((s) => ({
+                station_code: s.station_code,
+                station_name: s.station_name,
+                Station_Code: s.station_code,
+                Station_Name: s.station_name,
+                distance_km: s.distance_km,
+                latitude: s.latitude,
+                longitude: s.longitude,
+                coordinates: {
+                    lat: s.latitude,
+                    lng: s.longitude,
+                },
+            }));
+            res.setHeader?.('Cache-Control', 'public, max-age=1800');
+            return res.status(200).json({
+                success: true,
+                count: stations.length,
+                radius_km: parsedRadius,
+                stations,
+            });
+        }
+        catch (err) {
+            logger_1.winstonLogger.error(`[STATION_NEARBY] Error: ${err.message}`);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to find nearby stations',
+            });
+        }
+    }
 }
 exports.StationController = StationController;
 exports.stationController = new StationController();

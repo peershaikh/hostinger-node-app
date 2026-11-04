@@ -93,6 +93,7 @@ router.get('/audit-logs', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, 
 router.post('/audit-logs', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.logAuditEvent.bind(adminController_1.adminController));
 router.get('/diagnostics', rateLimiter_1.diagnosticsLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getDiagnostics.bind(adminController_1.adminController));
 router.post('/cache/clear', rateLimiter_1.cacheClearLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.clearCache.bind(adminController_1.adminController));
+router.get('/cache/stats', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getCacheStats.bind(adminController_1.adminController));
 router.get('/feedback', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.listFeedback.bind(adminController_1.adminController));
 router.get('/feedback/categories', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.listFeedbackCategories.bind(adminController_1.adminController));
 router.get('/feedback/analytics', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getFeedbackCategoryAnalytics.bind(adminController_1.adminController));

@@ -32,6 +32,12 @@ function withTimeout<T>(promise: Promise<T>, ms: number = 5000): Promise<T> {
 }
 
 class TrainService {
+  private inFlightSearches: Map<string, Promise<any>> = new Map();
+
+  getInFlightCount(): number {
+    return this.inFlightSearches.size;
+  }
+
   async getTrainData(source: string, destination: string, date?: string) {
     const searchDate = date || new Date().toISOString().split('T')[0];
     const sCodes = await stationService.getStationsForCity(source);
@@ -67,6 +73,28 @@ class TrainService {
       };
     }
 
+    const flightKey = `flight:${sCode}:${dCode}:${searchDate}`;
+    const existingFlight = this.inFlightSearches.get(flightKey);
+    if (existingFlight) {
+      winstonLogger.info(`[TRAIN_SERVICE] single-flight join key=${flightKey}`);
+      const res = await existingFlight;
+      return { ...res, direct: Array.isArray(res.direct) ? [...res.direct] : res.direct };
+    }
+
+    const flightPromise = (async () => {
+      try {
+        return await this._executeTrainSearch(sCode, dCode, searchDate);
+      } finally {
+        this.inFlightSearches.delete(flightKey);
+      }
+    })();
+
+    this.inFlightSearches.set(flightKey, flightPromise);
+    const res = await flightPromise;
+    return { ...res, direct: Array.isArray(res.direct) ? [...res.direct] : res.direct };
+  }
+
+  private async _executeTrainSearch(sCode: string, dCode: string, searchDate: string) {
     let sourceUsed = 'DB';
     let apiUsed = 'DB';
     let dataSource = 'DATABASE';

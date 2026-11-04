@@ -1,5 +1,6 @@
 import rateLimit from 'express-rate-limit';
 import { winstonLogger } from './logger';
+import { resolveClientIp } from '../utils/ipResolver';
 
 // Helper to safely parse env numeric values with fallback defaults
 const parseEnvMs = (envVar: string | undefined, defaultMs: number): number => {
@@ -20,14 +21,11 @@ export const authLimiter = rateLimit({
     standardHeaders: true, legacyHeaders: false,
     validate: false, // PHASE_8.8: Suppress express-rate-limit v8 validation warnings
     keyGenerator: (req: any) => {
-        return (req.headers['cf-connecting-ip'] as string) ||
-               (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
-               req.ip ||
-               '127.0.0.1';
+        return resolveClientIp(req);
     },
     message: { success: false, error: 'Too many authentication attempts, please try again later.' },
     handler: (req: any, res: any) => {
-        const clientIp = (req.headers['cf-connecting-ip'] as string) || (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip;
+        const clientIp = resolveClientIp(req);
         winstonLogger.warn(`[RATE_LIMIT] Auth limit exceeded for IP: ${clientIp}`);
         res.status(429).json({ success: false, error: 'Too many authentication attempts, please try again later.' });
     }
@@ -100,6 +98,25 @@ export const sameTrainRescueLimiter = rateLimit({
     handler: (req: any, res: any) => {
         winstonLogger.warn(`[RATE_LIMIT] Same Train Rescue limit exceeded for IP: ${req.ip}`);
         res.status(429).json({ success: false, error: 'Too many rescue scan requests, please wait.' });
+    }
+}) as any;
+
+
+// --- STATION SEARCH LIMITER ---
+// Default: 120 requests / 1 minute
+export const stationSearchLimiter = rateLimit({
+    windowMs: parseEnvMs(process.env.RATE_LIMIT_STATION_SEARCH_WINDOW_MS, 1 * 60 * 1000),
+    max: parseEnvMax(process.env.RATE_LIMIT_STATION_SEARCH_MAX, 120),
+    standardHeaders: true, legacyHeaders: false,
+    validate: false,
+    keyGenerator: (req: any) => {
+        return resolveClientIp(req);
+    },
+    message: { success: false, error: 'Too many station search requests, please try again later.' },
+    handler: (req: any, res: any) => {
+        const clientIp = resolveClientIp(req);
+        winstonLogger.warn(`[RATE_LIMIT] Station search limit exceeded for IP: ${clientIp}`);
+        res.status(429).json({ success: false, error: 'Too many station search requests, please try again later.' });
     }
 }) as any;
 
