@@ -53,6 +53,7 @@ class UserRepository {
     if (user.mobileVerified !== undefined) payload.mobile_verified = user.mobileVerified;
     if (user.mobileVerificationMethod !== undefined) payload.mobile_verification_method = user.mobileVerificationMethod;
     if (user.mobileVerifiedAt !== undefined) payload.mobile_verified_at = user.mobileVerifiedAt;
+    if (user.mobileVerificationRevokedAt !== undefined) payload.mobile_verification_revoked_at = user.mobileVerificationRevokedAt;
     if (user.birthdayRewardLastClaimedYear !== undefined) payload.birthday_reward_last_claimed_year = user.birthdayRewardLastClaimedYear;
     if (user.deviceType !== undefined) payload.device_type = user.deviceType;
     if (user.platform !== undefined) payload.platform = user.platform;
@@ -90,6 +91,7 @@ class UserRepository {
     delete payload.mobileVerified;
     delete payload.mobileVerificationMethod;
     delete payload.mobileVerifiedAt;
+    delete payload.mobileVerificationRevokedAt;
     delete payload.birthdayRewardLastClaimedYear;
     delete payload.deviceType;
     delete payload.clientType;
@@ -137,9 +139,12 @@ class UserRepository {
       notifyEmail: dbUser.notify_email ?? dbUser.notifyEmail ?? true,
       notifyBirthday: dbUser.notify_birthday ?? dbUser.notifyBirthday ?? true,
       notifyMarketing: dbUser.notify_marketing ?? dbUser.notifyMarketing ?? true,
-      mobileVerified: dbUser.mobile_verified ?? dbUser.mobileVerified ?? false,
+      mobileVerified: (dbUser.mobile_verified !== undefined && dbUser.mobile_verified !== null)
+        ? Boolean(dbUser.mobile_verified)
+        : (dbUser.mobileVerified !== undefined && dbUser.mobileVerified !== null ? Boolean(dbUser.mobileVerified) : undefined),
       mobileVerificationMethod: dbUser.mobile_verification_method || dbUser.mobileVerificationMethod || null,
       mobileVerifiedAt: dbUser.mobile_verified_at || dbUser.mobileVerifiedAt || null,
+      mobileVerificationRevokedAt: dbUser.mobile_verification_revoked_at || dbUser.mobileVerificationRevokedAt || null,
       birthdayRewardLastClaimedYear: dbUser.birthday_reward_last_claimed_year || dbUser.birthdayRewardLastClaimedYear || null,
       deviceType: dbUser.device_type || dbUser.deviceType || undefined,
       platform: dbUser.platform || undefined,
@@ -199,7 +204,8 @@ class UserRepository {
           error.message?.includes('signup_state') ||
           error.message?.includes('avatar_url') ||
           error.message?.includes('mobile_number') ||
-          error.message?.includes('gender')
+          error.message?.includes('gender') ||
+          error.message?.includes('mobile_verification_revoked_at')
         );
         if (isMissingColumn) {
           winstonLogger.warn(`[AUTH_SUPABASE] Resilient Column Warning on insert: ${error.message}. Retrying core payload.`);
@@ -210,6 +216,7 @@ class UserRepository {
           delete payload.signup_ip;
           delete payload.signup_state;
           delete payload.gender;
+          delete payload.mobile_verification_revoked_at;
           const { data: retryData, error: retryError } = await supabase.from('users').insert(payload).select().single();
           if (retryError) throw new DatabaseError(retryError.code, retryError.message);
           return this.mapToApp(retryData || user);
@@ -246,10 +253,30 @@ class UserRepository {
           error.message?.includes('client_type') ||
           error.message?.includes('signup_ip') ||
           error.message?.includes('signup_state') ||
-          error.message?.includes('gender')
+          error.message?.includes('gender') ||
+          error.message?.includes('mobile_verification_revoked_at')
         );
         if (isMissingColumn) {
-          winstonLogger.warn(`[AUTH_SUPABASE] Resilient Column Warning: Column does not exist on remote database: ${error.message}. Proceeding with local file persistence fallback.`);
+          winstonLogger.warn(`[AUTH_SUPABASE] Resilient Column Warning on update: ${error.message}. Retrying core update without unmigrated columns.`);
+          if (error.message?.includes('mobile_verification_revoked_at')) delete payload.mobile_verification_revoked_at;
+          if (error.message?.includes('gender')) delete payload.gender;
+          if (error.message?.includes('avatar_url')) delete payload.avatar_url;
+          if (error.message?.includes('device_type')) delete payload.device_type;
+          if (error.message?.includes('platform')) delete payload.platform;
+          if (error.message?.includes('browser')) delete payload.browser;
+          if (error.message?.includes('client_type')) delete payload.client_type;
+          if (error.message?.includes('signup_ip')) delete payload.signup_ip;
+          if (error.message?.includes('signup_state')) delete payload.signup_state;
+
+          if (Object.keys(payload).length > 0) {
+            const { data: retryData, error: retryError } = await supabase.from('users').update(payload).eq('id', id).select().maybeSingle();
+            if (!retryError && retryData) {
+              return this.mapToApp(retryData);
+            }
+            if (retryError) {
+              winstonLogger.warn(`[AUTH_SUPABASE] Resilient retry failed: ${retryError.message}. Proceeding with local file persistence fallback.`);
+            }
+          }
           return { id, ...updates } as any;
         }
         throw new DatabaseError(error.code, error.message);

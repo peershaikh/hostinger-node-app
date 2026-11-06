@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.searchVerificationGateMiddleware = void 0;
 const featureFlags_1 = require("../config/featureFlags");
 const verificationRolloutService_1 = require("../services/verificationRolloutService");
+const logger_1 = require("./logger");
 const searchVerificationGateMiddleware = async (req, res, next) => {
     // 1. Emergency kill-switch bypass
     if (!featureFlags_1.featureFlags.searchVerificationGate) {
@@ -49,8 +50,16 @@ const searchVerificationGateMiddleware = async (req, res, next) => {
         next();
     }
     catch (err) {
-        // Fail-open on unexpected middleware exception to avoid crashing core search
-        next();
+        // PHASE 144F: Fail-closed for authenticated verification errors (HTTP 503 Service Unavailable)
+        // Prevents unverified/revoked users from bypassing gating during database outages
+        logger_1.winstonLogger.error(`[SEARCH_GATE] Verification authority failure for user ${userId}: ${err?.message || err}`);
+        res.setHeader('Retry-After', '5');
+        return res.status(503).json({
+            success: false,
+            error: 'VERIFICATION_AUTHORITY_UNAVAILABLE',
+            code: 'VERIFICATION_AUTHORITY_UNAVAILABLE',
+            message: 'Account verification service is temporarily unavailable. Please retry your search shortly.'
+        });
     }
 };
 exports.searchVerificationGateMiddleware = searchVerificationGateMiddleware;

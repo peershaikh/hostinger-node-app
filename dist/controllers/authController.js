@@ -619,7 +619,13 @@ class AuthController {
                 });
             }
             catch (err) {
-                return res.status(400).json({ success: false, error: err.message });
+                res.setHeader('Retry-After', '5');
+                return res.status(503).json({
+                    success: false,
+                    error: 'VERIFICATION_AUTHORITY_UNAVAILABLE',
+                    code: 'VERIFICATION_AUTHORITY_UNAVAILABLE',
+                    message: 'Account verification service is temporarily unavailable. Please retry your search shortly.'
+                });
             }
         };
         this.updateProfile = async (req, res) => {
@@ -746,7 +752,13 @@ class AuthController {
                 return res.json({
                     success: true,
                     message: 'Mobile number verified successfully',
-                    profileCompletionPercentage: score
+                    profileCompletionPercentage: score,
+                    data: {
+                        isMobileVerified: true,
+                        mobileVerified: true,
+                        mobileVerifiedAt: updatedUser?.mobileVerifiedAt || new Date().toISOString(),
+                        mobileNumber: updatedUser?.mobileNumber || ''
+                    }
                 });
             }
             catch (err) {

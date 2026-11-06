@@ -17,7 +17,13 @@ import path from 'path';
 // ---------------------------------------------------------------------------
 const NO_WRITE_MODE: boolean = process.env.LOCAL_E2E_NO_WRITE === 'true';
 
-dotenv.config({ path: path.join(__dirname, '../../.env') });
+const skipDefaultDotenv = process.env.SUPABASE_DISABLE_DEFAULT_DOTENV === 'true'
+  || process.env.NODE_ENV === 'test'
+  || (process.env.NODE_ENV === 'staging' && !!process.env.SUPABASE_URL);
+
+if (!skipDefaultDotenv) {
+  dotenv.config({ path: path.join(__dirname, '../../.env') });
+}
 
 /** Token identifying a request rejected by the no-write boundary. */
 export const NO_WRITE_ERROR_CODE = 'LOCAL_E2E_NO_WRITE_BLOCKED';

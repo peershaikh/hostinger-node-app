@@ -14,6 +14,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { featureFlags } from '../config/featureFlags';
 import { verificationRolloutService } from '../services/verificationRolloutService';
+import { winstonLogger } from './logger';
 
 export const searchVerificationGateMiddleware = async (req: Request, res: Response, next: NextFunction) => {
   // 1. Emergency kill-switch bypass
@@ -53,7 +54,15 @@ export const searchVerificationGateMiddleware = async (req: Request, res: Respon
 
     next();
   } catch (err: any) {
-    // Fail-open on unexpected middleware exception to avoid crashing core search
-    next();
+    // PHASE 144F: Fail-closed for authenticated verification errors (HTTP 503 Service Unavailable)
+    // Prevents unverified/revoked users from bypassing gating during database outages
+    winstonLogger.error(`[SEARCH_GATE] Verification authority failure for user ${userId}: ${err?.message || err}`);
+    res.setHeader('Retry-After', '5');
+    return res.status(503).json({
+      success: false,
+      error: 'VERIFICATION_AUTHORITY_UNAVAILABLE',
+      code: 'VERIFICATION_AUTHORITY_UNAVAILABLE',
+      message: 'Account verification service is temporarily unavailable. Please retry your search shortly.'
+    });
   }
 };

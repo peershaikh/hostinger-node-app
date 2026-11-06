@@ -23,6 +23,7 @@ export interface UserSearchAccessEvaluation {
   deadline: string;
   isMobileVerified: boolean;
   isProfileComplete: boolean;
+  isRevoked: boolean;
   missingFields: string[];
   errorCode?: 'MOBILE_VERIFICATION_REQUIRED' | 'PROFILE_COMPLETION_REQUIRED';
   requiredAction?: 'VERIFY_MOBILE' | 'COMPLETE_PROFILE';
@@ -71,6 +72,7 @@ export class VerificationRolloutService {
       deadline: rollout.deadlineDate,
       isMobileVerified: true,
       isProfileComplete: true,
+      isRevoked: false,
       missingFields: [],
       profileUrl
     };
@@ -82,13 +84,24 @@ export class VerificationRolloutService {
 
     const user = await authService.getUserById(userId);
     if (!user) {
-      // If user cannot be resolved, allow fail-open for search to prevent blocking legitimate guests/users
-      return defaultPassing;
+      // PHASE 144F: An authenticated user cannot be resolved in authority (DB or local cache).
+      // Fail closed with authority unavailable rather than fabricating verified status.
+      throw new Error('VERIFICATION_AUTHORITY_UNAVAILABLE');
     }
 
     // 1. Mobile Verification Evaluation
     const normalizedMobile = user.mobileNumber ? normalizeIndianPhoneNumber(user.mobileNumber) : null;
     const isMobileVerified = Boolean(user.mobileVerified === true && user.mobileNumber && normalizedMobile);
+
+    // 1b. Revocation Evaluation:
+    // A user is actively revoked if they have a valid revocation timestamp,
+    // have not re-verified after that revocation timestamp, and are currently not verified.
+    const isRevoked = Boolean(
+      user.mobileVerificationRevokedAt &&
+      !isNaN(Date.parse(user.mobileVerificationRevokedAt)) &&
+      (!user.mobileVerifiedAt || isNaN(Date.parse(user.mobileVerifiedAt)) || new Date(user.mobileVerificationRevokedAt).getTime() >= new Date(user.mobileVerifiedAt).getTime()) &&
+      !user.mobileVerified
+    );
 
     // 2. Passenger Profile Completion Evaluation (IRCTC standard passenger fields)
     const hasFullName = Boolean(user.fullName && user.fullName.trim().length >= 2 && /^[a-zA-Z\s]+$/.test(user.fullName.trim()));
@@ -119,6 +132,7 @@ export class VerificationRolloutService {
         deadline: rollout.deadlineDate,
         isMobileVerified: true,
         isProfileComplete: true,
+        isRevoked: false,
         missingFields: [],
         profileUrl
       };
@@ -143,6 +157,7 @@ export class VerificationRolloutService {
         deadline: rollout.deadlineDate,
         isMobileVerified,
         isProfileComplete,
+        isRevoked,
         missingFields,
         errorCode,
         requiredAction,
@@ -161,6 +176,7 @@ export class VerificationRolloutService {
       deadline: rollout.deadlineDate,
       isMobileVerified,
       isProfileComplete,
+      isRevoked,
       missingFields,
       errorCode,
       requiredAction,
