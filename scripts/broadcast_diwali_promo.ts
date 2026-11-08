@@ -16,6 +16,8 @@ async function main() {
   const isAll = args.includes('--all');
   const testIdx = args.indexOf('--test');
   const testEmail = testIdx !== -1 && args[testIdx + 1] ? args[testIdx + 1] : 'peershaikh25@gmail.com';
+  const resumeIdx = args.indexOf('--resume');
+  const startIndex = resumeIdx !== -1 && args[resumeIdx + 1] ? parseInt(args[resumeIdx + 1], 10) : 0;
 
   console.log('====================================================');
   console.log('   TRAYAGO DIWALI 2026 PROMOTIONAL CAMPAIGN         ');
@@ -71,9 +73,14 @@ async function main() {
     }
   }
 
-  const recipients = Array.from(emailMap.values());
+  const allRecipients = Array.from(emailMap.values());
+  const recipients = startIndex > 0 ? allRecipients.slice(startIndex) : allRecipients;
   console.log(`Total registered users found: ${users.length}`);
-  console.log(`Unique valid email recipients: ${recipients.length}`);
+  console.log(`Unique valid email recipients: ${allRecipients.length}`);
+  if (startIndex > 0) {
+    console.log(`[RESUME MODE] Skipping first ${startIndex} already-delivered recipients.`);
+    console.log(`Remaining recipients to process: ${recipients.length}`);
+  }
   console.log('----------------------------------------------------');
   console.log('Starting batch dispatch (15 emails/sec with 1s pause)...');
 

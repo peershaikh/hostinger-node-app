@@ -3252,9 +3252,11 @@ export class AdminController {
         }
       }
 
-      const recipients = Array.from(emailMap.values());
-      const totalRecipients = recipients.length;
-      winstonLogger.info(`[DIWALI_PROMO_BROADCAST] Found ${totalRecipients} unique user recipients.`);
+      const offset = parseInt(String(req.body?.offset || '0'), 10);
+      const allRecipients = Array.from(emailMap.values());
+      const recipients = offset > 0 ? allRecipients.slice(offset) : allRecipients;
+      const totalRecipients = allRecipients.length;
+      winstonLogger.info(`[DIWALI_PROMO_BROADCAST] Target: ${recipients.length} (Offset: ${offset}, Total Audience: ${totalRecipients})`);
 
       // Send in controlled batches of 15 per second to avoid triggering provider rate limits
       const BATCH_SIZE = 15;
