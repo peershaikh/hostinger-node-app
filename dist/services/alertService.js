@@ -150,7 +150,7 @@ class AlertService {
      * Fires when chart_status transitions from unprepared → prepared.
      * This is the most actionable notification for WL ticket holders.
      */
-    async triggerChartPreparedAlert(userId, pnr, chartStatus, cnfCount, totalPassengers, email) {
+    async triggerChartPreparedAlert(userId, pnr, chartStatus, cnfCount, totalPassengers, email, extraDetails) {
         let message = `The chart for PNR ${pnr} is now prepared. Your final seat/berth allocation is locked in.`;
         if (cnfCount !== undefined && totalPassengers !== undefined) {
             if (cnfCount === totalPassengers) {
@@ -171,8 +171,14 @@ class AlertService {
                 pnr,
                 chartStatus,
                 email: email || undefined,
-                title: `📋 Chart Prepared (8–10h Window) — PNR ${pnr}`,
-                message
+                title: `📋 Chart Prepared: PNR ${pnr}`,
+                message,
+                trainNo: extraDetails?.trainNo,
+                trainName: extraDetails?.trainName,
+                journeyDate: extraDetails?.journeyDate,
+                from: extraDetails?.from,
+                to: extraDetails?.to,
+                passengers: extraDetails?.passengers
             }
         });
     }

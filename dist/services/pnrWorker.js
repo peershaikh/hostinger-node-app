@@ -145,8 +145,8 @@ class PnrWorker {
      *
      * Stage 1: First Chart (Pehla Chart)
      *   - Morning trains (05:00 - 14:00): Prepared previous night between 20:00 and 21:45 IST.
-     *   - Afternoon/Night trains (after 14:00): Prepared ~10 hours before departure.
-     *   - During First Chart window: Poll every 30 minutes.
+     *   - Afternoon/Night trains (after 14:00): Prepared ~8-10 hours before departure.
+     *   - During First Chart window: Poll every 20-30 minutes.
      *
      * Stage 2: Second & Final Chart (Doosra Chart)
      *   - Exactly ~30-45 minutes before train departure.
@@ -159,44 +159,83 @@ class PnrWorker {
      *   - Poll once every 6 hours (360 mins).
      */
     getPollingThresholdMinutes(record) {
-        const journeyDate = this.parseDate(record.journey_date);
-        const now = Date.now();
-        if (!journeyDate) {
+        const rawDateStr = (record.journey_date || '').toString().trim();
+        if (!rawDateStr || rawDateStr === 'N/A') {
             return 240; // Default 4 hours if journey date not specified
         }
-        const hoursToJourney = (journeyDate.getTime() - now) / (1000 * 60 * 60);
-        // Case 0: Journey completed (train departed > 4 hours ago)
-        if (hoursToJourney < -4) {
-            return -1; // Stop polling
-        }
+        const now = Date.now();
         // Current IST Time calculation
         const utcMs = now + (new Date().getTimezoneOffset() * 60000);
-        const istDate = new Date(utcMs + (5.5 * 3600000));
-        const istHour = istDate.getUTCHours();
-        const istMinute = istDate.getUTCMinutes();
-        // Stage 2: Final Chart Window (around 30-45 mins before departure: -0.5h to 1.5h)
-        if (hoursToJourney >= -0.5 && hoursToJourney <= 1.5) {
-            return 20; // Poll every 20 mins in the final chart preparation window
-        }
-        // Stage 1: First Chart Window
-        // A. Official 8 to 10 hours before departure window (7.5h to 11h before departure)
-        if (hoursToJourney >= 7.5 && hoursToJourney <= 11) {
-            return 20; // Poll every 20 mins during the official 8–10 hour First Chart window
-        }
-        // B. Previous night 20:00 - 21:45 IST window for morning trains (journey between 10h and 22h away)
-        if (hoursToJourney > 8 && hoursToJourney <= 22) {
-            const isEveningWindow = (istHour === 20) || (istHour === 21 && istMinute <= 45);
-            if (isEveningWindow) {
-                return 30; // Poll every 30 mins during 8 PM - 9:45 PM IST
+        const istNow = new Date(utcMs + (5.5 * 3600000));
+        const istHour = istNow.getUTCHours();
+        const istMinute = istNow.getUTCMinutes();
+        const istTodayStr = istNow.toISOString().split('T')[0]; // YYYY-MM-DD in IST
+        // Check if raw date has explicit departure time (e.g. "9:20 PM" or "21:20")
+        const hasExplicitTime = /\b\d{1,2}:\d{2}\b/i.test(rawDateStr);
+        if (hasExplicitTime) {
+            const journeyDate = new Date(rawDateStr);
+            if (!isNaN(journeyDate.getTime())) {
+                const hoursToJourney = (journeyDate.getTime() - now) / (1000 * 60 * 60);
+                // Case 0: Journey completed (train departed > 4 hours ago)
+                if (hoursToJourney < -4) {
+                    return -1; // Stop polling
+                }
+                // Stage 2: Final Chart Window (around 30-45 mins before departure: -0.5h to 1.5h)
+                if (hoursToJourney >= -0.5 && hoursToJourney <= 1.5) {
+                    return 20; // Poll every 20 mins in the final chart preparation window
+                }
+                // Stage 1: First Chart Window (7.5h to 11h before departure)
+                if (hoursToJourney >= 7.5 && hoursToJourney <= 11) {
+                    return 20; // Poll every 20 mins during the official 8-10 hour First Chart window
+                }
+                // Previous night 20:00 - 21:45 IST window for morning trains
+                if (hoursToJourney > 8 && hoursToJourney <= 22) {
+                    const isEveningWindow = (istHour === 20) || (istHour === 21 && istMinute <= 45);
+                    if (isEveningWindow) {
+                        return 30; // Poll every 30 mins during 8 PM - 9:45 PM IST
+                    }
+                }
+                // Intermediate Current Booking Window (between First Chart and Final Chart)
+                if (hoursToJourney > 1.5 && hoursToJourney < 8) {
+                    return 120; // Poll every 2 hours during Current Booking
+                }
+                // Intermediate Window: 12 to 24 hours before journey
+                if (hoursToJourney <= 24) {
+                    return 180; // Poll every 3 hours
+                }
+                // Normal Long-Distance: > 24 hours
+                return 360; // Poll every 6 hours
             }
         }
-        // Intermediate Current Booking Window (between First Chart and Final Chart)
-        if (hoursToJourney > 1.5 && hoursToJourney < 8) {
-            return 120; // Poll every 2 hours during Current Booking
+        // Date-only string (e.g. "YYYY-MM-DD" stored in database):
+        const dateParsed = this.parseDate(rawDateStr);
+        if (!dateParsed) {
+            return 240;
         }
-        // Intermediate Window: 12 to 24 hours before journey
-        if (hoursToJourney <= 24) {
-            return 180; // Poll every 3 hours
+        const journeyDateStr = dateParsed.toISOString().split('T')[0];
+        // End of journey day in IST is YYYY-MM-DD 23:59:59 IST (which is 18:29:59 UTC)
+        const endOfJourneyDayUtc = new Date(`${journeyDateStr}T18:30:00Z`).getTime();
+        const hoursSinceDayEnded = (now - endOfJourneyDayUtc) / (1000 * 60 * 60);
+        // Stop polling only after the journey day has completely ended plus 4 hours (after 04:00 AM IST next day)
+        if (hoursSinceDayEnded > 4) {
+            return -1; // Journey genuinely completed
+        }
+        // ACTIVE SAME-DAY JOURNEY (in IST):
+        // Chart can prepare at any time on journey day (4h to 10h prior, or morning window).
+        // Poll every 20 minutes throughout the entire journey day to guarantee chart detection.
+        if (istTodayStr === journeyDateStr || hoursSinceDayEnded <= 4) {
+            return 20;
+        }
+        // Day before journey (within 24-36h):
+        const startOfJourneyDayUtc = new Date(`${journeyDateStr}T00:00:00+05:30`).getTime();
+        const hoursUntilJourneyDay = (startOfJourneyDayUtc - now) / (1000 * 60 * 60);
+        if (hoursUntilJourneyDay <= 24) {
+            // Evening window 20:00 - 21:45 IST on previous night
+            const isEveningWindow = (istHour === 20) || (istHour === 21 && istMinute <= 45);
+            if (isEveningWindow) {
+                return 30;
+            }
+            return 120; // Every 2 hours on the day before
         }
         // Normal Long-Distance: > 24 hours (2-5 days before journey)
         return 360; // Poll every 6 hours
@@ -273,7 +312,14 @@ class PnrWorker {
                     };
                     const cnfCount = normalized.passengers?.filter((p) => isCnfStatus(p.current_status || p.booking_status)).length || 0;
                     const contact = await pnrTrackingService_1.pnrTrackingService.getContactForPnr(record.pnr_number);
-                    await alertService_1.alertService.triggerChartPreparedAlert(record.session_id, record.pnr_number, newChartStatus, cnfCount, totalPassengers, contact?.email);
+                    await alertService_1.alertService.triggerChartPreparedAlert(record.session_id, record.pnr_number, newChartStatus, cnfCount, totalPassengers, contact?.email, {
+                        trainNo: normalized.train_no,
+                        trainName: normalized.train_name,
+                        journeyDate: normalized.journey_date,
+                        from: normalized.source_code || normalized.source_name,
+                        to: normalized.destination_code || normalized.destination_name,
+                        passengers: normalized.passengers
+                    });
                 }
                 // ──────────────────────────────────────────────────────────────────────
             }

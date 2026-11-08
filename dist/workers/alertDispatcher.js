@@ -154,7 +154,7 @@ class AlertDispatcher {
                 let delivered = false;
                 // 3. Dispatch via Email
                 if (userEmail) {
-                    const emailSent = await emailService_1.emailService.sendAlertEmail(userEmail, title, message);
+                    const emailSent = await emailService_1.emailService.sendAlertEmail(userEmail, title, message, metadata, alert.alert_type);
                     if (emailSent)
                         delivered = true;
                 }

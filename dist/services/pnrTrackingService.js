@@ -109,6 +109,39 @@ class PnrTrackingService {
         try {
             if (data.email) {
                 this.savePnrContact(data.pnr_number, data.email);
+                // Also persist contact email to pnr_history table so Postgres permanently retains contact mapping
+                try {
+                    const { data: histRow } = await supabase_1.supabase
+                        .from('pnr_history')
+                        .select('id, history')
+                        .eq('pnr', data.pnr_number)
+                        .limit(1)
+                        .maybeSingle();
+                    if (histRow) {
+                        const histList = Array.isArray(histRow.history) ? histRow.history : [];
+                        if (histList.length > 0) {
+                            histList[0].email = data.email;
+                        }
+                        else {
+                            histList.push({ pnr: data.pnr_number, email: data.email, updated_at: new Date().toISOString() });
+                        }
+                        await supabase_1.supabase
+                            .from('pnr_history')
+                            .update({ history: histList })
+                            .eq('id', histRow.id);
+                    }
+                    else {
+                        await supabase_1.supabase.from('pnr_history').insert([{
+                                pnr: data.pnr_number,
+                                history: [{ pnr: data.pnr_number, email: data.email, updated_at: new Date().toISOString() }],
+                                is_active: true,
+                                last_checked: new Date().toISOString()
+                            }]);
+                    }
+                }
+                catch (dbHistErr) {
+                    logger_1.winstonLogger.warn(`[PNR_TRACE] Note: pnr_history email write: ${dbHistErr.message}`);
+                }
             }
             const { email, ...dbFields } = data;
             const payload = {

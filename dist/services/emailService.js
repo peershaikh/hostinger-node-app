@@ -190,16 +190,187 @@ class EmailService {
             tag: 'PASSWORD_RESET',
         });
     }
-    async sendAlertEmail(toEmail, alertTitle, alertMessage) {
-        const html = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
-        <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-          <h2 style="color: #ef4444; margin-top: 0;">${alertTitle}</h2>
-          <p style="color: #555; font-size: 16px; line-height: 1.5;">
-            ${alertMessage}
-          </p>
+    async sendAlertEmail(toEmail, alertTitle, alertMessage, metadata, alertType) {
+        const pnr = metadata?.pnr || '';
+        const trainNo = metadata?.trainNo || metadata?.train_no || '';
+        const trainName = metadata?.trainName || metadata?.train_name || '';
+        const journeyDate = metadata?.journeyDate || metadata?.journey_date || '';
+        const fromStation = metadata?.from || metadata?.fromStation || '';
+        const toStation = metadata?.to || metadata?.toStation || '';
+        const passengers = Array.isArray(metadata?.passengers) ? metadata.passengers : [];
+        let passengerRowsHtml = '';
+        if (passengers.length > 0) {
+            passengerRowsHtml = `
+        <div style="margin: 22px 0;">
+          <h4 style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin-bottom: 8px;">Passenger Allocation Details</h4>
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px; background-color: #f8fafc; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0;">
+            <thead>
+              <tr style="background-color: #f1f5f9; text-align: left; color: #475569;">
+                <th style="padding: 10px 14px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">Passenger</th>
+                <th style="padding: 10px 14px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">Booking Status</th>
+                <th style="padding: 10px 14px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">Final / Current Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${passengers.map((p, idx) => {
+                const cur = p.current_status || p.currentStatus || 'N/A';
+                const isCnf = cur.toUpperCase().includes('CNF') || cur.toUpperCase().includes('CONFIRM');
+                const isRac = cur.toUpperCase().includes('RAC');
+                const statusColor = isCnf ? '#16a34a' : isRac ? '#2563eb' : '#d97706';
+                return `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 10px 14px; font-weight: bold; color: #334155;">Passenger ${idx + 1}</td>
+                  <td style="padding: 10px 14px; color: #64748b;">${p.booking_status || p.bookingStatus || 'N/A'}</td>
+                  <td style="padding: 10px 14px; font-weight: 800; color: ${statusColor};">${cur}</td>
+                </tr>
+              `;
+            }).join('')}
+            </tbody>
+          </table>
         </div>
-      </div>
+      `;
+        }
+        const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${alertTitle}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #0f172a; padding: 30px 10px;">
+    <tr>
+      <td align="center">
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
+          
+          <!-- Header Banner with Logo -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); padding: 22px 28px; text-align: left; border-bottom: 3px solid #3b82f6;">
+              <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="vertical-align: middle;">
+                    <img src="https://www.trayago.in/branding/trayago-logo-512x512.png" alt="Trayago" width="44" height="44" style="border-radius: 10px; display: inline-block; vertical-align: middle; margin-right: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);" />
+                    <span style="font-size: 24px; font-weight: 900; color: #ffffff; letter-spacing: -0.5px; vertical-align: middle;">Trayago</span>
+                  </td>
+                  <td align="right" style="vertical-align: middle;">
+                    <span style="display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; background-color: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(96, 165, 250, 0.3);">
+                      ${alertType === 'CHART_PREPARED' ? 'Chart Finalized' : 'Smart Alert'}
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Main Body -->
+          <tr>
+            <td style="padding: 28px;">
+              <!-- Headline Title -->
+              <h2 style="margin: 0 0 12px 0; font-size: 20px; font-weight: 800; color: #0f172a; line-height: 1.3;">
+                ${alertTitle}
+              </h2>
+
+              <!-- Status Alert Box -->
+              <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-left: 4px solid #16a34a; border-radius: 8px; padding: 14px 16px; margin-bottom: 22px;">
+                <p style="margin: 0; font-size: 15px; font-weight: 600; color: #166534; line-height: 1.5;">
+                  ${alertMessage}
+                </p>
+              </div>
+
+              <!-- Journey Card -->
+              <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin-bottom: 18px;">
+                <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td style="padding-bottom: 10px;">
+                      <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px;">PNR Number</span>
+                      <div style="font-size: 20px; font-weight: 900; font-family: monospace; color: #1e293b; letter-spacing: 2px;">
+                        ${pnr || 'N/A'}
+                      </div>
+                    </td>
+                    ${trainNo ? `
+                    <td align="right" style="padding-bottom: 10px;">
+                      <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px;">Train</span>
+                      <div style="font-size: 15px; font-weight: 800; color: #2563eb;">
+                        ${trainNo} ${trainName ? `&middot; ${trainName}` : ''}
+                      </div>
+                    </td>
+                    ` : ''}
+                  </tr>
+                  ${(fromStation || toStation || journeyDate) ? `
+                  <tr>
+                    <td colspan="2" style="border-top: 1px solid #e2e8f0; padding-top: 10px;">
+                      <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                        <tr>
+                          ${(fromStation && toStation) ? `
+                          <td>
+                            <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b;">Route</span>
+                            <div style="font-size: 13px; font-weight: 700; color: #334155;">
+                              ${fromStation} &rarr; ${toStation}
+                            </div>
+                          </td>
+                          ` : ''}
+                          ${journeyDate ? `
+                          <td align="right">
+                            <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b;">Journey Date</span>
+                            <div style="font-size: 13px; font-weight: 700; color: #334155;">
+                              ${journeyDate}
+                            </div>
+                          </td>
+                          ` : ''}
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                  ` : ''}
+                </table>
+              </div>
+
+              <!-- Passenger Breakdown -->
+              ${passengerRowsHtml}
+
+              <!-- CTAs -->
+              <div style="margin: 28px 0 10px 0; text-align: center;">
+                <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td align="center">
+                      <a href="https://www.trayago.in/pnr" target="_blank" style="display: inline-block; padding: 13px 24px; background-color: #2563eb; color: #ffffff; text-decoration: none; border-radius: 10px; font-size: 13px; font-weight: 800; letter-spacing: 0.5px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); margin-bottom: 8px;">
+                        View Live PNR Status &rarr;
+                      </a>
+                      ${trainNo ? `
+                      <a href="https://www.trayago.in/live?train=${trainNo}&mode=inside" target="_blank" style="display: inline-block; margin-left: 8px; padding: 13px 22px; background-color: #0f172a; color: #ffffff; text-decoration: none; border-radius: 10px; font-size: 13px; font-weight: 800; letter-spacing: 0.5px; border: 1px solid #334155; margin-bottom: 8px;">
+                        Track Live Speed & GPS &rarr;
+                      </a>
+                      ` : ''}
+                    </td>
+                  </tr>
+                </table>
+              </div>
+
+              <p style="margin-top: 20px; font-size: 12px; color: #94a3b8; text-align: center; line-height: 1.5;">
+                Travelling inside the train? Open Trayago Live Tracking and tap "Inside Train" to monitor live GPS speed and upcoming stops in real time.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 18px 28px; text-align: center;">
+              <p style="margin: 0 0 4px 0; font-size: 12px; font-weight: 600; color: #64748b;">
+                Trayago &middot; Pan-India Railway Travel Companion
+              </p>
+              <p style="margin: 0; font-size: 11px; color: #94a3b8;">
+                Need help? Contact <a href="mailto:support@trayago.in" style="color: #2563eb; text-decoration: none;">support@trayago.in</a> &middot; <a href="https://www.trayago.in" style="color: #2563eb; text-decoration: none;">www.trayago.in</a>
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
     `;
         return this.sendWithFailover({
             to: toEmail,

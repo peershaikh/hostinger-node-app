@@ -553,6 +553,21 @@ class PnrController {
                 // LOG PARSED OUTPUT (Sanitized of all passenger PII and credentials)
                 logger_1.winstonLogger.info(`[PNR PARSED OUTPUT] pnr=${pnr}: ${JSON.stringify((0, pnrNormalizer_1.sanitizePnrPayloadForLogging)(cleanResponse))}`);
                 cacheService_1.cacheService.cachePNR(pnr, cleanResponse);
+                // Asynchronously trigger tracked status update & alert check if PNR is being auto-tracked
+                try {
+                    const { pnrWorker } = require('../services/pnrWorker');
+                    const { data: trackRow } = await require('../config/supabase').supabase
+                        .from('pnr_tracking')
+                        .select('*')
+                        .eq('pnr_number', pnr)
+                        .maybeSingle();
+                    if (trackRow) {
+                        pnrWorker.updatePnrStatus(trackRow).catch((wErr) => {
+                            logger_1.winstonLogger.warn(`[PNR_CONTROLLER] Worker sync failed: ${wErr.message}`);
+                        });
+                    }
+                }
+                catch (trackCheckErr) { }
                 res.status(200).json(cleanResponse);
             }
             catch (err) {
