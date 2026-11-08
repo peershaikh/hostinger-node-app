@@ -373,19 +373,19 @@ class ContentService {
     async getPopupOffer() {
         const defaultOffer = {
             isActive: true,
-            title: "Festive Travel Freedom Offer",
-            subtitle: "Get 30 Days of Safar Pro Monthly for just ₹19! Unlimited AI split routes, zero-waitlist discoveries & live tracking.",
-            badgeText: "SPECIAL PROMO",
-            offerPrice: "₹19",
+            title: "Diwali Special Offer",
+            subtitle: "Festive season planning is in full swing! Get 30 Days of Trayago Pro for just ₹35. Unlimited AI hidden split journeys, live GPS tracking & smart PNR predictions.",
+            badgeText: "🪔 DIWALI SPECIAL",
+            offerPrice: "₹35",
             originalPrice: "₹49",
-            couponCode: "OFFER19",
+            couponCode: "OFFER35",
             planType: "safar_pro_30d",
             durationDays: 30,
-            ctaText: "Claim 1 Month Pro for ₹19",
+            ctaText: "Claim 1 Month Pro for ₹35",
             features: [
                 "Unlimited AI Hidden Split Journeys",
-                "Live Train GPS & Delay Alerts",
-                "Instant PNR Confirmation Probabilities",
+                "Live Train GPS Alerts & Real-time Speedometer",
+                "Smart PNR Confirmation Probabilities (92%+ accuracy)",
                 "High Priority Support & Auto-Refresh"
             ]
         };

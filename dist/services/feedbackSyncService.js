@@ -9,6 +9,7 @@ const path_1 = __importDefault(require("path"));
 const supabase_1 = require("../config/supabase");
 const logger_1 = require("../middleware/logger");
 const eventQueueWorker_1 = require("./eventQueueWorker");
+const feedbackStorage_1 = require("../utils/feedbackStorage");
 const DATA_DIR = path_1.default.join(__dirname, '../../data');
 const BATCH_SIZE = 50;
 const MAX_RETRIES = 3;
@@ -49,7 +50,7 @@ class FeedbackSyncService {
     }
     // ─── 1. feedback.json (Legacy JSON array) ──────────────────────────────────
     async syncFeedbackFile() {
-        const filePath = path_1.default.join(__dirname, '../../../data/feedback.json');
+        const filePath = feedbackStorage_1.FEEDBACK_FILE;
         if (!fs_1.default.existsSync(filePath))
             return;
         try {
@@ -63,65 +64,78 @@ class FeedbackSyncService {
             catch (parseErr) {
                 (0, eventQueueWorker_1.quarantineRecord)('feedback_json', content, `JSON parse error: ${parseErr.message}`);
                 if (!(0, supabase_1.isNoWriteMode)())
-                    (0, supabase_1.safeWriteFileSync)(filePath, '[]', 'utf8');
+                    await (0, feedbackStorage_1.clearFeedbackFileSafely)();
                 return;
             }
             if (!Array.isArray(items) || items.length === 0)
                 return;
             logger_1.winstonLogger.info(`[FALLBACK_REPLAY_START] file=feedback.json total_lines=${items.length}`);
-            const remainingItems = [];
+            const syncedKeys = new Set();
             let successCount = 0;
+            const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
             for (const item of items) {
                 try {
-                    const { data, error } = await supabase_1.supabase
-                        .from('feedback')
-                        .select('id')
-                        .eq('pnr', item.pnr || '')
-                        .eq('timestamp', item.timestamp || '');
+                    const hasValidUuid = typeof item.id === 'string' && UUID_REGEX.test(item.id);
+                    let query = supabase_1.supabase.from('feedback').select('id');
+                    if (hasValidUuid) {
+                        query = query.eq('id', item.id);
+                    }
+                    else if (item.pnr) {
+                        query = query.eq('pnr', item.pnr).eq('timestamp', item.timestamp || '');
+                    }
+                    else if (item.email && item.timestamp) {
+                        query = query.eq('email', item.email).eq('timestamp', item.timestamp);
+                    }
+                    else {
+                        query = query.eq('pnr', item.pnr || '').eq('timestamp', item.timestamp || '');
+                    }
+                    const { data, error } = await query;
                     if (error)
                         throw error;
                     if (data && data.length > 0) {
                         successCount++;
+                        syncedKeys.add((0, feedbackStorage_1.getFeedbackRecordKey)(item));
                         continue;
                     }
-                    const { error: insertError } = await supabase_1.supabase.from('feedback').insert([{
-                            pnr: item.pnr,
-                            is_accurate: item.is_accurate,
-                            comments: item.comments,
-                            timestamp: item.timestamp,
-                            name: item.name || null,
-                            email: item.email || null,
-                            device: item.device || null,
-                            os: item.os || null,
-                            feature: item.feature || null,
-                            bug: item.bug || null,
-                            screenshot: item.screenshot || null,
-                            severity: item.severity || null,
-                            performance: item.performance || null,
-                            ui: item.ui || null,
-                            suggestions: item.suggestions || null,
-                            user_id: item.user_id || item.userId || null,
-                            search_id: item.search_id || item.searchId || null,
-                            route_context: item.route_context || item.routeContext || null
-                        }]);
-                    if (insertError) {
-                        remainingItems.push(item);
+                    const insertPayload = {
+                        pnr: item.pnr,
+                        is_accurate: item.is_accurate,
+                        comments: item.comments,
+                        timestamp: item.timestamp,
+                        name: item.name || null,
+                        email: item.email || null,
+                        device: item.device || null,
+                        os: item.os || null,
+                        feature: item.feature || null,
+                        bug: item.bug || null,
+                        screenshot: item.screenshot || null,
+                        severity: item.severity || null,
+                        performance: item.performance || null,
+                        ui: item.ui || null,
+                        suggestions: item.suggestions || null,
+                        user_id: item.user_id || item.userId || null,
+                        search_id: item.search_id || item.searchId || null,
+                        route_context: item.route_context || item.routeContext || null
+                    };
+                    if (hasValidUuid) {
+                        insertPayload.id = item.id;
                     }
-                    else {
+                    const { error: insertError } = await supabase_1.supabase.from('feedback').insert([insertPayload]);
+                    if (!insertError || insertError.code === '23505') {
                         successCount++;
+                        syncedKeys.add((0, feedbackStorage_1.getFeedbackRecordKey)(item));
                     }
                 }
                 catch {
-                    remainingItems.push(item);
+                    // Keep item in file by not adding to syncedKeys
                 }
             }
             if (!(0, supabase_1.isNoWriteMode)()) {
-                if (remainingItems.length > 0) {
-                    (0, supabase_1.safeWriteFileSync)(filePath, JSON.stringify(remainingItems, null, 2), 'utf8');
-                    logger_1.winstonLogger.info(`[FALLBACK_REPLAY_SUCCESS] file=feedback.json recovered=${successCount} remaining=${remainingItems.length}`);
+                const { remainingCount } = await (0, feedbackStorage_1.removeSyncedFeedbackRecords)(syncedKeys);
+                if (remainingCount > 0) {
+                    logger_1.winstonLogger.info(`[FALLBACK_REPLAY_SUCCESS] file=feedback.json recovered=${successCount} remaining=${remainingCount}`);
                 }
                 else {
-                    (0, supabase_1.safeWriteFileSync)(filePath, '[]', 'utf8');
                     logger_1.winstonLogger.info(`[FALLBACK_REPLAY_SUCCESS] file=feedback.json recovered=${successCount} — cleared`);
                 }
             }

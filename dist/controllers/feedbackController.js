@@ -11,7 +11,7 @@ const supabase_1 = require("../config/supabase");
 const logger_1 = require("../middleware/logger");
 const llmService_1 = require("../services/llmService");
 const userFeedbackIntelligenceService_1 = require("../services/userFeedbackIntelligenceService");
-const FEEDBACK_FILE = path_1.default.join(__dirname, '../../../data/feedback.json');
+const feedbackStorage_1 = require("../utils/feedbackStorage");
 const FEEDBACK_CATEGORIES_FILE = path_1.default.join(__dirname, '../../../data/feedback_categories.json');
 // ─── Async background categorization (non-blocking) ─────────────────────────
 async function categorizeFeedbackAsync(feedbackId, feedbackText, metadata) {
@@ -95,7 +95,7 @@ exports.feedbackController = {
             // Primary: Write to Supabase with full schema
             if ((0, supabase_1.isSupabaseConfigured)()) {
                 try {
-                    await supabase_1.supabase.from('feedback').insert([{
+                    const { error } = await supabase_1.supabase.from('feedback').insert([{
                             id: feedback.id,
                             timestamp: feedback.timestamp,
                             pnr: pnrVal,
@@ -116,27 +116,43 @@ exports.feedbackController = {
                             search_id: searchId || null,
                             route_context: routeContext || null
                         }]);
-                    dbSuccess = true;
+                    if (!error) {
+                        dbSuccess = true;
+                    }
+                    else {
+                        logger_1.winstonLogger.warn(`[FEEDBACK] Supabase primary write failed: ${error.message}, falling back to JSON.`);
+                    }
                 }
                 catch (dbErr) {
                     logger_1.winstonLogger.warn(`[FEEDBACK] Supabase primary write failed: ${dbErr.message}, falling back to JSON.`);
                 }
             }
             // Secondary: Local JSON Fallback (Always write to keep local log, but especially crucial if DB fails)
-            let allFeedback = [];
-            if (fs_1.default.existsSync(FEEDBACK_FILE)) {
+            if (!(0, supabase_1.isNoWriteMode)()) {
                 try {
-                    allFeedback = JSON.parse(fs_1.default.readFileSync(FEEDBACK_FILE, 'utf-8'));
+                    await (0, feedbackStorage_1.enqueueFeedbackRecord)(feedback);
                 }
-                catch (e) {
-                    allFeedback = [];
+                catch (fbErr) {
+                    if (fbErr instanceof feedbackStorage_1.StorageCapacityExceededError) {
+                        logger_1.winstonLogger.error(`[FEEDBACK_STORAGE_SATURATED] Feedback queue capacity reached (${feedbackStorage_1.MAX_FALLBACK_CAPACITY}).`);
+                        if (!dbSuccess) {
+                            return res.status(503).json({
+                                success: false,
+                                error: 'Feedback storage temporarily unavailable. Please try again later.'
+                            });
+                        }
+                    }
+                    else {
+                        logger_1.winstonLogger.warn(`[FEEDBACK_STORAGE_WARN] Fallback write failed: ${fbErr.message}`);
+                        if (!dbSuccess) {
+                            return res.status(503).json({
+                                success: false,
+                                error: 'Feedback storage temporarily unavailable. Please try again later.'
+                            });
+                        }
+                    }
                 }
             }
-            allFeedback.push(feedback);
-            if (!fs_1.default.existsSync(path_1.default.dirname(FEEDBACK_FILE))) {
-                fs_1.default.mkdirSync(path_1.default.dirname(FEEDBACK_FILE), { recursive: true });
-            }
-            fs_1.default.writeFileSync(FEEDBACK_FILE, JSON.stringify(allFeedback, null, 2));
             // ─── Non-blocking GPT categorization ───────────────────────────────────
             // Build the text to classify from the richest available field
             const feedbackText = [bug, suggestions, feature].filter(Boolean).join(' | ') || 'No description provided';

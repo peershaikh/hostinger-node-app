@@ -19,6 +19,7 @@ import { ledgerAggregationService } from '../services/ledger/ledgerAggregationSe
 import { renewalNotificationJob } from '../jobs/renewalNotificationJob';
 import { renewalNotificationService } from '../services/renewalNotificationService';
 import { mobileVerificationAnalyticsService } from '../services/mobileVerificationAnalyticsService';
+import { emailService } from '../services/emailService';
 
 export function normalizeRouteStation(stn: string): string {
   if (!stn) return '';
@@ -3187,6 +3188,124 @@ export class AdminController {
       });
     } catch (err: any) {
       winstonLogger.error(`[ADMIN_RENEWAL_STATS_ERROR] ${err.message}`);
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  /**
+   * Broadcast Diwali Promotional Campaign to Users
+   * POST /api/admin/broadcast/diwali-promo
+   * Body: { mode: 'test' | 'broadcast', testEmail?: string }
+   */
+  async broadcastDiwaliPromo(req: Request, res: Response): Promise<void> {
+    try {
+      const mode = (req.body?.mode || 'test').toLowerCase();
+      const testEmail = (req.body?.testEmail || 'peershaikh25@gmail.com').trim();
+
+      if (mode === 'test') {
+        winstonLogger.info(`[DIWALI_PROMO] Sending test promotional email to ${testEmail}`);
+        const sent = await emailService.sendDiwaliPromoEmail({
+          toEmail: testEmail,
+          userName: 'Peer Shaikh',
+          claimUrl: 'https://www.trayago.in/pricing?code=OFFER35',
+          promoCode: 'OFFER35',
+          offerPrice: '₹35',
+          originalPrice: '₹49'
+        });
+
+        res.json({
+          success: true,
+          mode: 'test',
+          sentTo: testEmail,
+          delivered: sent,
+          message: sent 
+            ? `Test Diwali promotional email dispatched successfully to ${testEmail}`
+            : `Failed to deliver test email to ${testEmail}`
+        });
+        return;
+      }
+
+      // Broadcast mode to all registered users
+      winstonLogger.info(`[DIWALI_PROMO_BROADCAST] Starting broadcast to all registered users...`);
+      
+      const { data: users, error: usersErr } = await supabase
+        .from('users')
+        .select('id, email, full_name')
+        .not('email', 'is', null);
+
+      if (usersErr || !users) {
+        throw new Error(`Failed to query registered users: ${usersErr?.message || 'No users found'}`);
+      }
+
+      // Filter valid email formats and deduplicate
+      const emailMap = new Map<string, { email: string; name: string }>();
+      for (const u of users) {
+        const rawEmail = (u.email || '').trim().toLowerCase();
+        if (rawEmail && rawEmail.includes('@') && rawEmail.includes('.')) {
+          if (!emailMap.has(rawEmail)) {
+            emailMap.set(rawEmail, {
+              email: rawEmail,
+              name: u.full_name || 'Traveler'
+            });
+          }
+        }
+      }
+
+      const recipients = Array.from(emailMap.values());
+      const totalRecipients = recipients.length;
+      winstonLogger.info(`[DIWALI_PROMO_BROADCAST] Found ${totalRecipients} unique user recipients.`);
+
+      // Send in controlled batches of 15 per second to avoid triggering provider rate limits
+      const BATCH_SIZE = 15;
+      let successCount = 0;
+      let failureCount = 0;
+      const failures: { email: string; error: string }[] = [];
+
+      for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
+        const batch = recipients.slice(i, i + BATCH_SIZE);
+        await Promise.all(
+          batch.map(async (recipient) => {
+            try {
+              const ok = await emailService.sendDiwaliPromoEmail({
+                toEmail: recipient.email,
+                userName: recipient.name,
+                claimUrl: 'https://www.trayago.in/pricing?code=OFFER35',
+                promoCode: 'OFFER35',
+                offerPrice: '₹35',
+                originalPrice: '₹49'
+              });
+              if (ok) {
+                successCount++;
+              } else {
+                failureCount++;
+                failures.push({ email: recipient.email, error: 'Provider returned false' });
+              }
+            } catch (err: any) {
+              failureCount++;
+              failures.push({ email: recipient.email, error: err.message || 'Unknown error' });
+            }
+          })
+        );
+
+        // 1000ms pause between batches if more remain
+        if (i + BATCH_SIZE < recipients.length) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      winstonLogger.info(`[DIWALI_PROMO_BROADCAST_COMPLETE] Sent: ${successCount}, Failed: ${failureCount}, Total: ${totalRecipients}`);
+
+      res.json({
+        success: true,
+        mode: 'broadcast',
+        totalRecipients,
+        sentCount: successCount,
+        failureCount,
+        failures: failures.slice(0, 10),
+        message: `Diwali promotional campaign broadcast completed: ${successCount}/${totalRecipients} emails delivered.`
+      });
+    } catch (err: any) {
+      winstonLogger.error(`[DIWALI_PROMO_BROADCAST_ERROR] ${err.message}`);
       res.status(500).json({ success: false, error: err.message });
     }
   }

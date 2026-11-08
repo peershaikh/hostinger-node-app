@@ -89,6 +89,7 @@ router.get('/subscriptions', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmi
 router.get('/payment-metrics', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getPaymentMetrics.bind(adminController_1.adminController));
 router.post('/renewals/trigger', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.triggerRenewalScan.bind(adminController_1.adminController));
 router.get('/renewals/stats', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getRenewalStats.bind(adminController_1.adminController));
+router.post('/broadcast/diwali-promo', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.broadcastDiwaliPromo.bind(adminController_1.adminController));
 router.get('/audit-logs', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.listAuditLogs.bind(adminController_1.adminController));
 router.post('/audit-logs', rateLimiter_1.adminLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.logAuditEvent.bind(adminController_1.adminController));
 router.get('/diagnostics', rateLimiter_1.diagnosticsLimiter, adminAuth_1.requireAdmin, adminController_1.adminController.getDiagnostics.bind(adminController_1.adminController));

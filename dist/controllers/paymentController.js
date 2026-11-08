@@ -46,6 +46,13 @@ class PaymentController {
                         logger_1.winstonLogger.info(`[PAYMENT] Applied Loyalty Renewal Promo (${promoCode}) for user ${userId}: ₹39 for 37 days`);
                     }
                 }
+                // Diwali Promotional Special Offer (₹35 for 30 days)
+                if (promoCode === 'OFFER35' || promoCode === 'DIWALI35') {
+                    if (planType === 'safar_pro_30d') {
+                        planInfo = { amount: 3500, duration_days: 30 };
+                        logger_1.winstonLogger.info(`[PAYMENT] Applied Diwali Special Promo (${promoCode}) for user ${userId}: ₹35 for 30 days`);
+                    }
+                }
                 // Dynamic admin promo offer synchronization (e.g. ₹19 for 30 days)
                 try {
                     const activeOffer = await contentService_1.contentService.getPopupOffer();

@@ -656,6 +656,254 @@ export class EmailService {
       tag: 'SUBSCRIPTION_RENEWAL',
     });
   }
+
+  async sendDiwaliPromoEmail(options: {
+    toEmail: string;
+    userName?: string;
+    claimUrl?: string;
+    promoCode?: string;
+    offerPrice?: string;
+    originalPrice?: string;
+  }): Promise<boolean> {
+    const {
+      toEmail,
+      userName,
+      claimUrl = 'https://www.trayago.in/pricing?code=OFFER35',
+      promoCode = 'OFFER35',
+      offerPrice = '₹35',
+      originalPrice = '₹49'
+    } = options;
+
+    const safeName = String(userName || 'Traveler').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const subject = '🪔 Diwali Special: Get Trayago Pro for just ₹35! Unlimited AI Split Journeys & Confirmed Seats';
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trayago Diwali Special Offer</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #0b0f19; padding: 30px 10px;">
+    <tr>
+      <td align="center">
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 600px; background-color: #ffffff; border-radius: 18px; overflow: hidden; box-shadow: 0 16px 36px rgba(0,0,0,0.35); border: 1px solid rgba(245, 158, 11, 0.25);">
+          
+          <!-- Header Bar with Logo -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%); padding: 20px 28px; text-align: left; border-bottom: 2px solid #f59e0b;">
+              <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="vertical-align: middle;">
+                    <img src="https://www.trayago.in/branding/trayago-logo-512x512.png" alt="Trayago" width="42" height="42" style="border-radius: 10px; display: inline-block; vertical-align: middle; margin-right: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);" />
+                    <span style="font-size: 24px; font-weight: 900; color: #ffffff; letter-spacing: -0.5px; vertical-align: middle;">Trayago</span>
+                  </td>
+                  <td align="right" style="vertical-align: middle;">
+                    <span style="display: inline-block; padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: #ffffff; box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35);">
+                      ✨ Diwali Special ✨
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Festive Diwali Banner -->
+          <tr>
+            <td style="background-color: #0f172a; line-height: 0;">
+              <a href="${claimUrl}" target="_blank" style="text-decoration: none; display: block;">
+                <img src="https://www.trayago.in/branding/trayago-diwali-2026.jpg" alt="Trayago Diwali Special Offer - ₹35 for 30 Days" width="600" style="width: 100%; max-width: 600px; height: auto; display: block; border: 0;" />
+              </a>
+            </td>
+          </tr>
+
+          <!-- Main Body Content -->
+          <tr>
+            <td style="padding: 30px 28px 24px 28px; background-color: #ffffff;">
+              <p style="margin: 0 0 14px 0; font-size: 17px; font-weight: 700; color: #0f172a;">
+                Namaste ${safeName},
+              </p>
+
+              <p style="margin: 0 0 16px 0; font-size: 15px; line-height: 1.6; color: #334155;">
+                Festive season planning is in full swing, and we know how stressful it can be when direct train tickets show long waitlists.
+              </p>
+
+              <p style="margin: 0 0 24px 0; font-size: 15px; line-height: 1.6; color: #334155;">
+                This Diwali, we want to make sure you reach your destination smoothly. That is why we are giving you full access to <strong>Trayago Pro for just ${offerPrice}</strong> (originally ${originalPrice}) for the next 30 days!
+              </p>
+
+              <!-- Special Offer Price Badge Card -->
+              <div style="background: linear-gradient(145deg, #fffbeb 0%, #fef3c7 100%); border: 2px dashed #f59e0b; border-radius: 14px; padding: 22px 20px; text-align: center; margin-bottom: 28px;">
+                <span style="background-color: #b45309; color: #ffffff; padding: 5px 14px; border-radius: 9999px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px;">
+                  🪔 30% OFF FESTIVE PASS
+                </span>
+                <h3 style="margin: 12px 0 6px 0; font-size: 22px; font-weight: 900; color: #78350f;">
+                  Trayago Pro Monthly Access
+                </h3>
+
+                <div style="margin: 14px 0;">
+                  <span style="font-size: 18px; color: #94a3b8; text-decoration: line-through; margin-right: 8px; font-weight: 700;">${originalPrice}</span>
+                  <span style="font-size: 42px; font-weight: 900; color: #b45309; vertical-align: middle;">${offerPrice}</span>
+                  <span style="font-size: 15px; color: #92400e; font-weight: 700;">/ 30 Days</span>
+                </div>
+
+                <div style="background-color: #ffffff; border: 1px solid #fcd34d; border-radius: 8px; padding: 8px 16px; display: inline-block; margin-bottom: 18px;">
+                  <span style="font-size: 12px; color: #92400e; font-weight: 700;">PROMO CODE: </span>
+                  <span style="font-size: 15px; font-family: monospace; font-weight: 900; color: #b45309; letter-spacing: 1.5px;">${promoCode}</span>
+                </div>
+
+                <div>
+                  <a href="${claimUrl}" target="_blank" style="display: inline-block; width: 85%; max-width: 360px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-size: 16px; font-weight: 800; letter-spacing: 0.5px; box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4);">
+                    Claim 1 Month Pro for ${offerPrice} &rarr;
+                  </a>
+                </div>
+              </div>
+
+              <!-- Unlocked Features Section -->
+              <div style="margin-bottom: 26px;">
+                <h4 style="margin: 0 0 14px 0; font-size: 16px; font-weight: 800; color: #0f172a;">
+                  🪔 Here is what you unlock with Trayago Pro:
+                </h4>
+
+                <table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse;">
+                  <!-- Feature 1 -->
+                  <tr>
+                    <td style="padding: 10px 0; vertical-align: top; width: 28px;">
+                      <span style="font-size: 18px; line-height: 1;">⚡</span>
+                    </td>
+                    <td style="padding: 10px 0 10px 8px; vertical-align: top;">
+                      <div style="font-size: 14px; font-weight: 800; color: #0f172a; margin-bottom: 2px;">
+                        Unlimited AI Hidden Split Journeys
+                      </div>
+                      <div style="font-size: 13px; color: #475569; line-height: 1.5;">
+                        Our advanced engine scans millions of node combinations to find you confirmed seats across connecting legs when direct booking is full.
+                      </div>
+                    </td>
+                  </tr>
+
+                  <!-- Feature 2 -->
+                  <tr>
+                    <td style="padding: 10px 0; vertical-align: top; width: 28px; border-top: 1px solid #f1f5f9;">
+                      <span style="font-size: 18px; line-height: 1;">🛰️</span>
+                    </td>
+                    <td style="padding: 10px 0 10px 8px; vertical-align: top; border-top: 1px solid #f1f5f9;">
+                      <div style="font-size: 14px; font-weight: 800; color: #0f172a; margin-bottom: 2px;">
+                        Live Train GPS Alerts & Real-time Speedometer
+                      </div>
+                      <div style="font-size: 13px; color: #475569; line-height: 1.5;">
+                        Track your train in real-time with precise station coordinates, accurate platform indicators, live speedometer HUD, and delay forecasts.
+                      </div>
+                    </td>
+                  </tr>
+
+                  <!-- Feature 3 -->
+                  <tr>
+                    <td style="padding: 10px 0; vertical-align: top; width: 28px; border-top: 1px solid #f1f5f9;">
+                      <span style="font-size: 18px; line-height: 1;">📊</span>
+                    </td>
+                    <td style="padding: 10px 0 10px 8px; vertical-align: top; border-top: 1px solid #f1f5f9;">
+                      <div style="font-size: 14px; font-weight: 800; color: #0f172a; margin-bottom: 2px;">
+                        Smart PNR Confirmation Probabilities
+                      </div>
+                      <div style="font-size: 13px; color: #475569; line-height: 1.5;">
+                        Analyze historical confirmation trends and forecast the exact percentage chance of your waitlisted ticket getting confirmed with 92%+ accuracy.
+                      </div>
+                    </td>
+                  </tr>
+
+                  <!-- Feature 4 -->
+                  <tr>
+                    <td style="padding: 10px 0; vertical-align: top; width: 28px; border-top: 1px solid #f1f5f9;">
+                      <span style="font-size: 18px; line-height: 1;">🚀</span>
+                    </td>
+                    <td style="padding: 10px 0 10px 8px; vertical-align: top; border-top: 1px solid #f1f5f9;">
+                      <div style="font-size: 14px; font-weight: 800; color: #0f172a; margin-bottom: 2px;">
+                        High Priority Support & Auto-Refresh
+                      </div>
+                      <div style="font-size: 13px; color: #475569; line-height: 1.5;">
+                        Get your routes processed faster with dedicated server priority.
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+              </div>
+
+              <!-- How to claim box -->
+              <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px 20px; margin-bottom: 24px;">
+                <h4 style="margin: 0 0 10px 0; font-size: 14px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">
+                  How to claim your offer:
+                </h4>
+                <ol style="margin: 0; padding-left: 20px; font-size: 14px; color: #334155; line-height: 1.7;">
+                  <li>Log into your account at <a href="https://www.trayago.in" target="_blank" style="color: #2563eb; text-decoration: none; font-weight: 700;">trayago.in</a>.</li>
+                  <li>Click on the Diwali Special Offer banner or the claim button below.</li>
+                  <li>Your discount code <strong>${promoCode}</strong> will be automatically applied at checkout.</li>
+                </ol>
+              </div>
+
+              <p style="margin: 0 0 20px 0; font-size: 14px; line-height: 1.6; color: #475569; font-style: italic; text-align: center;">
+                Don't let a waitlisted ticket keep you away from family celebrations this festive season. Upgrade today and travel smarter.
+              </p>
+
+              <!-- Final CTA Button -->
+              <div style="text-align: center; margin-bottom: 26px;">
+                <a href="${claimUrl}" target="_blank" style="display: inline-block; background-color: #0f172a; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 10px; font-size: 15px; font-weight: 800; letter-spacing: 0.5px; border: 1px solid #334155; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.25);">
+                  Claim 1 Month Pro for ${offerPrice} &rarr;
+                </a>
+              </div>
+
+              <!-- Sign-off -->
+              <div style="border-top: 1px solid #f1f5f9; padding-top: 20px;">
+                <p style="margin: 0 0 4px 0; font-size: 15px; font-weight: 700; color: #0f172a;">
+                  Wishing you a safe, happy, and prosperous Diwali!
+                </p>
+                <p style="margin: 0 0 2px 0; font-size: 14px; color: #64748b;">
+                  Best regards,
+                </p>
+                <p style="margin: 0 0 2px 0; font-size: 14px; font-weight: 700; color: #0f172a;">
+                  The Trayago Team
+                </p>
+                <p style="margin: 0; font-size: 13px; color: #2563eb;">
+                  <a href="mailto:support@trayago.in" style="color: #2563eb; text-decoration: none;">support@trayago.in</a>
+                </p>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 18px 28px; text-align: center;">
+              <p style="margin: 0 0 4px 0; font-size: 12px; font-weight: 600; color: #64748b;">
+                Trayago &middot; Pan-India Smart Railway Travel Companion
+              </p>
+              <p style="margin: 0 0 4px 0; font-size: 11px; color: #94a3b8;">
+                You are receiving this special festive update because you are a registered member of Trayago.
+              </p>
+              <p style="margin: 0; font-size: 11px; color: #94a3b8;">
+                <a href="https://www.trayago.in" style="color: #64748b; text-decoration: none;">Visit Website</a> &middot; 
+                <a href="https://www.trayago.in/profile" style="color: #64748b; text-decoration: none;">Manage Preferences</a> &middot; 
+                <a href="mailto:support@trayago.in" style="color: #64748b; text-decoration: none;">Contact Support</a>
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `;
+
+    return this.sendWithFailover({
+      to: toEmail,
+      subject,
+      html,
+      senderName: 'Trayago Diwali Special',
+      tag: 'DIWALI_PROMO',
+    });
+  }
 }
 
 export const emailService = new EmailService();

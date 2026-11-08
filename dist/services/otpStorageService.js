@@ -158,6 +158,77 @@ class OtpStorageService {
         }
         return this.verifyOtpInMemory(normalizedPhone, params.otpCode.trim(), params.userId);
     }
+    /**
+     * Atomically validates the OTP, marks it consumed, and updates users.mobile_verified
+     * in a single PostgreSQL transaction via the composite RPC verify_and_activate_user.
+     */
+    async verifyAndActivateUser(params) {
+        if (!params.userId || !params.userId.trim()) {
+            throw new Error('User ID is required for verification and activation');
+        }
+        if (!params.otpCode || !/^\d{6}$/.test(params.otpCode.trim())) {
+            throw new Error('Invalid verification code');
+        }
+        const normalizedPhone = params.phoneE164 ? (0, phoneNormalizer_1.normalizeIndianPhoneNumber)(params.phoneE164) : undefined;
+        if (params.phoneE164 && !normalizedPhone) {
+            throw new Error('Invalid Indian mobile number format');
+        }
+        const isProd = this.isProduction();
+        // Production Fail-Closed Safety Check: Never run in-memory in production
+        if (isProd && !(0, supabase_1.isSupabaseConfigured)()) {
+            logger_1.winstonLogger.error('[OTP_STORAGE] CRITICAL: Supabase is not configured in production. Refusing insecure in-memory fallback.');
+            throw new Error('Authentication service temporarily unavailable.');
+        }
+        const computedHash = this.hashOtp(params.userId.trim(), params.otpCode.trim());
+        if ((0, supabase_1.isSupabaseConfigured)()) {
+            try {
+                const { data, error } = await supabase_1.supabase.rpc('verify_and_activate_user', {
+                    p_user_id: params.userId.trim(),
+                    p_otp_hash: computedHash,
+                    p_phone_e164: normalizedPhone || null,
+                    p_verification_method: params.verificationMethod || 'SMS'
+                });
+                if (error) {
+                    if (isProd) {
+                        logger_1.winstonLogger.error(`[OTP_STORAGE] CRITICAL: Supabase verify_and_activate_user RPC error in production: ${error.message}`);
+                        throw new Error('Authentication service temporarily unavailable.');
+                    }
+                    logger_1.winstonLogger.warn(`[OTP_STORAGE] Non-production Supabase verify_and_activate_user RPC unavailable: ${error.message}. Using test fallback.`);
+                    return this.verifyAndActivateUserInMemory(params.userId.trim(), params.otpCode.trim(), normalizedPhone, params.verificationMethod);
+                }
+                if (!data || data.success === false) {
+                    throw new Error(data?.message || 'Invalid verification code');
+                }
+                logger_1.winstonLogger.info(`[OTP_STORAGE] Successfully verified and activated user ${params.userId} in Supabase.`);
+                return {
+                    success: true,
+                    code: data.code || 'USER_ACTIVATED',
+                    otpId: data.otp_id || '',
+                    userId: data.user_id || params.userId.trim(),
+                    phoneE164: data.phone_e164 || normalizedPhone || '',
+                    channel: data.channel || params.verificationMethod || 'SMS',
+                    message: data.message || 'Mobile number verified and user activated successfully'
+                };
+            }
+            catch (err) {
+                if (isProd) {
+                    throw err;
+                }
+                // Bubble up expected domain error messages
+                if (err.message && (err.message.includes('Invalid verification code') ||
+                    err.message.includes('expired') ||
+                    err.message.includes('Too many failed attempts') ||
+                    err.message.includes('No active OTP') ||
+                    err.message.includes('User record not found') ||
+                    err.message.includes('User ID is required') ||
+                    err.message.includes('Invalid user UUID format'))) {
+                    throw err;
+                }
+                return this.verifyAndActivateUserInMemory(params.userId.trim(), params.otpCode.trim(), normalizedPhone, params.verificationMethod);
+            }
+        }
+        return this.verifyAndActivateUserInMemory(params.userId.trim(), params.otpCode.trim(), normalizedPhone, params.verificationMethod);
+    }
     // ─── Test & Local Non-Production In-Memory Implementation ───────────────────
     requestOtpInMemory(phoneE164, otp, otpHash, salt, params) {
         const now = Date.now();
@@ -224,8 +295,24 @@ class OtpStorageService {
         };
     }
     verifyOtpInMemory(phoneE164, otpCode, userId) {
-        const record = (phoneE164 ? this.testOtps.get(phoneE164) : undefined) ||
-            (userId ? this.testOtps.get(`user:${userId}`) : undefined);
+        let record;
+        if (phoneE164 && userId) {
+            const recordByPhone = this.testOtps.get(phoneE164);
+            const recordByUser = this.testOtps.get(`user:${userId}`);
+            if (recordByPhone && recordByUser && recordByPhone.id === recordByUser.id) {
+                record = recordByPhone;
+            }
+            else {
+                // Mismatched identities: reject
+                throw new Error('No active OTP found. Please request a new one.');
+            }
+        }
+        else if (phoneE164) {
+            record = this.testOtps.get(phoneE164);
+        }
+        else if (userId) {
+            record = this.testOtps.get(`user:${userId}`);
+        }
         if (!record || record.consumedAt !== null) {
             throw new Error('No active OTP found. Please request a new one.');
         }
@@ -260,6 +347,81 @@ class OtpStorageService {
             // Galat OTP: Increment attempt counter, do not consume unless max attempts reached
             record.attempts += 1;
             if (record.attempts > record.maxAttempts) {
+                record.consumedAt = now;
+                if (record.phoneE164)
+                    this.testOtps.delete(record.phoneE164);
+                if (record.userId)
+                    this.testOtps.delete(`user:${record.userId}`);
+                throw new Error('Too many failed attempts. Please request a new OTP.');
+            }
+            throw new Error('Invalid verification code');
+        }
+    }
+    verifyAndActivateUserInMemory(userId, otpCode, phoneE164, verificationMethod) {
+        let record;
+        if (phoneE164 && userId) {
+            const recordByPhone = this.testOtps.get(phoneE164);
+            const recordByUser = this.testOtps.get(`user:${userId}`);
+            if (recordByPhone && recordByUser && recordByPhone.id === recordByUser.id) {
+                record = recordByPhone;
+            }
+            else if (recordByUser) {
+                record = recordByUser;
+            }
+            else if (recordByPhone) {
+                record = recordByPhone;
+            }
+            else {
+                throw new Error('No active OTP found. Please request a new code.');
+            }
+        }
+        else if (userId) {
+            record = this.testOtps.get(`user:${userId}`);
+        }
+        else if (phoneE164) {
+            record = this.testOtps.get(phoneE164);
+        }
+        if (!record || record.consumedAt !== null) {
+            throw new Error('No active OTP found. Please request a new code.');
+        }
+        const now = Date.now();
+        if (now > record.expiresAt) {
+            record.consumedAt = now;
+            throw new Error('Verification code has expired. Please request a new code.');
+        }
+        if (record.attempts >= record.maxAttempts) {
+            record.consumedAt = now;
+            throw new Error('Too many failed attempts. Please request a new OTP.');
+        }
+        const hashKey = record.userId || userId;
+        const computedHash = this.hashOtp(hashKey, otpCode.trim());
+        let hashMatches = false;
+        try {
+            hashMatches = crypto_1.default.timingSafeEqual(Buffer.from(record.otpHash, 'hex'), Buffer.from(computedHash, 'hex'));
+        }
+        catch {
+            hashMatches = record.otpHash === computedHash;
+        }
+        if (hashMatches) {
+            record.attempts += 1;
+            record.consumedAt = now;
+            if (record.phoneE164)
+                this.testOtps.delete(record.phoneE164);
+            if (record.userId)
+                this.testOtps.delete(`user:${record.userId}`);
+            return {
+                success: true,
+                code: 'USER_ACTIVATED',
+                otpId: record.id,
+                userId,
+                phoneE164: record.phoneE164 || phoneE164 || '',
+                channel: record.channel || verificationMethod || 'SMS',
+                message: 'Mobile number verified and user activated successfully'
+            };
+        }
+        else {
+            record.attempts += 1;
+            if (record.attempts >= record.maxAttempts) {
                 record.consumedAt = now;
                 if (record.phoneE164)
                     this.testOtps.delete(record.phoneE164);

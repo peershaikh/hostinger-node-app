@@ -208,7 +208,8 @@ class UserRepository {
         if (!(0, supabase_1.isSupabaseConfigured)())
             return null;
         try {
-            const { data, error } = await supabase_1.supabase.from('users').select('*').eq('email', email).maybeSingle();
+            const normalizedEmail = (email || '').trim().toLowerCase();
+            const { data, error } = await supabase_1.supabase.from('users').select('*').ilike('email', normalizedEmail).maybeSingle();
             if (error) {
                 if (error.code === 'PGRST116')
                     return null; // Not found
@@ -316,10 +317,14 @@ class UserRepository {
                             return this.mapToApp(retryData);
                         }
                         if (retryError) {
-                            logger_1.winstonLogger.warn(`[AUTH_SUPABASE] Resilient retry failed: ${retryError.message}. Proceeding with local file persistence fallback.`);
+                            logger_1.winstonLogger.error(`[AUTH_SUPABASE] Resilient retry failed: ${retryError.message}`);
+                            throw new DatabaseError(retryError.code, retryError.message);
+                        }
+                        if (!retryData) {
+                            throw new DatabaseError('PGRST116', `User record not found in database during retry: ${id}`);
                         }
                     }
-                    return { id, ...updates };
+                    throw new DatabaseError(error.code, error.message);
                 }
                 throw new DatabaseError(error.code, error.message);
             }
