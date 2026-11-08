@@ -107,6 +107,11 @@ const EXACT_READ_ONLY_POST_ROUTES = new Set([
     '/api/trains/same-train-rescue',
     '/trains/same-train-rescue'
 ]);
+// Station Alarm routes (exempt for trusted origins and guest device_id; protected by alarmLimiter)
+const EXACT_ALARM_ROUTES = new Set([
+    '/api/alarms',
+    '/alarms'
+]);
 // ─── TRUSTED WEB & MOBILE ORIGINS FOR COOKIE-AUTHENTICATED ENDPOINTS ──────────
 const TRUSTED_WEB_ORIGINS = new Set([
     'https://trayago.in',
@@ -183,6 +188,26 @@ const conditionalCsrf = (req, res, next) => {
     // Strictly restricted to POST method on the exact normalized routes.
     if (req.method === 'POST' && EXACT_READ_ONLY_POST_ROUTES.has(normalizedPath)) {
         return next();
+    }
+    // 5B. Exact Station Alarm routes (allows guest and authenticated alarms; protected by alarmLimiter)
+    if (EXACT_ALARM_ROUTES.has(normalizedPath) || normalizedPath.startsWith('/api/alarms/') || normalizedPath.startsWith('/alarms/')) {
+        const rawOrigin = req.headers.origin;
+        const rawReferer = req.headers.referer;
+        let effectiveOrigin = undefined;
+        if (typeof rawOrigin === 'string' && rawOrigin.trim()) {
+            effectiveOrigin = rawOrigin.trim();
+        }
+        else if (typeof rawReferer === 'string' && rawReferer.trim()) {
+            try {
+                effectiveOrigin = new URL(rawReferer).origin;
+            }
+            catch {
+                effectiveOrigin = undefined;
+            }
+        }
+        if ((effectiveOrigin && isTrustedWebOrigin(effectiveOrigin, req)) || req.headers['x-device-id'] || req.headers['authorization']) {
+            return next();
+        }
     }
     // 6. Read-only station autocomplete queries
     if (req.method === 'GET' && (normalizedPath === '/api/stations' || normalizedPath.startsWith('/api/stations/') || normalizedPath === '/stations' || normalizedPath.startsWith('/stations/'))) {
