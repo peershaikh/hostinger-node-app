@@ -305,7 +305,7 @@ export class EmailService {
                   </td>
                   <td align="right" style="vertical-align: middle;">
                     <span style="display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; background-color: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(96, 165, 250, 0.3);">
-                      ${alertType === 'CHART_PREPARED' ? 'Chart Finalized' : 'Smart Alert'}
+                      ${alertType === 'CHART_PREPARED' ? 'Chart Finalized' : alertType === 'WAKEUP_ALARM' ? 'Station Wake-Up Alert' : 'Smart Alert'}
                     </span>
                   </td>
                 </tr>
@@ -333,9 +333,9 @@ export class EmailService {
                 <table width="100%" border="0" cellspacing="0" cellpadding="0">
                   <tr>
                     <td style="padding-bottom: 10px;">
-                      <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px;">PNR Number</span>
-                      <div style="font-size: 20px; font-weight: 900; font-family: monospace; color: #1e293b; letter-spacing: 2px;">
-                        ${pnr || 'N/A'}
+                      <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px;">${pnr ? 'PNR Number' : 'Target Station'}</span>
+                      <div style="font-size: 20px; font-weight: 900; font-family: monospace; color: #1e293b; letter-spacing: ${pnr ? '2px' : '0px'};">
+                        ${pnr || metadata?.station || toStation || 'Station Approaching'}
                       </div>
                     </td>
                     ${trainNo ? `

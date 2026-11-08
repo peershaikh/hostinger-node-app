@@ -65,16 +65,22 @@ export class AlertDispatcher {
       try {
         let userEmail: string | null = null;
         let userPhone: string | null = null;
+        let isUserPro = false;
         
         if (alert.user_id) {
           const { data: userData } = await supabase
             .from('users')
-            .select('email, mobile_number')
+            .select('email, mobile_number, plan_type, plan_expiry, is_admin')
             .eq('id', alert.user_id)
             .single();
           if (userData) {
             userEmail = userData.email;
             userPhone = userData.mobile_number || (userData as any).phone || null;
+            const pType = (userData.plan_type || '').toLowerCase();
+            const isAdmin = userData.is_admin === true || pType === 'admin';
+            const isPro = pType === 'paid' || pType === 'beta' || pType.startsWith('safar_pro');
+            const notExpired = !userData.plan_expiry || new Date() < new Date(userData.plan_expiry);
+            isUserPro = isAdmin || (isPro && notExpired);
           }
         }
         
@@ -203,10 +209,12 @@ export class AlertDispatcher {
           if (pushSent) delivered = true;
         }
 
-        // 6A. Dispatch via WhatsApp (additive channel)
+        // 6A. Dispatch via WhatsApp (additive channel - Pro/Paid only for WAKEUP_ALARM)
         if (featureFlags.whatsappService && featureFlags.whatsappSmartAlerts) {
           if (!whatsappAlertsEnabled) {
             winstonLogger.info(`[ALERT_DISPATCHER] WhatsApp dispatch skipped for alert ${alert.id}: user preference disabled.`);
+          } else if (alert.alert_type === 'WAKEUP_ALARM' && !isUserPro) {
+            winstonLogger.info(`[ALERT_DISPATCHER] WhatsApp dispatch skipped for alert ${alert.id}: WhatsApp station wake-up alerts are a Pro/Paid feature. User is on free tier.`);
           } else if (metadata.whatsapp_dispatched === true || metadata.whatsapp_wamid) {
             // STEP 5.10BQ: In-memory/metadata pre-send deduplication protection
             winstonLogger.info(`[ALERT_DISPATCHER] WhatsApp dispatch skipped for alert ${alert.id}: already dispatched.`);
