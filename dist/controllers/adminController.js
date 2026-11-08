@@ -3105,8 +3105,8 @@ class AdminController {
             const recipients = offset > 0 ? allRecipients.slice(offset) : allRecipients;
             const totalRecipients = allRecipients.length;
             logger_1.winstonLogger.info(`[DIWALI_PROMO_BROADCAST] Target: ${recipients.length} (Offset: ${offset}, Total Audience: ${totalRecipients})`);
-            // Send in controlled batches of 15 per second to avoid triggering provider rate limits
-            const BATCH_SIZE = 15;
+            // Send in controlled batches of 7 per second to remain safely within Resend API rate limits (10 req/s)
+            const BATCH_SIZE = 7;
             let successCount = 0;
             let failureCount = 0;
             const failures = [];

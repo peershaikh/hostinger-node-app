@@ -121,7 +121,8 @@ class BroadcastService {
             const emailRecipients = Array.from(emailMap.values());
             stats.email.target = emailRecipients.length;
             logger_1.winstonLogger.info(`[BROADCAST_EMAIL] Target count: ${emailRecipients.length}`);
-            const BATCH_SIZE = 15;
+            // Send in controlled batches of 7 per second to remain safely within Resend API rate limits (10 req/s)
+            const BATCH_SIZE = 7;
             for (let i = 0; i < emailRecipients.length; i += BATCH_SIZE) {
                 const batch = emailRecipients.slice(i, i + BATCH_SIZE);
                 await Promise.all(batch.map(async (r) => {
@@ -169,7 +170,8 @@ class BroadcastService {
             const phoneRecipients = Array.from(phoneMap.values());
             stats.whatsapp.target = phoneRecipients.length;
             logger_1.winstonLogger.info(`[BROADCAST_WHATSAPP] Target count: ${phoneRecipients.length}`);
-            const BATCH_SIZE = 15;
+            // Send in controlled batches of 7 per second to remain safely within Resend API rate limits (10 req/s)
+            const BATCH_SIZE = 7;
             for (let i = 0; i < phoneRecipients.length; i += BATCH_SIZE) {
                 const batch = phoneRecipients.slice(i, i + BATCH_SIZE);
                 await Promise.all(batch.map(async (r) => {

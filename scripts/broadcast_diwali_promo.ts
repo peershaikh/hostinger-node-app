@@ -82,9 +82,9 @@ async function main() {
     console.log(`Remaining recipients to process: ${recipients.length}`);
   }
   console.log('----------------------------------------------------');
-  console.log('Starting batch dispatch (15 emails/sec with 1s pause)...');
+  console.log('Starting batch dispatch (7 emails/sec to safely stay under Resend 10 req/s limit)...');
 
-  const BATCH_SIZE = 15;
+  const BATCH_SIZE = 7;
   let sentCount = 0;
   let failCount = 0;
   const startTime = Date.now();

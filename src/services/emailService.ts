@@ -100,6 +100,27 @@ export class EmailService {
         return true;
       } catch (err: any) {
         lastError = err;
+        const errMsg = String(err?.message || '');
+        // If Resend hit rate-limit (429), back off 1200ms and retry once
+        if (errMsg.includes('429') || errMsg.toLowerCase().includes('rate limit') || errMsg.toLowerCase().includes('too many requests')) {
+          winstonLogger.warn(`[EMAIL_RATE_LIMIT] Resend 429 for ${JSON.stringify(options.to)}, backing off 1200ms and retrying...`);
+          await new Promise(r => setTimeout(r, 1200));
+          try {
+            const retryRes = await client.emails.send({
+              from: `${senderName} <${resendSender}>`,
+              to: options.to,
+              subject: options.subject,
+              html: options.html,
+              replyTo: inSender,
+            });
+            if (!retryRes.error) {
+              winstonLogger.info(`[EMAIL_SUCCESS] ${tag} sent to ${JSON.stringify(options.to)} via Resend after backoff`);
+              return true;
+            }
+          } catch (retryErr: any) {
+            lastError = retryErr;
+          }
+        }
         winstonLogger.warn(`[EMAIL_WARN] Resend Key #${i + 1} (${keyHint}) failed for ${JSON.stringify(options.to)}: ${err.message}. Trying next provider...`);
       }
     }
