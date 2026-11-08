@@ -318,6 +318,80 @@ export class WhatsAppService {
     });
   }
 
+  /**
+   * Dispatches a promotional or custom campaign message to a WhatsApp user.
+   * Formats message with bolding, offer pricing, promo code, and action hyperlink.
+   * Attempts Meta approved trayago_smart_alert template first, then falls back to session text.
+   */
+  public async sendCampaignMessage(
+    to: string,
+    options: {
+      title: string;
+      message: string;
+      offerPrice?: string;
+      originalPrice?: string;
+      promoCode?: string;
+      actionUrl?: string;
+      actionLabel?: string;
+      userName?: string;
+    }
+  ): Promise<WhatsAppSendResult> {
+    const canonicalPhone = toCanonicalE164(to);
+    if (!canonicalPhone) {
+      return { success: false, reason: 'INVALID_PHONE_NUMBER' };
+    }
+
+    // Build rich formatted WhatsApp message text
+    const lines: string[] = [];
+    if (options.userName) {
+      lines.push(`Namaste ${options.userName},`);
+      lines.push('');
+    }
+    lines.push(options.message);
+
+    if (options.offerPrice) {
+      lines.push('');
+      let priceLine = `🎉 *Special Offer: ${options.offerPrice}*`;
+      if (options.originalPrice) {
+        priceLine += ` (~${options.originalPrice}~)`;
+      }
+      lines.push(priceLine);
+    }
+
+    if (options.promoCode) {
+      lines.push(`🎟️ Promo Code: *${options.promoCode}*`);
+    }
+
+    if (options.actionUrl) {
+      lines.push('');
+      const label = options.actionLabel || 'Claim Offer Now';
+      lines.push(`👉 *${label}:* ${options.actionUrl}`);
+    }
+
+    const fullMessageText = lines.join('\n');
+
+    // 1. First attempt: dispatch via Meta approved template trayago_smart_alert
+    try {
+      const templateResult = await this.sendSmartAlertTemplate(
+        canonicalPhone,
+        'WAKEUP_ALARM', // Maps to trayago_smart_alert template in resolveSmartAlertTemplateName
+        {
+          title: options.title || 'Trayago Special Update',
+          message: fullMessageText
+        }
+      );
+
+      if (templateResult.success) {
+        return templateResult;
+      }
+    } catch (tmplErr: any) {
+      winstonLogger.warn(`[WHATSAPP_CAMPAIGN_TMPL_FAIL] ${tmplErr.message}. Attempting session text fallback...`);
+    }
+
+    // 2. Fallback attempt: session text message (for users with open 24h window)
+    return this.sendSessionTextMessage(canonicalPhone, `*${options.title}*\n\n${fullMessageText}`);
+  }
+
   // ── Payload Builders (Pure functions for deterministic testing) ─────────────
 
   public buildTemplatePayload(

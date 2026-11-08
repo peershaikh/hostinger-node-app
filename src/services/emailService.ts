@@ -1,5 +1,5 @@
-import { Resend } from 'resend';
 import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import { winstonLogger } from '../middleware/logger';
 
 // Helper to parse multiple Resend API keys from RESEND_API_KEYS or RESEND_API_KEY
@@ -241,18 +241,18 @@ export class EmailService {
             </thead>
             <tbody>
               ${passengers.map((p: any, idx: number) => {
-                const cur = p.current_status || p.currentStatus || 'N/A';
-                const isCnf = cur.toUpperCase().includes('CNF') || cur.toUpperCase().includes('CONFIRM');
-                const isRac = cur.toUpperCase().includes('RAC');
-                const statusColor = isCnf ? '#16a34a' : isRac ? '#2563eb' : '#d97706';
-                return `
+        const cur = p.current_status || p.currentStatus || 'N/A';
+        const isCnf = cur.toUpperCase().includes('CNF') || cur.toUpperCase().includes('CONFIRM');
+        const isRac = cur.toUpperCase().includes('RAC');
+        const statusColor = isCnf ? '#16a34a' : isRac ? '#2563eb' : '#d97706';
+        return `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
                   <td style="padding: 10px 14px; font-weight: bold; color: #334155;">Passenger ${idx + 1}</td>
                   <td style="padding: 10px 14px; color: #64748b;">${p.booking_status || p.bookingStatus || 'N/A'}</td>
                   <td style="padding: 10px 14px; font-weight: 800; color: ${statusColor};">${cur}</td>
                 </tr>
               `;
-              }).join('')}
+      }).join('')}
             </tbody>
           </table>
         </div>
@@ -902,6 +902,180 @@ export class EmailService {
       html,
       senderName: 'Trayago Diwali Special',
       tag: 'DIWALI_PROMO',
+    });
+  }
+
+  async sendCustomCampaignEmail(options: {
+    toEmail: string;
+    userName?: string;
+    title: string;
+    message: string;
+    offerPrice?: string;
+    originalPrice?: string;
+    promoCode?: string;
+    actionUrl?: string;
+    actionLabel?: string;
+    bannerUrl?: string;
+  }): Promise<boolean> {
+    const {
+      toEmail,
+      userName,
+      title,
+      message,
+      offerPrice,
+      originalPrice,
+      promoCode,
+      actionUrl = 'https://www.trayago.in/pricing',
+      actionLabel = 'Explore Now',
+      bannerUrl
+    } = options;
+
+    const safeName = String(userName || 'Traveler').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safeTitle = String(title || 'Special Update from Trayago').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const paragraphs = message
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .map(line => `<p style="margin: 0 0 14px 0; font-size: 15px; line-height: 1.6; color: #334155;">${line.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`)
+      .join('');
+
+    const bannerHtml = bannerUrl ? `
+      <tr>
+        <td style="background-color: #0f172a; line-height: 0;">
+          <a href="${actionUrl}" target="_blank" style="text-decoration: none; display: block;">
+            <img src="${bannerUrl}" alt="${safeTitle}" width="600" style="width: 100%; max-width: 600px; height: auto; display: block; border: 0;" />
+          </a>
+        </td>
+      </tr>
+    ` : '';
+
+    const offerCardHtml = offerPrice ? `
+      <div style="background: linear-gradient(145deg, #fffbeb 0%, #fef3c7 100%); border: 2px dashed #f59e0b; border-radius: 14px; padding: 22px 20px; text-align: center; margin: 24px 0;">
+        <span style="background-color: #b45309; color: #ffffff; padding: 5px 14px; border-radius: 9999px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px;">
+          ⭐ SPECIAL PROMOTIONAL OFFER
+        </span>
+        <div style="margin: 14px 0;">
+          ${originalPrice ? `<span style="font-size: 18px; color: #94a3b8; text-decoration: line-through; margin-right: 8px; font-weight: 700;">${originalPrice}</span>` : ''}
+          <span style="font-size: 40px; font-weight: 900; color: #b45309; vertical-align: middle;">${offerPrice}</span>
+        </div>
+        ${promoCode ? `
+        <div style="background-color: #ffffff; border: 1px solid #fcd34d; border-radius: 8px; padding: 8px 16px; display: inline-block; margin-bottom: 18px;">
+          <span style="font-size: 12px; color: #92400e; font-weight: 700;">PROMO CODE: </span>
+          <span style="font-size: 15px; font-family: monospace; font-weight: 900; color: #b45309; letter-spacing: 1.5px;">${promoCode}</span>
+        </div>
+        ` : ''}
+        <div>
+          <a href="${actionUrl}" target="_blank" style="display: inline-block; width: 85%; max-width: 360px; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-size: 16px; font-weight: 800; letter-spacing: 0.5px; box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4);">
+            ${actionLabel} &rarr;
+          </a>
+        </div>
+      </div>
+    ` : `
+      <div style="text-align: center; margin: 28px 0;">
+        <a href="${actionUrl}" target="_blank" style="display: inline-block; background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 10px; font-size: 15px; font-weight: 800; letter-spacing: 0.5px; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);">
+          ${actionLabel} &rarr;
+        </a>
+      </div>
+    `;
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${safeTitle}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #0b0f19; padding: 30px 10px;">
+    <tr>
+      <td align="center">
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 600px; background-color: #ffffff; border-radius: 18px; overflow: hidden; box-shadow: 0 16px 36px rgba(0,0,0,0.35); border: 1px solid #e2e8f0;">
+          
+          <!-- Header Bar with Logo -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); padding: 20px 28px; text-align: left; border-bottom: 2px solid #2563eb;">
+              <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="vertical-align: middle;">
+                    <img src="https://www.trayago.in/branding/trayago-logo-512x512.png" alt="Trayago" width="42" height="42" style="border-radius: 10px; display: inline-block; vertical-align: middle; margin-right: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);" />
+                    <span style="font-size: 24px; font-weight: 900; color: #ffffff; letter-spacing: -0.5px; vertical-align: middle;">Trayago</span>
+                  </td>
+                  <td align="right" style="vertical-align: middle;">
+                    <span style="display: inline-block; padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; background: rgba(37, 99, 235, 0.2); color: #60a5fa; border: 1px solid rgba(96, 165, 250, 0.3);">
+                      Official Announcement
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          ${bannerHtml}
+
+          <!-- Main Body Content -->
+          <tr>
+            <td style="padding: 30px 28px 24px 28px; background-color: #ffffff;">
+              <p style="margin: 0 0 16px 0; font-size: 17px; font-weight: 700; color: #0f172a;">
+                Namaste ${safeName},
+              </p>
+
+              <h2 style="margin: 0 0 18px 0; font-size: 22px; font-weight: 800; color: #0f172a; line-height: 1.3;">
+                ${safeTitle}
+              </h2>
+
+              <div style="margin-bottom: 20px;">
+                ${paragraphs}
+              </div>
+
+              ${offerCardHtml}
+
+              <!-- Sign-off -->
+              <div style="border-top: 1px solid #f1f5f9; padding-top: 20px; margin-top: 24px;">
+                <p style="margin: 0 0 2px 0; font-size: 14px; color: #64748b;">
+                  Best regards,
+                </p>
+                <p style="margin: 0 0 2px 0; font-size: 14px; font-weight: 700; color: #0f172a;">
+                  The Trayago Team
+                </p>
+                <p style="margin: 0; font-size: 13px; color: #2563eb;">
+                  <a href="mailto:support@trayago.in" style="color: #2563eb; text-decoration: none;">support@trayago.in</a> &middot; <a href="https://www.trayago.in" style="color: #2563eb; text-decoration: none;">www.trayago.in</a>
+                </p>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 18px 28px; text-align: center;">
+              <p style="margin: 0 0 4px 0; font-size: 12px; font-weight: 600; color: #64748b;">
+                Trayago &middot; Pan-India Smart Railway Travel Companion
+              </p>
+              <p style="margin: 0 0 4px 0; font-size: 11px; color: #94a3b8;">
+                You are receiving this update because you are a registered user of Trayago.
+              </p>
+              <p style="margin: 0; font-size: 11px; color: #94a3b8;">
+                <a href="https://www.trayago.in" style="color: #64748b; text-decoration: none;">Website</a> &middot; 
+                <a href="https://www.trayago.in/profile" style="color: #64748b; text-decoration: none;">Preferences</a> &middot; 
+                <a href="mailto:support@trayago.in" style="color: #64748b; text-decoration: none;">Support</a>
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `;
+
+    return this.sendWithFailover({
+      to: toEmail,
+      subject: safeTitle,
+      html,
+      senderName: 'Trayago Updates',
+      tag: 'CAMPAIGN_BROADCAST',
     });
   }
 }

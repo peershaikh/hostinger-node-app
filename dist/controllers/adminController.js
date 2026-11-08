@@ -26,6 +26,7 @@ const renewalNotificationJob_1 = require("../jobs/renewalNotificationJob");
 const renewalNotificationService_1 = require("../services/renewalNotificationService");
 const mobileVerificationAnalyticsService_1 = require("../services/mobileVerificationAnalyticsService");
 const emailService_1 = require("../services/emailService");
+const broadcastService_1 = require("../services/broadcastService");
 function normalizeRouteStation(stn) {
     if (!stn)
         return '';
@@ -3150,6 +3151,52 @@ class AdminController {
         }
         catch (err) {
             logger_1.winstonLogger.error(`[DIWALI_PROMO_BROADCAST_ERROR] ${err.message}`);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    }
+    /**
+     * Retrieves live audience counts for the Omnichannel Broadcast Center.
+     * GET /api/admin/broadcast/audience-stats
+     */
+    async getBroadcastAudienceStats(req, res) {
+        try {
+            const stats = await broadcastService_1.broadcastService.getAudienceStats();
+            res.json({ success: true, data: stats });
+        }
+        catch (err) {
+            logger_1.winstonLogger.error(`[ADMIN_BROADCAST_AUDIENCE_STATS_ERR] ${err.message}`);
+            res.status(500).json({ success: false, error: err.message });
+        }
+    }
+    /**
+     * Executes a multi-channel campaign broadcast (WhatsApp, Email, or Both).
+     * POST /api/admin/broadcast/dispatch
+     */
+    async executeBroadcastCampaign(req, res) {
+        try {
+            const { channel = 'BOTH', mode = 'test', testEmail, testPhone, title, message, offerPrice, originalPrice, promoCode, actionUrl, actionLabel, bannerUrl } = req.body;
+            if (!title || !message) {
+                res.status(400).json({ success: false, error: 'Campaign title and message are required.' });
+                return;
+            }
+            const result = await broadcastService_1.broadcastService.executeBroadcast({
+                channel,
+                mode,
+                testEmail,
+                testPhone,
+                title,
+                message,
+                offerPrice,
+                originalPrice,
+                promoCode,
+                actionUrl,
+                actionLabel,
+                bannerUrl
+            });
+            res.json(result);
+        }
+        catch (err) {
+            logger_1.winstonLogger.error(`[ADMIN_BROADCAST_EXECUTE_ERR] ${err.message}`);
             res.status(500).json({ success: false, error: err.message });
         }
     }
