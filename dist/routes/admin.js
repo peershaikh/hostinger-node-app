@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
+const axios_1 = __importDefault(require("axios"));
 const adminController_1 = require("../controllers/adminController");
 const authMiddleware_1 = require("../middleware/authMiddleware");
 const adminAuth_1 = require("../middleware/adminAuth");
@@ -65,6 +66,57 @@ router.get('/health', (_req, res) => {
             avail_latency_avg_ms: availStats.cache_latency_avg_ms,
         },
     });
+});
+// Diagnostic check for email providers and Resend plan / domains status
+router.get('/resend-check', async (_req, res) => {
+    try {
+        const rawKeys = process.env.RESEND_API_KEYS || process.env.RESEND_API_KEY || '';
+        const brevoLogin = process.env.BREVO_SMTP_LOGIN || '';
+        const sender = process.env.SENDER_EMAIL || 'support@trayago.in';
+        const keys = rawKeys.split(',').map(k => k.trim()).filter(Boolean);
+        const keyDiagnostics = [];
+        for (let i = 0; i < keys.length; i++) {
+            const k = keys[i];
+            const hint = k.length > 10 ? `${k.substring(0, 7)}...${k.substring(k.length - 4)}` : 'short_key';
+            try {
+                const domainRes = await axios_1.default.get('https://api.resend.com/domains', {
+                    headers: { Authorization: `Bearer ${k}` },
+                    timeout: 7000
+                });
+                const apiKeysRes = await axios_1.default.get('https://api.resend.com/api-keys', {
+                    headers: { Authorization: `Bearer ${k}` },
+                    timeout: 7000
+                }).catch(err => ({ data: { error: err.response?.data || err.message } }));
+                keyDiagnostics.push({
+                    index: i,
+                    hint,
+                    valid: true,
+                    domains: domainRes.data?.data || domainRes.data,
+                    apiKeysInfo: apiKeysRes.data?.data || apiKeysRes.data
+                });
+            }
+            catch (err) {
+                keyDiagnostics.push({
+                    index: i,
+                    hint,
+                    valid: false,
+                    statusCode: err.response?.status,
+                    error: err.response?.data || err.message
+                });
+            }
+        }
+        res.json({
+            success: true,
+            senderEmailConfig: sender,
+            totalResendKeys: keys.length,
+            keyDiagnostics,
+            brevoConfigured: Boolean(brevoLogin),
+            timestamp: new Date().toISOString()
+        });
+    }
+    catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 // PHASE_4C837 P0-003: All /api/admin/* routes require verified JWT before role check
 router.use(authMiddleware_1.requireAuth);
