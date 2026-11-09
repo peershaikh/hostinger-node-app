@@ -174,7 +174,8 @@ class UserRepository {
   async findByEmail(email: string): Promise<User | null> {
     if (!isSupabaseConfigured()) return null;
     try {
-      const { data, error } = await supabase.from('users').select('*').eq('email', email).maybeSingle();
+      const normalizedEmail = (email || '').trim().toLowerCase();
+      const { data, error } = await supabase.from('users').select('*').ilike('email', normalizedEmail).maybeSingle();
       if (error) {
         if (error.code === 'PGRST116') return null; // Not found
         throw new DatabaseError(error.code, error.message);
@@ -274,10 +275,14 @@ class UserRepository {
               return this.mapToApp(retryData);
             }
             if (retryError) {
-              winstonLogger.warn(`[AUTH_SUPABASE] Resilient retry failed: ${retryError.message}. Proceeding with local file persistence fallback.`);
+              winstonLogger.error(`[AUTH_SUPABASE] Resilient retry failed: ${retryError.message}`);
+              throw new DatabaseError(retryError.code, retryError.message);
+            }
+            if (!retryData) {
+              throw new DatabaseError('PGRST116', `User record not found in database during retry: ${id}`);
             }
           }
-          return { id, ...updates } as any;
+          throw new DatabaseError(error.code, error.message);
         }
         throw new DatabaseError(error.code, error.message);
       }

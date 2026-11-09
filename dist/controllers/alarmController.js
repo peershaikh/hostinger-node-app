@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deleteAlarm = exports.updateAlarm = exports.getAlarms = exports.createAlarm = exports.MEMORY_ALARMS = void 0;
 const crypto_1 = __importDefault(require("crypto"));
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const supabase_1 = require("../config/supabase");
 const logger_1 = require("../middleware/logger");
 // ─── UUID Validation ────────────────────────────────────────────────────────
@@ -23,8 +24,28 @@ exports.MEMORY_ALARMS = new Map();
  * as null so they never reach the Supabase query layer and cause cast errors.
  */
 function resolveUserContext(req) {
+    let userId = null;
     const rawUserId = req.headers['x-user-id'];
-    const userId = isValidUUID(rawUserId) ? rawUserId : null;
+    if (isValidUUID(rawUserId)) {
+        userId = rawUserId;
+    }
+    // Fallback: decode Bearer JWT directly if x-user-id was not populated by upstream middleware
+    if (!userId) {
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            const token = authHeader.split(' ')[1];
+            try {
+                const decoded = jsonwebtoken_1.default.decode(token);
+                const candidateId = decoded?.userId || decoded?.id || decoded?.sub;
+                if (isValidUUID(candidateId)) {
+                    userId = candidateId;
+                }
+            }
+            catch (err) {
+                logger_1.winstonLogger.debug(`[ALARM_CONTROLLER] JWT fallback decode error: ${err.message}`);
+            }
+        }
+    }
     if (rawUserId && !userId) {
         logger_1.winstonLogger.debug(`[ALARM_CONTROLLER] Rejected non-UUID x-user-id header: "${rawUserId}" — using device_id only`);
     }

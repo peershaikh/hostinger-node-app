@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import { supabase } from '../config/supabase';
 import { winstonLogger } from '../middleware/logger';
 
@@ -34,8 +35,28 @@ export const MEMORY_ALARMS = new Map<string, StationAlarmRecord>();
  * as null so they never reach the Supabase query layer and cause cast errors.
  */
 function resolveUserContext(req: Request): { userId: string | null; deviceId: string | null } {
+  let userId: string | null = null;
   const rawUserId = req.headers['x-user-id'] as string | undefined;
-  const userId = isValidUUID(rawUserId) ? rawUserId : null;
+  if (isValidUUID(rawUserId)) {
+    userId = rawUserId;
+  }
+
+  // Fallback: decode Bearer JWT directly if x-user-id was not populated by upstream middleware
+  if (!userId) {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      try {
+        const decoded = jwt.decode(token) as any;
+        const candidateId = decoded?.userId || decoded?.id || decoded?.sub;
+        if (isValidUUID(candidateId)) {
+          userId = candidateId;
+        }
+      } catch (err: any) {
+        winstonLogger.debug(`[ALARM_CONTROLLER] JWT fallback decode error: ${err.message}`);
+      }
+    }
+  }
 
   if (rawUserId && !userId) {
     winstonLogger.debug(`[ALARM_CONTROLLER] Rejected non-UUID x-user-id header: "${rawUserId}" — using device_id only`);

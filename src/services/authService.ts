@@ -201,7 +201,7 @@ export class AuthService {
     try {
       let user = await userRepository.findByEmail(email);
       if (user) {
-        const localUser = this.users.find(u => u.email === email);
+        const localUser = this.users.find(u => u.email?.toLowerCase() === email.toLowerCase());
         if (localUser) {
           const isRemoteRevoked = Boolean(
             user.mobileVerificationRevokedAt &&
@@ -245,10 +245,10 @@ export class AuthService {
       }
       // If null, fallback to legacy array
       winstonLogger.warn(`[AUTH_PHASE2A] getUserByEmail null response, falling back to legacy array for ${email}`);
-      return this.users.find(u => u.email === email) || null;
+      return this.users.find(u => u.email?.toLowerCase() === email.toLowerCase()) || null;
     } catch (err: any) {
       winstonLogger.error(`[AUTH_PHASE2A] getUserByEmail repository fallback: ${err.message}`);
-      return this.users.find(u => u.email === email) || null;
+      return this.users.find(u => u.email?.toLowerCase() === email.toLowerCase()) || null;
     }
   }
 
@@ -2507,11 +2507,13 @@ export class AuthService {
     const user = await this.getUserById(userId);
     if (!user) throw new Error('User not found');
 
-    let verifiedResult: { success: boolean; phoneE164: string; channel: string };
+    let activationResult: { success: boolean; phoneE164: string; channel: string };
     try {
-      verifiedResult = await otpStorageService.verifyOtp({
+      activationResult = await otpStorageService.verifyAndActivateUser({
         userId,
-        otpCode: otpCode.trim()
+        otpCode: otpCode.trim(),
+        phoneE164: user.mobileNumber,
+        verificationMethod: user.mobileVerificationMethod || 'SMS'
       });
     } catch (err: any) {
       if (err.message && err.message.includes('Too many failed attempts')) {
@@ -2520,38 +2522,29 @@ export class AuthService {
       throw err;
     }
 
-    // 2. Success! Update user status with canonical E.164 mobile number
-    user.mobileNumber = verifiedResult.phoneE164 || user.mobileNumber;
+    // Atomic database activation succeeded. Invalidate cache to guarantee fresh state.
+    if (isSupabaseConfigured()) {
+      await userCache.invalidate(userId);
+    }
+
+    const verifiedPhone = activationResult.phoneE164 || user.mobileNumber;
+    const verifiedMethod = activationResult.channel || user.mobileVerificationMethod || 'SMS';
+    const verifiedAt = new Date().toISOString();
+
+    // Synchronize in-memory record and local storage only after confirmed database success
+    user.mobileNumber = verifiedPhone;
     user.mobileVerified = true;
-    user.mobileVerificationMethod = verifiedResult.channel || 'SMS';
-    user.mobileVerifiedAt = new Date().toISOString();
+    user.mobileVerificationMethod = verifiedMethod;
+    user.mobileVerifiedAt = verifiedAt;
     user.mobileVerificationRevokedAt = null;
 
     // Consume local test copy immediately
     delete this.mobileOtps[userId];
 
-    // Sync to Supabase & save locally
-    if (isSupabaseConfigured()) {
-      try {
-        await userRepository.update(userId, {
-          mobileNumber: user.mobileNumber,
-          mobileVerified: user.mobileVerified,
-          mobileVerificationMethod: user.mobileVerificationMethod,
-          mobileVerifiedAt: user.mobileVerifiedAt,
-          mobileVerificationRevokedAt: null
-        });
-      } catch (err: any) {
-        winstonLogger.error(`[AUTH_SUPABASE] Failed to sync mobile verification to Supabase: ${err.message}`);
-        if (process.env.NODE_ENV === 'production') {
-          throw new Error('Failed to persist mobile verification status. Please try again.');
-        }
-      }
-      await userCache.invalidate(userId);
-    }
-    
     this.updateLocalUser(user);
-    this.saveUsers(userId, { includeSecurityFields: true });
-    winstonLogger.info(`[MOBILE_OTP] Successfully verified mobile for user ${userId} (${maskPhoneNumber(user.mobileNumber)}).`);
+    await this.saveUsers(userId, { includeSecurityFields: true });
+    await userCache.setUser(user);
+    winstonLogger.info(`[AUTH_VERIFY_OTP] Successfully verified and activated mobile for user ${userId} (${maskPhoneNumber(user.mobileNumber)}).`);
     return true;
   }
 
