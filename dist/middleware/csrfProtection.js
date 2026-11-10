@@ -109,9 +109,7 @@ const EXACT_PUBLIC_AUTH_ROUTES = new Set([
     '/api/auth/google',
     '/auth/google',
     '/api/auth/google/callback',
-    '/auth/google/callback',
-    '/api/auth/csrf-token',
-    '/auth/csrf-token'
+    '/auth/google/callback'
 ]);
 const EXACT_TELEMETRY_ROUTES = new Set([
     '/api/analytics/event',
@@ -200,6 +198,10 @@ function normalizePath(rawPath) {
  */
 const conditionalCsrf = (req, res, next) => {
     const normalizedPath = normalizePath(req.path);
+    // Dedicated CSRF bootstrap endpoint: always invoke csrfProtection to generate secret cookie and req.csrfToken
+    if (normalizedPath === '/api/auth/csrf-token' || normalizedPath === '/auth/csrf-token') {
+        return (0, exports.csrfProtection)(req, res, next);
+    }
     // 1. Skip CSRF for health checks and monitoring endpoints
     if (normalizedPath === '/' || normalizedPath === '/health' || normalizedPath === '/api/health') {
         return next();

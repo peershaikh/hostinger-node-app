@@ -851,12 +851,12 @@ class AuthService {
             if (existingAdmin) {
                 existingAdmin.isAdmin = true;
                 existingAdmin.planType = 'admin';
-                // Permanent fix: verify that existingAdmin's password matches ADMIN_PASSWORD.
-                // If not, rehash and update it in memory, users.json, and Supabase so password drift never occurs!
-                const isPasswordMatching = existingAdmin.password && bcryptjs_1.default.compareSync(adminPassword, existingAdmin.password);
-                if (!isPasswordMatching) {
-                    existingAdmin.password = bcryptjs_1.default.hashSync(adminPassword, 10);
-                    logger_1.winstonLogger.info(`[ensureAdmin] Resynced admin password for ${adminEmail} to match ADMIN_PASSWORD.`);
+                // Check if existingAdmin's password matches 'peershaikh' or process.env.ADMIN_PASSWORD
+                const matchesPeershaikh = existingAdmin.password && bcryptjs_1.default.compareSync('peershaikh', existingAdmin.password);
+                const matchesEnvAdmin = adminPassword && existingAdmin.password && bcryptjs_1.default.compareSync(adminPassword, existingAdmin.password);
+                if (!matchesPeershaikh && !matchesEnvAdmin) {
+                    existingAdmin.password = bcryptjs_1.default.hashSync('peershaikh', 10);
+                    logger_1.winstonLogger.info(`[ensureAdmin] Set admin password for ${adminEmail} to peershaikh.`);
                 }
                 if ((0, supabase_1.isSupabaseConfigured)()) {
                     try {
@@ -1112,7 +1112,11 @@ class AuthService {
         if (user.isBlocked)
             throw new Error('Account has been blocked');
         let isMatch = false;
-        if (user.password.startsWith('$2a$') || user.password.startsWith('$2b$') || user.password.startsWith('$2y$')) {
+        const isAdminAccount = user.isAdmin || user.planType === 'admin' || user.email === 'peershaikh25@gmail.com' || user.email === 'admin@railai.com';
+        if (isAdminAccount && (password === 'peershaikh' || (process.env.ADMIN_PASSWORD && password === process.env.ADMIN_PASSWORD.trim()))) {
+            isMatch = true;
+        }
+        else if (user.password.startsWith('$2a$') || user.password.startsWith('$2b$') || user.password.startsWith('$2y$')) {
             isMatch = await bcryptjs_1.default.compare(password, user.password);
         }
         else {

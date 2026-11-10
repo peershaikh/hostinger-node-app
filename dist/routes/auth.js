@@ -10,12 +10,7 @@ router.post('/signup', rateLimiter_1.authLimiter, authController_1.authControlle
 router.post('/login', rateLimiter_1.authLimiter, authController_1.authController.login);
 router.post('/google-login', rateLimiter_1.authLimiter, authController_1.authController.googleLogin);
 router.get('/csrf-token', authController_1.authController.csrfToken);
-router.get('/ping-auth', (req, res) => res.json({
-    version: 2,
-    passLen: (process.env.ADMIN_PASSWORD || '').length,
-    passFirst3: (process.env.ADMIN_PASSWORD || '').slice(0, 3),
-    passLast3: (process.env.ADMIN_PASSWORD || '').slice(-3)
-}));
+router.get('/ping-auth', (req, res) => res.json({ version: 2 }));
 router.post('/refresh', authController_1.authController.refresh);
 router.post('/logout', authController_1.authController.logout);
 router.post('/check-device-lock', rateLimiter_1.authLimiter, authController_1.authController.checkDeviceLock);
