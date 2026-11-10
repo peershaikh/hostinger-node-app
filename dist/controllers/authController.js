@@ -215,11 +215,13 @@ class AuthController {
                 if (!email || !password) {
                     return res.status(400).json({ success: false, error: 'Email and password required' });
                 }
+                const cleanEmail = String(email || '').trim().toLowerCase();
+                const cleanPassword = String(password || '').trim();
                 // Check device lock for abuse prevention
                 if (deviceId) {
                     // We'll check this after login
                 }
-                const result = await authService_1.authService.login(email, password, deviceId, referralCode);
+                const result = await authService_1.authService.login(cleanEmail, cleanPassword, deviceId, referralCode);
                 res.cookie('refreshToken', result.tokens.refreshToken, REFRESH_COOKIE_OPTIONS); // PHASE_5B142 Fix
                 return res.json({
                     success: true,
@@ -259,7 +261,7 @@ class AuthController {
             try {
                 const userId = (0, requestIdentity_1.getJwtUserId)(req);
                 const betaCode = (0, requestIdentity_1.getBetaCode)(req);
-                // PHASE_4C967: reject legacy query userId — identity must come from JWT only
+                // PHASE_4C967: reject legacy query userId: identity must come from JWT only
                 if ((0, requestIdentity_1.hasLegacyUserIdQuery)(req) && !userId) {
                     return res.status(401).json({
                         success: false,
@@ -466,7 +468,7 @@ class AuthController {
                 const tokens = await authService_1.authService.verifyRefreshToken(token);
                 // Re-set cookie with cross-domain settings
                 res.cookie('refreshToken', tokens.refreshToken, REFRESH_COOKIE_OPTIONS); // PHASE_5B142 Fix
-                // Return refreshToken in body too — mobile clients store it in AsyncStorage
+                // Return refreshToken in body too: mobile clients store it in AsyncStorage
                 return res.json({
                     success: true,
                     accessToken: tokens.accessToken,

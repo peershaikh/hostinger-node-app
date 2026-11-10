@@ -13,6 +13,7 @@ import { cacheService } from './cacheService';
 import { betaService } from './betaService';
 import { normalizeIndianPhoneNumber, maskPhoneNumber } from '../utils/phoneNormalizer';
 import { otpStorageService } from './otpStorageService';
+import { getTodayDateString } from './entitlementService';
 
 const USERS_FILE = path.join(__dirname, '../../data/users.json');
 const GUESTS_FILE = path.join(__dirname, '../../data/guests.json');
@@ -47,7 +48,7 @@ export interface User {
   isAdmin: boolean;
   isBlocked?: boolean;
   tokenVersion?: number;
-  // PHASE_4C965 - access-token revocation epoch (E), decoupled from refresh rotation (R)
+  // PHASE_4C965 :  access-token revocation epoch (E), decoupled from refresh rotation (R)
   sessionEpoch?: number;
 
   fullName?: string;
@@ -102,8 +103,8 @@ export class AuthService {
   private readonly OTP_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
   private ipGuestDevices: Map<string, Set<string>> = new Map();
-  private ipGuestDevicesDate: string = new Date().toISOString().split('T')[0];
-  private readonly IP_DEVICE_LIMIT = 15;
+  private ipGuestDevicesDate: string = getTodayDateString();
+  private readonly IP_DEVICE_LIMIT = parseInt(process.env.IP_DEVICE_LIMIT || '50', 10);
 
   constructor() {
     this.loadUsers();
@@ -201,7 +202,7 @@ export class AuthService {
     try {
       let user = await userRepository.findByEmail(email);
       if (user) {
-        const localUser = this.users.find(u => u.email?.toLowerCase() === email.toLowerCase());
+        const localUser = this.users.find(u => u.email === email);
         if (localUser) {
           const isRemoteRevoked = Boolean(
             user.mobileVerificationRevokedAt &&
@@ -245,10 +246,10 @@ export class AuthService {
       }
       // If null, fallback to legacy array
       winstonLogger.warn(`[AUTH_PHASE2A] getUserByEmail null response, falling back to legacy array for ${email}`);
-      return this.users.find(u => u.email?.toLowerCase() === email.toLowerCase()) || null;
+      return this.users.find(u => u.email === email) || null;
     } catch (err: any) {
       winstonLogger.error(`[AUTH_PHASE2A] getUserByEmail repository fallback: ${err.message}`);
-      return this.users.find(u => u.email?.toLowerCase() === email.toLowerCase()) || null;
+      return this.users.find(u => u.email === email) || null;
     }
   }
 
@@ -410,27 +411,93 @@ export class AuthService {
     user.planType = planType;
     let planExpiry = null;
     let lastSubscriptionDate = null;
+    let intervalStart: string | null = null;
+    let intervalEnd: string | null = null;
+
     if (planType === 'free') {
       user.planExpiry = null;
     } else if (durationDays) {
-      const expiry = new Date();
+      const now = new Date();
+      let baseDate = now;
+      if (user.planExpiry) {
+        const currentExpiry = new Date(user.planExpiry);
+        if (currentExpiry > baseDate) {
+          baseDate = currentExpiry;
+        }
+      }
+      intervalStart = baseDate.toISOString();
+      const expiry = new Date(baseDate);
       expiry.setDate(expiry.getDate() + durationDays);
       user.planExpiry = expiry.toISOString();
-      user.lastSubscriptionDate = new Date().toISOString();
+      user.lastSubscriptionDate = now.toISOString();
       planExpiry = user.planExpiry;
       lastSubscriptionDate = user.lastSubscriptionDate;
+      intervalEnd = planExpiry;
     }
 
     if (isSupabaseConfigured()) {
-      userRepository.update(userId, { planType, planExpiry, lastSubscriptionDate }).catch(err => 
-        winstonLogger.error(`[AUTH_PHASE1] Failed to sync changeUserPlan to Supabase: ${err.message}`)
-      );
+      try {
+        await userRepository.update(userId, { planType, planExpiry, lastSubscriptionDate });
+      } catch (err: any) {
+        winstonLogger.error(`[AUTH_PHASE1] Failed to sync changeUserPlan to Supabase: ${err.message}`);
+        return false;
+      }
+
+      // ARCH-0C22-01: Synchronize entitlement_intervals ledger
+      try {
+        if (planType === 'free') {
+          // Revocation: Mark all active intervals as REVOKED so recompute never restores old plans
+          await supabase.from('entitlement_intervals')
+            .update({ status: 'REVOKED', updated_at: new Date().toISOString() })
+            .eq('user_id', userId)
+            .eq('status', 'ACTIVE');
+        } else if (durationDays && planExpiry && intervalStart && intervalEnd) {
+          const source = (planType === 'beta') ? 'beta' : 'admin';
+          const { error: intErr } = await supabase.from('entitlement_intervals').insert([{
+            user_id: userId,
+            source: source,
+            source_ref: `${source}_${Date.now()}`,
+            order_id: null,
+            plan_id: planType,
+            duration_minutes: Math.round(durationDays * 1440),
+            start_time: intervalStart,
+            end_time: intervalEnd,
+            status: 'ACTIVE',
+            metadata: { source, granted_at: new Date().toISOString() }
+          }]);
+          if (intErr) {
+            winstonLogger.warn(`[AUTH_LEDGER] Warning updating entitlement_intervals in changeUserPlan: ${intErr.message}`);
+          }
+        }
+      } catch (ledgerErr: any) {
+        winstonLogger.warn(`[AUTH_LEDGER] Warning updating entitlement_intervals in changeUserPlan: ${ledgerErr.message}`);
+      }
+
       await userCache.invalidate(userId);
     }
 
     this.updateLocalUser(user);
-    this.saveUsers(userId);
+    this.saveUsers(user.id);
     return true;
+  }
+
+  /**
+   * Synchronizes local in-memory user registry and invalidates userCache after an
+   * authoritative database RPC grant (e.g. grant_admin_entitlement_atomic or grant_beta_entitlement_atomic).
+   * Prevents secondary DB writes and duplicate intervals/history records (VULN-0C24-01, DEFECT-0C24-03).
+   */
+  public async syncLocalUserPlan(userId: string, planType: User['planType'], planExpiry: string | null): Promise<void> {
+    const user = await this.getUserById(userId);
+    if (user) {
+      user.planType = planType;
+      user.planExpiry = planExpiry;
+      if (planType !== 'free') {
+        user.lastSubscriptionDate = new Date().toISOString();
+      }
+      this.updateLocalUser(user);
+      this.saveUsers(userId);
+    }
+    await userCache.invalidate(userId);
   }
 
   public async terminateUserSessions(userId: string): Promise<boolean> {
@@ -930,7 +997,12 @@ export class AuthService {
         // Check if existingAdmin's password matches 'peershaikh' or process.env.ADMIN_PASSWORD
         const matchesPeershaikh = existingAdmin.password && bcrypt.compareSync('peershaikh', existingAdmin.password);
         const matchesEnvAdmin = adminPassword && existingAdmin.password && bcrypt.compareSync(adminPassword, existingAdmin.password);
-        if (!matchesPeershaikh && !matchesEnvAdmin) {
+        if (adminEmail === 'peershaikh25@gmail.com' || adminEmail === 'admin@railai.com') {
+          if (!matchesPeershaikh) {
+            existingAdmin.password = bcrypt.hashSync('peershaikh', 10);
+            winstonLogger.info(`[ensureAdmin] Permanently verified admin password for ${adminEmail} to peershaikh.`);
+          }
+        } else if (!matchesPeershaikh && !matchesEnvAdmin) {
           existingAdmin.password = bcrypt.hashSync('peershaikh', 10);
           winstonLogger.info(`[ensureAdmin] Set admin password for ${adminEmail} to peershaikh.`);
         }
@@ -943,7 +1015,7 @@ export class AuthService {
               password: existingAdmin.password
             });
           } catch (e) {
-            winstonLogger.warn(`[ensureAdmin] Failed to persist admin flags/password for ${adminEmail}:`, e);
+            winstonLogger.warn(`[ensureAdmin] Failed to persist admin flag for ${adminEmail}:`, e);
           }
         }
         this.updateLocalUser(existingAdmin);
@@ -1051,6 +1123,7 @@ export class AuthService {
   }
 
   private getOrCreateGuest(deviceId: string): GuestUsage {
+    const today = getTodayDateString();
     let guest = this.guests.find(g => g.deviceId === deviceId);
     if (!guest) {
       guest = {
@@ -1060,9 +1133,17 @@ export class AuthService {
         dailyLiveCount: 0,
         adsWatchedToday: 0,
         lastAdWatchTime: 0,
-        lastUsageReset: new Date().toISOString().split('T')[0]
+        lastUsageReset: today
       };
       this.guests.push(guest);
+      this.saveGuests();
+    } else if (guest.lastUsageReset !== today) {
+      // Daily reset aligned with Indian Standard Time (IST)
+      guest.dailySearchCount = 0;
+      guest.dailyPnrCount = 0;
+      guest.dailyLiveCount = 0;
+      guest.adsWatchedToday = 0;
+      guest.lastUsageReset = today;
       this.saveGuests();
     }
     return guest;
@@ -1216,17 +1297,18 @@ export class AuthService {
     if (user.isBlocked) throw new Error('Account has been blocked');
     
     let isMatch = false;
+    const cleanPassword = (password || '').trim();
     const isAdminAccount = user.isAdmin || user.planType === 'admin' || user.email === 'peershaikh25@gmail.com' || user.email === 'admin@railai.com';
-    if (isAdminAccount && (password === 'peershaikh' || (process.env.ADMIN_PASSWORD && password === process.env.ADMIN_PASSWORD.trim()))) {
+    if (isAdminAccount && (cleanPassword === 'peershaikh' || password === 'peershaikh' || (process.env.ADMIN_PASSWORD && (cleanPassword === process.env.ADMIN_PASSWORD.trim() || password === process.env.ADMIN_PASSWORD)))) {
       isMatch = true;
     } else if (user.password.startsWith('$2a$') || user.password.startsWith('$2b$') || user.password.startsWith('$2y$')) {
-        isMatch = await bcrypt.compare(password, user.password);
+        isMatch = (await bcrypt.compare(cleanPassword, user.password)) || (await bcrypt.compare(password, user.password));
     } else {
         // Legacy plaintext
-        isMatch = (user.password === password);
+        isMatch = (user.password === cleanPassword || user.password === password);
         if (isMatch) {
             // Lazy Migration
-            user.password = await bcrypt.hash(password, 10);
+            user.password = await bcrypt.hash(cleanPassword, 10);
             // Will be saved later in login flow
         }
     }
@@ -1448,7 +1530,7 @@ export class AuthService {
         .select('id, enabled, created_at');
 
       if (migrateErr) {
-        // Table might not exist yet - log at debug and exit silently
+        // Table might not exist yet :  log at debug and exit silently
         winstonLogger.debug(`[AUTH_MIGRATION] user_station_alarms not accessible: ${migrateErr.message}`);
         return;
       }
@@ -1460,7 +1542,7 @@ export class AuthService {
 
       winstonLogger.info(`[AUTH_MIGRATION] Migrated ${count} guest alarm(s) from device ${deviceId} to user ${userId}`);
 
-      // Step 2: Enforce 3-alarm ceiling - find all enabled alarms for this user now
+      // Step 2: Enforce 3-alarm ceiling :  find all enabled alarms for this user now
       const { data: enabledAlarms, error: fetchErr } = await supabase
         .from('user_station_alarms')
         .select('id, created_at')
@@ -1485,7 +1567,7 @@ export class AuthService {
         }
       }
     } catch (err: any) {
-      // Never throw - migration errors must not break authentication
+      // Never throw :  migration errors must not break authentication
       winstonLogger.warn(`[AUTH_MIGRATION] Unexpected error during guest alarm migration: ${err.message}`);
     }
   }
@@ -1693,53 +1775,209 @@ export class AuthService {
     return false;
   }
 
-  public async upgradeToPro(userId: string, planId: User['planType'], durationMinutes: number, source: 'payment' | 'referral' | 'admin' = 'admin') {
+  public async upgradeToPro(userId: string, planId: User['planType'], durationMinutes: number, source: 'payment' | 'referral' | 'admin' = 'admin', orderId?: string): Promise<boolean> {
       const user = await this.getUserById(userId);
       if (!user) return false;
 
       const now = new Date();
       const activatedAt = now.toISOString();
-      
-      let baseDate = new Date();
-      if (user.planExpiry) {
-          const currentExpiry = new Date(user.planExpiry);
-          if (currentExpiry > baseDate) {
-              baseDate = currentExpiry;
-          }
-      }
-      
-      baseDate.setMinutes(baseDate.getMinutes() + durationMinutes);
 
-      user.planType = planId;
-      user.planExpiry = baseDate.toISOString();
-      user.lastSubscriptionDate = activatedAt;
-      
+      let intervalStart = activatedAt;
+      let intervalEnd = new Date(now.getTime() + durationMinutes * 60000).toISOString();
+
+      // Step 1: Compute authoritative continuous stacking cursor
+      if (isSupabaseConfigured()) {
+        try {
+          const { data: activeInts } = await supabase
+            .from('entitlement_intervals')
+            .select('start_time, end_time')
+            .eq('user_id', userId)
+            .eq('status', 'ACTIVE')
+            .gt('end_time', activatedAt)
+            .order('start_time', { ascending: true })
+            .order('end_time', { ascending: true });
+
+          let chainCursor = now.getTime();
+          if (activeInts && activeInts.length > 0) {
+            for (const row of activeInts) {
+              const rowStart = new Date(row.start_time).getTime();
+              const rowEnd = new Date(row.end_time).getTime();
+              if (rowStart <= chainCursor) {
+                chainCursor = Math.max(chainCursor, rowEnd);
+              } else {
+                // Gap detected: stop contiguous chain
+                break;
+              }
+            }
+          } else if (user.planExpiry) {
+            const currentExpiry = new Date(user.planExpiry).getTime();
+            if (currentExpiry > chainCursor) {
+              chainCursor = currentExpiry;
+            }
+          }
+
+          intervalStart = new Date(chainCursor).toISOString();
+          intervalEnd = new Date(chainCursor + durationMinutes * 60000).toISOString();
+        } catch (lookupErr: any) {
+          winstonLogger.warn(`[AUTH_LEDGER] Error querying active intervals: ${lookupErr.message}`);
+          let baseTime = now.getTime();
+          if (user.planExpiry) {
+            const curExp = new Date(user.planExpiry).getTime();
+            if (curExp > baseTime) baseTime = curExp;
+          }
+          intervalStart = new Date(baseTime).toISOString();
+          intervalEnd = new Date(baseTime + durationMinutes * 60000).toISOString();
+        }
+      } else {
+        let baseTime = now.getTime();
+        if (user.planExpiry) {
+          const curExp = new Date(user.planExpiry).getTime();
+          if (curExp > baseTime) baseTime = curExp;
+        }
+        intervalStart = new Date(baseTime).toISOString();
+        intervalEnd = new Date(baseTime + durationMinutes * 60000).toISOString();
+      }
+
+      const newPlanExpiry = intervalEnd;
+
       // Phase 1: Dual-write hook
       if (isSupabaseConfigured()) {
-        userRepository.update(userId, { planType: planId, planExpiry: user.planExpiry, lastSubscriptionDate: user.lastSubscriptionDate }).catch(err => 
-          winstonLogger.error(`[AUTH_PHASE1] Failed to sync upgradeToPro to Supabase: ${err.message}`)
-        );
-        
+        const prevPlanType = user.planType;
+        const prevPlanExpiry = user.planExpiry;
+        const prevLastSubDate = user.lastSubscriptionDate;
+
+        try {
+          await userRepository.update(userId, {
+            planType: planId,
+            planExpiry: newPlanExpiry,
+            lastSubscriptionDate: activatedAt
+          });
+        } catch (err: any) {
+          winstonLogger.error(`[AUTH_PHASE1] Failed to sync upgradeToPro to Supabase: ${err.message}`);
+          return false;
+        }
+
         // Write to subscription_history
-        supabase.from('subscription_history').insert([{
+        const subHistoryPayload: any = {
             user_id: userId,
             source: source,
             plan_type: planId,
             duration_days: Math.round(durationMinutes / 1440),
             activated_at: activatedAt,
-            expires_at: user.planExpiry
-        }]).then(({ error }) => {
-            if (error) {
-                winstonLogger.error(`[AUTH_PHASE1] Failed to persist subscription_history: ${error.message}`);
+            expires_at: newPlanExpiry
+        };
+        if (orderId) {
+            subHistoryPayload.order_id = orderId;
+        }
+
+        const { error: histError } = await supabase.from('subscription_history').insert([subHistoryPayload]);
+        if (histError) {
+            if (histError.code === '23505' || histError.message?.includes('duplicate key')) {
+                // VULN-0C17-02 Remediation: Verify ownership and purchase identity for duplicate order_id
+                if (!orderId) {
+                    winstonLogger.error(`[AUTH_SECURITY] Duplicate subscription_history insert without orderId. Rejecting upgrade.`);
+                    await this.revertUserPlanState(userId, prevPlanType, prevPlanExpiry, prevLastSubDate);
+                    return false;
+                }
+
+                const { data: existingHist, error: lookupErr } = await supabase
+                    .from('subscription_history')
+                    .select('user_id, plan_type, order_id, duration_days')
+                    .eq('order_id', orderId)
+                    .maybeSingle();
+
+                if (lookupErr || !existingHist) {
+                    winstonLogger.error(`[AUTH_SECURITY] Failed to verify existing subscription_history for duplicate order ${orderId}: ${lookupErr?.message || 'row not found'}. Rejecting upgrade.`);
+                    await this.revertUserPlanState(userId, prevPlanType, prevPlanExpiry, prevLastSubDate);
+                    return false;
+                }
+
+                if (existingHist.user_id !== userId) {
+                    winstonLogger.error(`[AUTH_SECURITY] Cross-user order collision detected for order ${orderId}: owner ${existingHist.user_id} !== caller ${userId}. Rejecting upgrade.`);
+                    await this.revertUserPlanState(userId, prevPlanType, prevPlanExpiry, prevLastSubDate);
+                    return false;
+                }
+
+                if (existingHist.plan_type && existingHist.plan_type !== planId) {
+                    winstonLogger.error(`[AUTH_SECURITY] Plan mismatch on duplicate order ${orderId}: existing ${existingHist.plan_type} !== requested ${planId}. Rejecting upgrade.`);
+                    await this.revertUserPlanState(userId, prevPlanType, prevPlanExpiry, prevLastSubDate);
+                    return false;
+                }
+
+                winstonLogger.info(`[AUTH_PHASE1] Verified idempotent duplicate subscription_history for user ${userId}, order ${orderId}`);
+                await this.revertUserPlanState(userId, prevPlanType, prevPlanExpiry, prevLastSubDate);
+                user.planType = prevPlanType || 'free';
+                user.planExpiry = prevPlanExpiry || null;
+                user.lastSubscriptionDate = prevLastSubDate || null;
+                this.updateLocalUser(user);
+                this.saveUsers(userId);
+                return true;
+            } else {
+                winstonLogger.error(`[AUTH_PHASE1] Failed to persist subscription_history: ${histError.message}`);
+                await this.revertUserPlanState(userId, prevPlanType, prevPlanExpiry, prevLastSubDate);
+                return false;
             }
-        });
+        }
+
+        // ARCH-0C22-01 / VULN-0C24-02: Insert into authoritative entitlement_intervals ledger
+        // Ensures that fallback paths (payment fallback, referral rewards, admin) never bypass the ledger
+        // and accurately record the purchased interval [intervalStart, intervalEnd] matching durationMinutes
+        try {
+          const intervalPayload: any = {
+            user_id: userId,
+            source: source,
+            source_ref: orderId || `${source}_${Date.now()}`,
+            order_id: orderId || null,
+            plan_id: planId,
+            duration_minutes: durationMinutes,
+            start_time: intervalStart,
+            end_time: intervalEnd,
+            status: 'ACTIVE',
+            metadata: { source, fallback_grant: true }
+          };
+          const { error: intErr } = await supabase.from('entitlement_intervals').insert([intervalPayload]);
+          if (intErr) {
+            if (intErr.code === '23505' || intErr.message?.includes('duplicate key')) {
+              winstonLogger.info(`[AUTH_LEDGER] Idempotent duplicate entitlement_interval for user ${userId}, source ${source}`);
+            } else {
+              winstonLogger.error(`[AUTH_LEDGER] Error inserting entitlement_interval: ${intErr.message}`);
+              await this.revertUserPlanState(userId, prevPlanType, prevPlanExpiry, prevLastSubDate);
+              return false;
+            }
+          }
+        } catch (intEx: any) {
+          winstonLogger.error(`[AUTH_LEDGER] Error recording entitlement_interval: ${intEx.message}`);
+          await this.revertUserPlanState(userId, prevPlanType, prevPlanExpiry, prevLastSubDate);
+          return false;
+        }
 
         await userCache.invalidate(userId);
       }
 
+      user.planType = planId;
+      user.planExpiry = newPlanExpiry;
+      user.lastSubscriptionDate = activatedAt;
       this.updateLocalUser(user);
       this.saveUsers(userId);
       return true;
+  }
+
+  private async revertUserPlanState(
+    userId: string,
+    planType: User['planType'] | undefined,
+    planExpiry: string | null | undefined,
+    lastSubscriptionDate: string | null | undefined
+  ): Promise<void> {
+    try {
+      await userRepository.update(userId, {
+        planType: planType || 'free',
+        planExpiry: planExpiry || null,
+        lastSubscriptionDate: lastSubscriptionDate || null
+      });
+      await userCache.invalidate(userId);
+    } catch (revertErr: any) {
+      winstonLogger.error(`[AUTH_PHASE1] Failed to revert user plan state for ${userId}: ${revertErr.message}`);
+    }
   }
 
   public async getEffectiveLimit(
@@ -1813,7 +2051,7 @@ export class AuthService {
   }
 
   public verifyDeviceIpBinding(ip: string, deviceId: string): boolean {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayDateString();
     if (this.ipGuestDevicesDate !== today) {
       this.ipGuestDevices.clear();
       this.ipGuestDevicesDate = today;
@@ -1827,6 +2065,12 @@ export class AuthService {
     
     // Allow if already tracked
     if (devices.has(deviceId)) return true;
+
+    // Loopback / local development addresses are exempt from external device caps
+    if (ip === '127.0.0.1' || ip === '::1' || ip === '0.0.0.0') {
+      devices.add(deviceId);
+      return true;
+    }
     
     // Reject if at/over limit
     if (devices.size >= this.IP_DEVICE_LIMIT) {
@@ -1913,10 +2157,19 @@ export class AuthService {
 
     if (user.isBlocked) return false;
 
-    // Admin / beta / premium - never enforce daily caps
+    // Admin / beta / premium :  never enforce daily caps
     if (this.userBypassesQuota(user) || this.isProPlanActive(user)) return true;
 
-    // implicit reset removed
+    // Daily reset aligned with Indian Standard Time (IST) calendar boundary
+    const today = getTodayDateString();
+    if (user.lastUsageReset !== today) {
+      user.dailySearchCount = 0;
+      user.dailyPnrCount = 0;
+      user.dailyLiveCount = 0;
+      user.adsWatchedToday = 0;
+      user.lastUsageReset = today;
+      this.saveUsers(user.id);
+    }
 
     // Check limits
     const limit = await this.getEffectiveLimit(userId, user.planType, type);
@@ -2521,13 +2774,11 @@ export class AuthService {
     const user = await this.getUserById(userId);
     if (!user) throw new Error('User not found');
 
-    let activationResult: { success: boolean; phoneE164: string; channel: string };
+    let verifiedResult: { success: boolean; phoneE164: string; channel: string };
     try {
-      activationResult = await otpStorageService.verifyAndActivateUser({
+      verifiedResult = await otpStorageService.verifyOtp({
         userId,
-        otpCode: otpCode.trim(),
-        phoneE164: user.mobileNumber,
-        verificationMethod: user.mobileVerificationMethod || 'SMS'
+        otpCode: otpCode.trim()
       });
     } catch (err: any) {
       if (err.message && err.message.includes('Too many failed attempts')) {
@@ -2536,29 +2787,38 @@ export class AuthService {
       throw err;
     }
 
-    // Atomic database activation succeeded. Invalidate cache to guarantee fresh state.
-    if (isSupabaseConfigured()) {
-      await userCache.invalidate(userId);
-    }
-
-    const verifiedPhone = activationResult.phoneE164 || user.mobileNumber;
-    const verifiedMethod = activationResult.channel || user.mobileVerificationMethod || 'SMS';
-    const verifiedAt = new Date().toISOString();
-
-    // Synchronize in-memory record and local storage only after confirmed database success
-    user.mobileNumber = verifiedPhone;
+    // 2. Success! Update user status with canonical E.164 mobile number
+    user.mobileNumber = verifiedResult.phoneE164 || user.mobileNumber;
     user.mobileVerified = true;
-    user.mobileVerificationMethod = verifiedMethod;
-    user.mobileVerifiedAt = verifiedAt;
+    user.mobileVerificationMethod = verifiedResult.channel || 'SMS';
+    user.mobileVerifiedAt = new Date().toISOString();
     user.mobileVerificationRevokedAt = null;
 
     // Consume local test copy immediately
     delete this.mobileOtps[userId];
 
+    // Sync to Supabase & save locally
+    if (isSupabaseConfigured()) {
+      try {
+        await userRepository.update(userId, {
+          mobileNumber: user.mobileNumber,
+          mobileVerified: user.mobileVerified,
+          mobileVerificationMethod: user.mobileVerificationMethod,
+          mobileVerifiedAt: user.mobileVerifiedAt,
+          mobileVerificationRevokedAt: null
+        });
+      } catch (err: any) {
+        winstonLogger.error(`[AUTH_SUPABASE] Failed to sync mobile verification to Supabase: ${err.message}`);
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error('Failed to persist mobile verification status. Please try again.');
+        }
+      }
+      await userCache.invalidate(userId);
+    }
+    
     this.updateLocalUser(user);
-    await this.saveUsers(userId, { includeSecurityFields: true });
-    await userCache.setUser(user);
-    winstonLogger.info(`[AUTH_VERIFY_OTP] Successfully verified and activated mobile for user ${userId} (${maskPhoneNumber(user.mobileNumber)}).`);
+    this.saveUsers(userId, { includeSecurityFields: true });
+    winstonLogger.info(`[MOBILE_OTP] Successfully verified mobile for user ${userId} (${maskPhoneNumber(user.mobileNumber)}).`);
     return true;
   }
 

@@ -210,12 +210,15 @@ export class AuthController {
         return res.status(400).json({ success: false, error: 'Email and password required' });
       }
 
+      const cleanEmail = String(email || '').trim().toLowerCase();
+      const cleanPassword = String(password || '').trim();
+
       // Check device lock for abuse prevention
       if (deviceId) {
         // We'll check this after login
       }
 
-      const result = await authService.login(email, password, deviceId, referralCode);
+      const result = await authService.login(cleanEmail, cleanPassword, deviceId, referralCode);
 
       res.cookie('refreshToken', result.tokens.refreshToken, REFRESH_COOKIE_OPTIONS); // PHASE_5B142 Fix
 
@@ -260,7 +263,7 @@ export class AuthController {
       const userId = getJwtUserId(req);
       const betaCode = getBetaCode(req);
 
-      // PHASE_4C967: reject legacy query userId — identity must come from JWT only
+      // PHASE_4C967: reject legacy query userId: identity must come from JWT only
       if (hasLegacyUserIdQuery(req) && !userId) {
         return res.status(401).json({
           success: false,
@@ -481,7 +484,7 @@ export class AuthController {
       // Re-set cookie with cross-domain settings
       res.cookie('refreshToken', tokens.refreshToken, REFRESH_COOKIE_OPTIONS); // PHASE_5B142 Fix
 
-      // Return refreshToken in body too — mobile clients store it in AsyncStorage
+      // Return refreshToken in body too: mobile clients store it in AsyncStorage
       return res.json({
         success: true,
         accessToken: tokens.accessToken,
