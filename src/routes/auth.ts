@@ -9,6 +9,7 @@ router.post('/send-otp', authLimiter as any, authController.sendOtp);
 router.post('/signup', authLimiter as any, authController.signup);
 router.post('/login', authLimiter as any, authController.login);
 router.post('/google-login', authLimiter as any, authController.googleLogin);
+router.get('/csrf-token', authController.csrfToken);
 router.get('/ping-auth', (req, res) => res.json({ version: 2 }));
 router.post('/refresh', authController.refresh);
 router.post('/logout', authController.logout);

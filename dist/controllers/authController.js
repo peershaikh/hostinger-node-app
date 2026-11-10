@@ -922,6 +922,22 @@ class AuthController {
                 return res.status(500).json({ success: false, error: err.message || 'Failed to delete account' });
             }
         };
+        this.csrfToken = (req, res) => {
+            let token = '';
+            try {
+                if (typeof req.csrfToken === 'function') {
+                    token = req.csrfToken();
+                }
+            }
+            catch { }
+            if (!token && res.locals?.csrfToken) {
+                token = res.locals.csrfToken;
+            }
+            if (token) {
+                res.setHeader('X-CSRF-Token', token);
+            }
+            return res.json({ success: true, csrfToken: token });
+        };
     }
 }
 exports.AuthController = AuthController;

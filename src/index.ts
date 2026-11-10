@@ -82,7 +82,8 @@ app.use(helmet({
 
 app.use(cors({
   origin: corsOriginValidator, // PHASE_4C849: strict per-request whitelist
-  credentials: true
+  credentials: true,
+  exposedHeaders: ['X-CSRF-Token', 'x-csrf-token']
 }));
 // Payment & WhatsApp Gateway Webhooks need exact raw string for HMAC signature verification
 app.use(['/api/payments/webhook', '/payments/webhook', '/api/whatsapp/webhook', '/whatsapp/webhook'], (req: any, _res, next) => {

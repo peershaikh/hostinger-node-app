@@ -109,7 +109,9 @@ const EXACT_PUBLIC_AUTH_ROUTES = new Set([
     '/api/auth/google',
     '/auth/google',
     '/api/auth/google/callback',
-    '/auth/google/callback'
+    '/auth/google/callback',
+    '/api/auth/csrf-token',
+    '/auth/csrf-token'
 ]);
 const EXACT_TELEMETRY_ROUTES = new Set([
     '/api/analytics/event',

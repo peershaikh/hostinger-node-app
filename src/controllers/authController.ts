@@ -981,6 +981,22 @@ export class AuthController {
       return res.status(500).json({ success: false, error: err.message || 'Failed to delete account' });
     }
   };
+
+  csrfToken = (req: Request, res: Response) => {
+    let token = '';
+    try {
+      if (typeof (req as any).csrfToken === 'function') {
+        token = (req as any).csrfToken();
+      }
+    } catch {}
+    if (!token && res.locals?.csrfToken) {
+      token = res.locals.csrfToken;
+    }
+    if (token) {
+      res.setHeader('X-CSRF-Token', token);
+    }
+    return res.json({ success: true, csrfToken: token });
+  };
 }
 
 export const authController = new AuthController();
