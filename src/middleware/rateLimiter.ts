@@ -14,10 +14,10 @@ const parseEnvMax = (envVar: string | undefined, defaultMax: number): number => 
 };
 
 // --- AUTH LIMITER ---
-// Default: 20 requests / 15 minutes
+// Default: 100 requests / 15 minutes (increased from 20 to prevent false-positive lockouts on SPA auth retries)
 export const authLimiter = rateLimit({
     windowMs: parseEnvMs(process.env.RATE_LIMIT_AUTH_WINDOW_MS, 15 * 60 * 1000),
-    max: parseEnvMax(process.env.RATE_LIMIT_AUTH_MAX, 20),
+    max: parseEnvMax(process.env.RATE_LIMIT_AUTH_MAX, 100),
     standardHeaders: true, legacyHeaders: false,
     validate: false, // PHASE_8.8: Suppress express-rate-limit v8 validation warnings
     keyGenerator: (req: any) => {

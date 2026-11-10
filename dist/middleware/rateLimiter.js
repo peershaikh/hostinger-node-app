@@ -17,10 +17,10 @@ const parseEnvMax = (envVar, defaultMax) => {
     return !isNaN(parsed) && parsed > 0 ? parsed : defaultMax;
 };
 // --- AUTH LIMITER ---
-// Default: 20 requests / 15 minutes
+// Default: 100 requests / 15 minutes (increased from 20 to prevent false-positive lockouts on SPA auth retries)
 exports.authLimiter = (0, express_rate_limit_1.default)({
     windowMs: parseEnvMs(process.env.RATE_LIMIT_AUTH_WINDOW_MS, 15 * 60 * 1000),
-    max: parseEnvMax(process.env.RATE_LIMIT_AUTH_MAX, 20),
+    max: parseEnvMax(process.env.RATE_LIMIT_AUTH_MAX, 100),
     standardHeaders: true, legacyHeaders: false,
     validate: false, // PHASE_8.8: Suppress express-rate-limit v8 validation warnings
     keyGenerator: (req) => {

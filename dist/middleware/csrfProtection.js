@@ -18,13 +18,16 @@ exports.conditionalCsrf = exports.csrfErrorHandler = exports.attachCsrfToken = e
 exports.isTrustedWebOrigin = isTrustedWebOrigin;
 const csurf_1 = __importDefault(require("csurf"));
 const logger_1 = require("./logger");
+const isProd = process.env.NODE_ENV === 'production';
+const cookieDomain = process.env.COOKIE_DOMAIN || (isProd ? '.trayago.in' : undefined);
 // Initialize CSRF protection with cookie-based storage
 exports.csrfProtection = (0, csurf_1.default)({
     cookie: {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax', // PHASE_4C971: 'strict' blocks cross-domain cookies — use 'lax'
-        maxAge: 3600000 // 1 hour
+        secure: isProd,
+        sameSite: (isProd ? 'none' : 'lax'), // PHASE_4C971: matches REFRESH_COOKIE_OPTIONS for multi-subdomain
+        maxAge: 3600000, // 1 hour
+        ...(cookieDomain ? { domain: cookieDomain } : {})
     },
     ignoreMethods: ['GET', 'HEAD', 'OPTIONS']
 });
@@ -85,6 +88,20 @@ const EXACT_PUBLIC_AUTH_ROUTES = new Set([
     '/auth/mobile/send-otp',
     '/api/auth/mobile/verify-otp',
     '/auth/mobile/verify-otp',
+    '/api/auth/mobile/request-otp',
+    '/auth/mobile/request-otp',
+    '/api/auth/check-device-lock',
+    '/auth/check-device-lock',
+    '/api/auth/can-use-feature',
+    '/auth/can-use-feature',
+    '/api/auth/can-use-split',
+    '/auth/can-use-split',
+    '/api/auth/rescue-consume-free',
+    '/auth/rescue-consume-free',
+    '/api/auth/mock-ad',
+    '/auth/mock-ad',
+    '/api/auth/review-reward',
+    '/auth/review-reward',
     '/api/auth/app-open',
     '/auth/app-open',
     '/api/auth/google-login',
@@ -116,10 +133,19 @@ const EXACT_ALARM_ROUTES = new Set([
 const TRUSTED_WEB_ORIGINS = new Set([
     'https://trayago.in',
     'https://www.trayago.in',
+    'https://app.trayago.in',
+    'https://api.trayago.in',
     'https://trayago.com',
     'https://www.trayago.com',
+    'https://app.trayago.com',
+    'https://api.trayago.com',
     'https://trayago.online',
     'https://www.trayago.online',
+    'https://app.trayago.online',
+    'https://api.trayago.online',
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:3000',
     'capacitor://localhost' // PHASE_0C33L Fix B: un-spoofable native mobile app scheme
 ]);
 function isTrustedWebOrigin(origin, req) {
@@ -128,11 +154,17 @@ function isTrustedWebOrigin(origin, req) {
     const normalized = origin.trim().toLowerCase();
     if (TRUSTED_WEB_ORIGINS.has(normalized))
         return true;
-    // In non-production, trust all local loopback addresses
-    if (process.env.NODE_ENV !== 'production') {
-        if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(normalized)) {
-            return true;
-        }
+    // Regex to match any trayago subdomain securely:
+    if (/^https:\/\/([a-z0-9-]+\.)?trayago\.(in|com|online)$/.test(normalized)) {
+        return true;
+    }
+    // Regex to match Vercel preview deployments:
+    if (/^https:\/\/trayago(-[a-z0-9-]+)?\.vercel\.app$/.test(normalized)) {
+        return true;
+    }
+    // Allow localhost / 127.0.0.1 / [::1] on any port
+    if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(normalized)) {
+        return true;
     }
     // PHASE_0C33N Fix CSRF-02:
     // In production, support Android Capacitor WebView on localhost only when accompanied
@@ -266,8 +298,14 @@ const conditionalCsrf = (req, res, next) => {
         if (req.headers['x-user-id']) {
             return next(); // Verified Bearer-authenticated client (mobile / API)
         }
-        // Malformed, tampered, or expired Bearer token: do NOT exempt.
-        // Falls through to csrfProtection below and will be blocked if CSRF token is missing.
+        // Bearer token was provided by API/SPA client but expired or invalid:
+        // Return 401 TOKEN_EXPIRED so AxiosInterceptor / fetchWithAuth can trigger silent token refresh.
+        // Never fall through to CSRF, which causes false-positive CSRF_INVALID lockouts.
+        return res.status(401).json({
+            success: false,
+            error: 'Invalid or expired authentication token',
+            code: 'TOKEN_EXPIRED'
+        });
     }
     // 9. Apply CSRF protection to all remaining state-changing requests
     (0, exports.csrfProtection)(req, res, next);

@@ -26,12 +26,22 @@ const PRODUCTION_ORIGINS = new Set([
     // Primary .in domain
     'https://trayago.in',
     'https://www.trayago.in',
+    'https://app.trayago.in',
+    'https://api.trayago.in',
     // Secondary .com domain
     'https://trayago.com',
     'https://www.trayago.com',
+    'https://app.trayago.com',
+    'https://api.trayago.com',
     // Secondary .online domain
     'https://trayago.online',
     'https://www.trayago.online',
+    'https://app.trayago.online',
+    'https://api.trayago.online',
+    // Development origins
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:3000',
     // Mobile Android Capacitor WebView origins
     'capacitor://localhost',
     'http://localhost',
@@ -72,11 +82,17 @@ function isOriginAllowed(origin) {
         return true;
     if (getExtraOrigins().has(normalized))
         return true;
-    if (process.env.NODE_ENV !== 'production') {
-        // localhost / 127.0.0.1 / [::1] on any port — dev only
-        if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(normalized)) {
-            return true;
-        }
+    // Regex to match any trayago subdomain securely:
+    if (/^https:\/\/([a-z0-9-]+\.)?trayago\.(in|com|online)$/.test(normalized)) {
+        return true;
+    }
+    // Regex to match Vercel preview deployments:
+    if (/^https:\/\/trayago(-[a-z0-9-]+)?\.vercel\.app$/.test(normalized)) {
+        return true;
+    }
+    // Allow localhost / 127.0.0.1 / [::1] on any port
+    if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(normalized)) {
+        return true;
     }
     return false;
 }
