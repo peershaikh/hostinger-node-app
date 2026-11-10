@@ -102,10 +102,10 @@ export const featureFlags = {
   // ── PHASE 1.6.201 — Mobile Verification Search Access Gate ──────────────────
   /**
    * Master kill-switch: gates train search access for unverified users post-deadline.
-   * Default: true. Set ENABLE_SEARCH_VERIFICATION_GATE=false to immediately disable.
+   * Default: false to ensure train searches are never blocked for users. Set ENABLE_SEARCH_VERIFICATION_GATE=true to enable.
    */
   get searchVerificationGate(): boolean {
-    return process.env.ENABLE_SEARCH_VERIFICATION_GATE !== 'false';
+    return process.env.ENABLE_SEARCH_VERIFICATION_GATE === 'true';
   },
 };
 

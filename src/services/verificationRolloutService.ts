@@ -89,6 +89,11 @@ export class VerificationRolloutService {
       throw new Error('VERIFICATION_AUTHORITY_UNAVAILABLE');
     }
 
+    // Admins are always exempt from verification search gating
+    if (user.isAdmin || user.planType === 'admin') {
+      return defaultPassing;
+    }
+
     // 1. Mobile Verification Evaluation
     const normalizedMobile = user.mobileNumber ? normalizeIndianPhoneNumber(user.mobileNumber) : null;
     const isMobileVerified = Boolean(user.mobileVerified === true && user.mobileNumber && normalizedMobile);
