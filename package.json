@@ -67,6 +67,7 @@
     "body-parser": "^1.20.9",
     "cookie": "^0.7.2",
     "engine.io": "^6.6.11",
+    "fast-xml-parser": "^5.12.0",
     "follow-redirects": "^1.16.1",
     "ip-address": "^10.7.4",
     "moment": "^2.31.0",
