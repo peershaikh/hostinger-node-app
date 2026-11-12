@@ -22,6 +22,7 @@ export interface StationAlarmRecord {
   destination_station: string;
   radius_km: number;
   enabled: boolean;
+  expires_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -153,6 +154,8 @@ export const createAlarm = async (req: Request, res: Response) => {
   const cleanStation = destination_station.trim().toUpperCase();
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
+  // 96 hours (4 full days) so multi-day and overnight Indian train journeys across midnight never expire prematurely
+  const expiresAt = new Date(Date.now() + 96 * 60 * 60 * 1000).toISOString();
 
   const alarmRecord: StationAlarmRecord = {
     id,
@@ -162,6 +165,7 @@ export const createAlarm = async (req: Request, res: Response) => {
     destination_station: cleanStation,
     radius_km: numericRadius,
     enabled: true,
+    expires_at: expiresAt,
     created_at: now,
     updated_at: now
   };
@@ -176,7 +180,8 @@ export const createAlarm = async (req: Request, res: Response) => {
         train_no,
         destination_station: cleanStation,
         radius_km: numericRadius,
-        enabled: true
+        enabled: true,
+        expires_at: expiresAt
       })
       .select()
       .single();
