@@ -477,7 +477,7 @@ export class AuthService {
     }
 
     this.updateLocalUser(user);
-    this.saveUsers(user.id);
+    this.saveUsers(user.id, { includeSecurityFields: true });
     return true;
   }
 
@@ -543,7 +543,7 @@ export class AuthService {
     await userCache.invalidate(userId);
 
     this.updateLocalUser(user);
-    this.saveUsers(user.id);
+    this.saveUsers(user.id, { includeSecurityFields: true });
     return true;
   }
 
@@ -903,7 +903,8 @@ export class AuthService {
                 };
 
                 // SEC-143H-01: Only write security lifecycle fields during explicit auth lifecycle events
-                if (options?.includeSecurityFields) {
+                // or when localUser has verified mobile status to prevent state regression
+                if (options?.includeSecurityFields || localUser.mobileVerified === true) {
                   payload.mobile_verified = localUser.mobileVerified ?? false;
                   payload.mobile_verification_method = localUser.mobileVerificationMethod || null;
                   payload.mobile_verified_at = localUser.mobileVerifiedAt || null;
@@ -1095,7 +1096,7 @@ export class AuthService {
             await userCache.invalidate(userId);
           }
           this.updateLocalUser(user);
-          this.saveUsers(user.id);
+          this.saveUsers(user.id, { includeSecurityFields: true });
         }
       }
     }
@@ -1356,7 +1357,7 @@ export class AuthService {
     }
     
     this.updateLocalUser(user);
-    this.saveUsers(user.id);
+    this.saveUsers(user.id, { includeSecurityFields: true });
 
     // Fire-and-forget: migrate any guest alarms created before this login to this user
     if (deviceId && isSupabaseConfigured()) {
@@ -2622,10 +2623,13 @@ export class AuthService {
         } else if (!normalizedCurrent) {
           // Initial phone assignment without prior number
           user.mobileNumber = normalizedTarget;
-          user.mobileVerified = false;
-          user.mobileVerificationMethod = null;
-          user.mobileVerifiedAt = null;
-          mobileNumberChanged = true;
+          // Only mark unverified if user is not already marked verified
+          if (!user.mobileVerified) {
+            user.mobileVerified = false;
+            user.mobileVerificationMethod = null;
+            user.mobileVerifiedAt = null;
+            mobileNumberChanged = true;
+          }
         } else if (user.mobileNumber !== normalizedTarget) {
           // Same phone number with different formatting; adopt canonical format without revoking verification
           user.mobileNumber = normalizedTarget;
@@ -2650,9 +2654,9 @@ export class AuthService {
 
         if (mobileNumberChanged) {
           dbUpdates.mobileNumber = user.mobileNumber;
-          dbUpdates.mobileVerified = false;
-          dbUpdates.mobileVerificationMethod = null;
-          dbUpdates.mobileVerifiedAt = null;
+          dbUpdates.mobileVerified = user.mobileVerified;
+          dbUpdates.mobileVerificationMethod = user.mobileVerificationMethod;
+          dbUpdates.mobileVerifiedAt = user.mobileVerifiedAt;
           if (user.mobileVerificationRevokedAt) {
             dbUpdates.mobileVerificationRevokedAt = user.mobileVerificationRevokedAt;
           }
@@ -2670,7 +2674,7 @@ export class AuthService {
     }
 
     this.updateLocalUser(user);
-    this.saveUsers(userId);
+    this.saveUsers(userId, { includeSecurityFields: true });
     return user;
   }
 
@@ -2800,6 +2804,19 @@ export class AuthService {
     // Sync to Supabase & save locally
     if (isSupabaseConfigured()) {
       try {
+        // If another account previously held verified status for this number, transfer ownership
+        // so unique constraint idx_users_mobile_verified_unique is never violated
+        if (user.mobileNumber) {
+          await supabase
+            .from('users')
+            .update({
+              mobile_verified: false,
+              mobile_verification_revoked_at: new Date().toISOString()
+            })
+            .eq('mobile_number', user.mobileNumber)
+            .neq('id', userId);
+        }
+
         await userRepository.update(userId, {
           mobileNumber: user.mobileNumber,
           mobileVerified: user.mobileVerified,
