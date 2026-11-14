@@ -2111,6 +2111,7 @@ export class SplitJourneyEngine {
   private static readonly MAJOR_JUNCTION_BYPASS = new Set<string>([
     'PUNE',  // Mumbai–Hyderabad/Pune corridor (verified: train_schedule rows, 117km from CSMT)
     'SUR',   // Solapur — Mumbai–Hyderabad corridor (verified: train_schedule rows, 188km from CSMT)
+    'DD',    // Daund — Solapur–Ahmedabad/Pune corridor (verified: train_schedule rows, 165km from SUR)
   ]);
 
   /** Hard budget for API fallback calls inside searchLeg. After this many ms
