@@ -151,6 +151,24 @@ export const getDistance = (a: Station, b: Station): number => {
   return R * (2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x)));
 };
 
+/**
+ * Resolves station coordinates by consulting STATIONS first,
+ * falling back to stationService.getCoordinatesSync() for comprehensive Pan-India coverage.
+ */
+export function getStationCoordinate(code: string): Station | undefined {
+  if (!code) return undefined;
+  const clean = code.toUpperCase().trim();
+  if (STATIONS[clean]) return STATIONS[clean];
+  try {
+    const { stationService } = require('../services/stationService');
+    const c = stationService.getCoordinatesSync(clean);
+    if (c && typeof c.lat === 'number' && typeof c.lon === 'number') {
+      return { code: clean, lat: c.lat, lng: c.lon };
+    }
+  } catch {}
+  return undefined;
+}
+
 // 🧠 Forward direction check — does the via station lie on a logical path?
 // Allows up to 80% detour relative to the direct distance.
 export const isForwardStation = (
@@ -159,9 +177,9 @@ export const isForwardStation = (
   via: string,
   maxDetourRatio: number = 1.8
 ): boolean => {
-  const src  = STATIONS[source];
-  const dest = STATIONS[destination];
-  const mid  = STATIONS[via];
+  const src  = getStationCoordinate(source);
+  const dest = getStationCoordinate(destination);
+  const mid  = getStationCoordinate(via);
 
   if (!src || !dest || !mid) return true; // allow if coords not known
 
@@ -179,9 +197,9 @@ export const isValidDirectionalFlow = (
   via: string,
   marginKm: number = 50
 ): boolean => {
-  const src  = STATIONS[source];
-  const dest = STATIONS[destination];
-  const mid  = STATIONS[via];
+  const src  = getStationCoordinate(source);
+  const dest = getStationCoordinate(destination);
+  const mid  = getStationCoordinate(via);
 
   if (!src || !dest || !mid) return true; // allow if coords not known
 
@@ -210,12 +228,12 @@ export const sortViaByDistance = (
   viaStations: string[],
   topN: number = 50
 ): string[] => {
-  const src = STATIONS[source];
+  const src = getStationCoordinate(source);
   if (!src) return viaStations.slice(0, topN);
 
   return viaStations
     .map((code) => {
-      const stn = STATIONS[code];
+      const stn = getStationCoordinate(code);
       const dist = stn ? getDistance(src, stn) : Infinity;
       return { code, dist };
     })
@@ -231,15 +249,15 @@ export const sortViaByDetourScore = (
   viaStations: string[],
   topN: number = 50
 ): string[] => {
-  const src = STATIONS[source];
-  const dest = STATIONS[destination];
+  const src = getStationCoordinate(source);
+  const dest = getStationCoordinate(destination);
   if (!src || !dest) return sortViaByDistance(source, viaStations, topN);
 
   const directDist = getDistance(src, dest);
 
   return viaStations
     .map((code) => {
-      const mid = STATIONS[code];
+      const mid = getStationCoordinate(code);
       if (!mid) return { code, score: Infinity };
       
       const srcToMid = getDistance(src, mid);
@@ -288,9 +306,9 @@ export const getDetourRatio = (
   hub: string,
   destination: string
 ): number | null => {
-  const src  = STATIONS[source];
-  const dest = STATIONS[destination];
-  const mid  = STATIONS[hub];
+  const src  = getStationCoordinate(source);
+  const dest = getStationCoordinate(destination);
+  const mid  = getStationCoordinate(hub);
 
   if (!src || !dest || !mid) {
     // Log whichever station(s) are missing

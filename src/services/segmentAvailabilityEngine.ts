@@ -15,9 +15,9 @@ import { normalizeTrainNumber } from '../utils/availabilityCacheKeys';
 // PHASE_4C862 — shared aliases; train-aware IRCTC mapping in trainStationResolver.ts
 export { TERMINAL_ALIASES, areStationsCompatible, normalizeForAPILegacy as normalizeForAPI } from './stationAliases';
 import { areStationsCompatible } from './stationAliases';
-import { isMajorHub } from '../knowledge/majorHubs';
+import { isMajorHub, isAnyHubOrJunction } from '../knowledge/majorHubs';
 
-export { isMajorHub };
+export { isMajorHub, isAnyHubOrJunction };
 
 function incrementDate(dateStr: string, days: number): string {
   let parsedDate = dateStr;
@@ -488,10 +488,13 @@ export class SegmentAvailabilityEngine {
     date: string,
     directTrains: any[],
     classType = '3A',
-    quota = 'GN'
+    quota = 'GN',
+    options?: { isPremiumUser?: boolean }
   ): Promise<SplitJourney[]> {
-    // Feature Flag Guard
-    if (process.env.ENABLE_SAME_TRAIN_SEGMENTS !== 'true') {
+    // Feature Flag Guard: Allowed if ENABLE_SAME_TRAIN_SEGMENTS === 'true' OR requested by an authorized Pro user
+    const isGloballyEnabled = process.env.ENABLE_SAME_TRAIN_SEGMENTS === 'true';
+    const isProRequest = options?.isPremiumUser === true;
+    if (!isGloballyEnabled && !isProRequest) {
       winstonLogger.info('[SEGMENT_ENGINE] Same Train Segment Availability is disabled via ENABLE_SAME_TRAIN_SEGMENTS flag');
       return [];
     }
@@ -888,7 +891,7 @@ export class SegmentAvailabilityEngine {
     const intermediateStops = stops.filter(s => {
       const sn = Number(s.SN);
       return sn > srcSn && sn < destSn
-        && isMajorHub(s.Station_Code)
+        && isAnyHubOrJunction(s.Station_Code)
         && !areStationsCompatible(s.Station_Code, srcStop.Station_Code)
         && !areStationsCompatible(s.Station_Code, destStop.Station_Code);
     });

@@ -18,6 +18,7 @@ import transferDistancesData from '../data/transferDistances.json';
 import { normalizeTrainNumber } from '../utils/availabilityCacheKeys';
 import type { RunningDaysEntry } from './trainStationResolver';
 import { PAN_INDIA_CLUSTERS, TERMINAL_ALIASES, IRCTC_CANONICAL } from './stationAliases';
+import { NATIONAL_TRANSFER_JUNCTIONS } from '../knowledge/majorHubs';
 
 // ——— Extended Leg with source/destination codes ——————————————————————————————
 interface RichLeg extends Leg {
@@ -1908,8 +1909,8 @@ const MICRO_HUB_BLACKLIST = new Set([
 // MIN distance from SOURCE for a hub to be valid (km)
 const MIN_HUB_DISTANCE_KM = 100;
 
-// Valid hubs — used for broad filtering (all major junctions)
-const VALID_HUBS = [...new Set([...MAJOR_HUBS])];
+// Valid hubs — used for broad filtering (all major junctions + verified Pan-India national transfer junctions)
+const VALID_HUBS = [...new Set([...MAJOR_HUBS, ...NATIONAL_TRANSFER_JUNCTIONS])];
 
 // Backward-compat alias used in findCombinedRoutes console.log
 const CORRIDOR_HUBS = PAN_INDIA_CORRIDOR_HUBS;
@@ -3738,15 +3739,16 @@ export class SplitJourneyEngine {
 
     if (isDeterministic) {
       const deterministicHubs = DETERMINISTIC_CORRIDORS[pairKey1] || DETERMINISTIC_CORRIDORS[pairKey2];
-      // Priority: deterministic hubs first, then corridor fallback, then all major hubs
+      // Priority: deterministic hubs first, then corridor fallback, then all major hubs and national transfer junctions
       hubs = [...new Set([
         ...deterministicHubs,
         ...corridorFallback,
-        ...MAJOR_HUBS
+        ...MAJOR_HUBS,
+        ...NATIONAL_TRANSFER_JUNCTIONS
       ])].filter(h => !exclude.has(h));
       winstonLogger.info(`[SPLIT_ENGINE] Deterministic-priority corridor ${pairKey1}: priority=[${deterministicHubs.join(',')}] total=${hubs.length}`);
     } else {
-      hubs = [...new Set([...corridorFallback, ...MAJOR_HUBS])].filter(h => !exclude.has(h));
+      hubs = [...new Set([...corridorFallback, ...MAJOR_HUBS, ...NATIONAL_TRANSFER_JUNCTIONS])].filter(h => !exclude.has(h));
     }
 
     // —— Step 2: Blacklist micro-hubs ——————————————————————————————————————
@@ -3811,10 +3813,11 @@ export class SplitJourneyEngine {
         const remainder = validHubs.filter(h => !pinnedSet.has(h));
         const sortedRemainder = sortViaByDetourScore(sCode, dCode, remainder, 600);
 
-        // Pinned corridor hubs come first (declared order preserved), remainder follows
-        hubs = pinnedCorridorHubs;
+        // Pinned corridor hubs come first (declared order preserved), top 3 geographic fallbacks appended
+        const fallbackGeoHubs = sortedRemainder.slice(0, 3);
+        hubs = [...pinnedCorridorHubs, ...fallbackGeoHubs];
         winstonLogger.info(
-          `[SPLIT_ENGINE] N82 deterministic-pinned hub order: pinned=[${pinnedCorridorHubs.join(',')}] remainder=${sortedRemainder.length} total=${hubs.length}`
+          `[SPLIT_ENGINE] N82 deterministic-pinned hub order: pinned=[${pinnedCorridorHubs.join(',')}] fallbackGeo=[${fallbackGeoHubs.join(',')}] total=${hubs.length}`
         );
       } else {
         // Non-deterministic routes: sort full valid list by detour score (unchanged behaviour)
@@ -3983,7 +3986,8 @@ export class SplitJourneyEngine {
     // PHASE_087N111 — Bound Phase 1 candidate hubs to top 10 (PHASE1_HUB_CAP) while preserving
     // N82 deterministic priority order at indices 0,1,2, preventing hub explosion from starving Phase 2.
     if (isDeterministic) {
-      const allowed = new Set(DETERMINISTIC_CORRIDORS[pairKey1] || DETERMINISTIC_CORRIDORS[pairKey2] || []);
+      const deterministicList = DETERMINISTIC_CORRIDORS[pairKey1] || DETERMINISTIC_CORRIDORS[pairKey2] || [];
+      const allowed = new Set([...deterministicList, ...hubs]);
       hubs = hubs.filter(h => allowed.has(h));
     }
     const hubPool = hubs.slice(0, this.PHASE1_HUB_CAP);
@@ -4110,8 +4114,14 @@ export class SplitJourneyEngine {
       await Promise.all(
         batch.map(async ({ hCode, dC, dt, key }) => {
           try {
-            this.apiCallCount++;
-            const r = await this.searchLeg(hCode, dC, dt);
+            const dIndex = dCodes.indexOf(dC);
+            const forceDb = dIndex > 1; // Prioritize primary destination terminals for live search, hydrate secondary terminals from DB
+            if (!forceDb) {
+              if (this.apiCallCount < this.MAX_TOTAL_CALLS) {
+                this.apiCallCount++;
+              }
+            }
+            const r = await this.searchLeg(hCode, dC, dt, forceDb);
             // PHASE_5B099: Inject _fromCode into every leg2 result, mirroring the leg1
             // injection at Phase 1. The provider may return fromStationCode equal to
             // the actual physical boarding station (e.g. SBIB for 19031) rather than
@@ -4305,7 +4315,16 @@ export class SplitJourneyEngine {
       }
       
 
-      for (const t1 of leg1Raw) {
+      // Prioritize trains whose known running days match the journey date
+      const sortedLeg1Raw = [...leg1Raw].sort((a: any, b: any) => {
+        const aRd = a.running_days || a.runningDays;
+        const bRd = b.running_days || b.runningDays;
+        const aRuns = aRd ? (isDayActive(normalizeRunningDays(aRd), date) ? 0 : 1) : 0;
+        const bRuns = bRd ? (isDayActive(normalizeRunningDays(bRd), date) ? 0 : 1) : 0;
+        return aRuns - bRuns;
+      });
+
+      for (const t1 of sortedLeg1Raw) {
         const actualSCode = (t1 as any)._fromCode || sCode;
         const l1 = this.mapToRichLeg(t1, actualSCode, hCode, sName, hName);
         if (!l1.arrival || l1.arrival === '--:--') continue;

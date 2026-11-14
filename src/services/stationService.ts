@@ -255,6 +255,29 @@ const RAILWAY_SUFFIX_WORDS = new Set<string>([
   'JN', 'JUNCTION', 'CANTT', 'CITY', 'TERMINUS', 'TERM', 'CENTRAL'
 ]);
 
+/**
+ * PHASE_PAN_INDIA_SPLIT — Helper to fold Unicode confusable Cyrillic/Greek characters
+ * into ASCII Latin uppercase. Prevents homoglyphs like Cyrillic 'М' (U+041C) in "CSМT"
+ * from causing UNRESOLVABLE_STATION_CODE / ROUTE_NOT_FOUND errors while preserving standard input.
+ */
+export function foldUnicodeConfusables(str: string): string {
+  if (!str) return '';
+  return str
+    .normalize('NFKC')
+    .replace(/\u0410/g, 'A') // Cyrillic А -> Latin A
+    .replace(/\u0412/g, 'B') // Cyrillic В -> Latin B
+    .replace(/\u0421/g, 'C') // Cyrillic С -> Latin C
+    .replace(/\u0415/g, 'E') // Cyrillic Е -> Latin E
+    .replace(/\u041D/g, 'H') // Cyrillic Н -> Latin H
+    .replace(/\u041A/g, 'K') // Cyrillic К -> Latin K
+    .replace(/\u041C/g, 'M') // Cyrillic М -> Latin M
+    .replace(/\u041E/g, 'O') // Cyrillic О -> Latin O
+    .replace(/\u0420/g, 'P') // Cyrillic Р -> Latin P
+    .replace(/\u0422/g, 'T') // Cyrillic Т -> Latin T
+    .replace(/\u0425/g, 'X') // Cyrillic Х -> Latin X
+    .replace(/\u0423/g, 'Y'); // Cyrillic У -> Latin Y
+}
+
 export class StationService {
 
   /**
@@ -264,7 +287,8 @@ export class StationService {
    */
   normalizeInput(input: string): string {
     if (!input || typeof input !== 'string') return '';
-    const raw = input.trim().toUpperCase();
+    const folded = foldUnicodeConfusables(input);
+    const raw = folded.trim().toUpperCase();
     if (!raw) return '';
 
     // 1. If input already isValidStationCode → return as-is (CSMT, AII, NDLS untouched)

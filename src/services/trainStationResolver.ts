@@ -453,6 +453,8 @@ export async function resolveSegmentForAvailability(
   hints?: {
     /** PHASE_084H — pre-fetched running-days from Split Engine Phase 2.5 */
     runningDaysCache?: Map<string, RunningDaysEntry>;
+    /** PHASE_PAN_INDIA_SPLIT — set true if date is already the computed intermediate boarding date */
+    isIntermediateDepartureDate?: boolean;
   }
 ): Promise<SegmentResolution> {
   const tNo = padTrainNo(trainNo);
@@ -486,7 +488,9 @@ export async function resolveSegmentForAvailability(
   // never silently authorise "operates on this date".
   if (date) {
     const fromStop = findStopOnSchedule(ctx.stops, fromIn);
-    const dayOffset = fromStop ? getDayOffsetForStop(ctx.stops, fromStop) : 0;
+    // PHASE_PAN_INDIA_SPLIT: If caller flagged date as already the intermediate boarding departure date,
+    // do not double-subtract day offset.
+    const dayOffset = hints?.isIntermediateDepartureDate ? 0 : (fromStop ? getDayOffsetForStop(ctx.stops, fromStop) : 0);
     const verdict = trainOperatesOnDate(date, ctx.runningDays, {
       validFrom: ctx.validFrom,
       validTo: ctx.validTo,
@@ -571,11 +575,7 @@ export async function resolveSegmentForAvailability(
   // can distinguish "stop confirmed absent" from "stop absent in DB, live not checked".
   const scheduleIsDbOnly = ctx.source === 'db' && !ctx.runningDaysAuthoritative;
 
-  let fromStop = ctx.stops.find(s => (s.Station_Code || '').toUpperCase().trim() === fromIn);
-  if (!fromStop) {
-    const { areStationsCompatible } = require('./stationAliases');
-    fromStop = ctx.stops.find(s => areStationsCompatible(fromIn, (s.Station_Code || '').toUpperCase().trim()));
-  }
+  const fromStop = ctx.stops.find(s => (s.Station_Code || '').toUpperCase().trim() === fromIn);
   if (!fromStop) {
     if (scheduleIsDbOnly) {
       winstonLogger.info(
@@ -596,11 +596,7 @@ export async function resolveSegmentForAvailability(
     };
   }
 
-  let toStop = ctx.stops.find(s => (s.Station_Code || '').toUpperCase().trim() === toIn);
-  if (!toStop) {
-    const { areStationsCompatible } = require('./stationAliases');
-    toStop = ctx.stops.find(s => areStationsCompatible(toIn, (s.Station_Code || '').toUpperCase().trim()));
-  }
+  const toStop = ctx.stops.find(s => (s.Station_Code || '').toUpperCase().trim() === toIn);
   if (!toStop) {
     if (scheduleIsDbOnly) {
       winstonLogger.info(
@@ -621,11 +617,7 @@ export async function resolveSegmentForAvailability(
     };
   }
 
-  if (Number(fromStop.SN) > Number(toStop.SN)) {
-    const tmp = fromStop;
-    fromStop = toStop;
-    toStop = tmp;
-  } else if (Number(fromStop.SN) === Number(toStop.SN)) {
+  if (Number(fromStop.SN) >= Number(toStop.SN)) {
     return {
       success: false,
       reason: 'SEGMENT_NOT_BOOKABLE',
